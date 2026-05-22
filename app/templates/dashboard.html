@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Control operativo</p>
+        <h2>Panel de auditoria para tecnicos de fibra optica</h2>
+        <p class="hero-copy">
+            Registra inspecciones de seguridad, herramientas y vehiculo desde una interfaz pensada para uso en terreno.
+        </p>
+    </div>
+    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Crear auditoria</a>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Auditorias</span>
+        <strong class="stat-value">{{ total_audits }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Tasa aprobacion</span>
+        <strong class="stat-value">{{ approval_rate }}%</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Casos criticos</span>
+        <strong class="stat-value">{{ critical_count }}</strong>
+    </article>
+</section>
+
+<section class="card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Actividad reciente</p>
+            <h3>Ultimas auditorias</h3>
+        </div>
+        <a class="button button-secondary" href="{{ url_for('main.audit_list') }}">Ver historial</a>
+    </div>
+
+    {% if recent_audits %}
+        <div class="audit-list">
+            {% for audit in recent_audits %}
+                <article class="audit-item">
+                    <div>
+                        <strong>
+                            {% if audit.mobile_code %}Movil {{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}
+                        </strong>
+                        <p>{{ audit.location }} | {{ audit.installation_type }}</p>
+                    </div>
+                    <div class="audit-meta">
+                        <span class="badge badge-{{ audit.result_status|lower|replace(' ', '-') }}">{{ audit.result_status }}</span>
+                        <small>{{ audit.total_score }} pts</small>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">Aun no existen auditorias registradas.</p>
+    {% endif %}
+</section>
+{% endblock %}

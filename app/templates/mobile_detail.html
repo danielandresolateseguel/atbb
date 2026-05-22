@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}Detalle de movil {{ mobile["mobile_code"] }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Ficha operativa</p>
+        <h2>Movil {{ mobile["mobile_code"] }}</h2>
+        <p class="hero-copy">
+            {{ mobile["warehouse_description"] or "Sin descripcion cargada" }}
+            {% if mobile["user_name"] %}| Responsable: {{ mobile["user_name"] }}{% endif %}
+        </p>
+    </div>
+    <span class="badge {% if mobile['is_enabled'] %}badge-aprobada{% else %}badge-rechazada{% endif %}">
+        {% if mobile["is_enabled"] %}Habilitado{% else %}Inhabilitado{% endif %}
+    </span>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Almacenes</span>
+        <strong class="stat-value">{{ overview["storage_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Equipos</span>
+        <strong class="stat-value">{{ overview["equipment_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Materiales</span>
+        <strong class="stat-value">{{ overview["materials_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Unidades stock</span>
+        <strong class="stat-value">{{ overview["stock_units_count"]|round(0)|int }}</strong>
+    </article>
+</section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Resumen</p>
+                <h3>Datos del movil</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Codigo:</strong> {{ mobile["mobile_code"] }}</p>
+            <p><strong>Usuario:</strong> {{ mobile["user_name"] or "-" }}</p>
+            <p><strong>Tipo almacen:</strong> {{ mobile["warehouse_type"] or "-" }}</p>
+            <p><strong>Descripcion:</strong> {{ mobile["warehouse_description"] or "-" }}</p>
+            <p><strong>Notas:</strong> {{ mobile["notes"] or "-" }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Tecnico vinculado</p>
+                <h3>Relacion operativa</h3>
+            </div>
+        </div>
+        <form method="post" action="{{ url_for('main.assign_mobile_technician', mobile_code=mobile['mobile_code']) }}" class="link-form">
+            <label>
+                <span>Seleccionar tecnico</span>
+                <select name="technician_id">
+                    <option value="">Sin vinculo</option>
+                    {% for technician in technicians %}
+                        <option value="{{ technician['id'] }}" {% if mobile['technician_id'] == technician['id'] %}selected{% endif %}>
+                            {{ technician["name"] }} | {{ technician["employee_code"] }}{% if technician["team"] %} | {{ technician["team"] }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="filter-actions">
+                <button class="button button-primary" type="submit">Guardar vinculo</button>
+            </div>
+        </form>
+        <div class="info-list">
+            <p><strong>Tecnico:</strong> {{ mobile["technician_name"] or "Sin vinculo aun" }}</p>
+            <p><strong>Codigo interno:</strong> {{ mobile["employee_code"] or "-" }}</p>
+            <p><strong>Telefono:</strong> {{ mobile["phone"] or "-" }}</p>
+            <p><strong>Region:</strong> {{ mobile["region"] or "-" }}</p>
+            <p><strong>Comuna:</strong> {{ mobile["commune"] or "-" }}</p>
+            <p><strong>Cuadrilla:</strong> {{ mobile["team"] or "-" }}</p>
+        </div>
+    </article>
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Vehiculos relacionados</p>
+            <h3>Asignados al tecnico vinculado</h3>
+        </div>
+    </div>
+    {% if related_vehicles %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Patente</th>
+                        <th>Marca</th>
+                        <th>Modelo</th>
+                        <th>Ano</th>
+                        <th>Estado</th>
+                        <th>Revision</th>
+                        <th>Seguro</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vehicle in related_vehicles %}
+                        <tr>
+                            <td>{{ vehicle["plate"] }}</td>
+                            <td>{{ vehicle["brand"] }}</td>
+                            <td>{{ vehicle["model"] }}</td>
+                            <td>{{ vehicle["year"] or "-" }}</td>
+                            <td>{{ vehicle["status"] }}</td>
+                            <td>{{ vehicle["review_date"] or "-" }}</td>
+                            <td>{{ vehicle["insurance_expiry"] or "-" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% elif mobile["technician_id"] %}
+        <p class="empty-state">No hay vehiculos asignados al tecnico vinculado segun la base actual.</p>
+    {% else %}
+        <p class="empty-state">Vincula un tecnico para empezar a cruzar tambien la informacion de vehiculos.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Cobertura</p>
+            <h3>Almacenes asociados</h3>
+        </div>
+    </div>
+    {% if storage_locations %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Centro</th>
+                        <th>Almacen</th>
+                        <th>Usuario</th>
+                        <th>Tipo</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in storage_locations %}
+                        <tr>
+                            <td>{{ row["center_name"] }}</td>
+                            <td>{{ row["warehouse_name"] }}</td>
+                            <td>{{ row["user_name"] or "-" }}</td>
+                            <td>{{ row["warehouse_type"] or "-" }}</td>
+                            <td>{% if row["is_enabled"] %}Habilitado{% else %}Inhabilitado{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">No hay almacenes asociados a este movil.</p>
+    {% endif %}
+</section>
+
+<section class="detail-grid">
+    <article class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Inventario</p>
+                <h3>Equipos serializados</h3>
+            </div>
+        </div>
+        {% if equipment_rows %}
+            <div class="table-wrap compact-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Centro</th>
+                            <th>Material</th>
+                            <th>Serial</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in equipment_rows %}
+                            <tr>
+                                <td>{{ row["center_name"] }}</td>
+                                <td>{{ row["material_name"] }}</td>
+                                <td>{{ row["serial_number"] }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">No hay equipos serializados para este movil.</p>
+        {% endif %}
+    </article>
+
+    <article class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Inventario</p>
+                <h3>Stock de materiales</h3>
+            </div>
+        </div>
+        {% if stock_rows %}
+            <div class="table-wrap compact-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Codigo</th>
+                            <th>Material</th>
+                            <th>Cantidad</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in stock_rows %}
+                            <tr>
+                                <td>{{ row["material_code"] or "-" }}</td>
+                                <td>{{ row["material_name"] }}</td>
+                                <td>{{ row["quantity"]|round(0)|int }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">No hay stock cargado para este movil.</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Seguimiento</p>
+            <h3>Auditorias relacionadas</h3>
+        </div>
+    </div>
+    {% if related_audits %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Tecnico</th>
+                        <th>Vehiculo</th>
+                        <th>Ubicacion</th>
+                        <th>Resultado</th>
+                        <th>Puntaje</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for audit in related_audits %}
+                        <tr>
+                            <td>{{ audit["audit_date"] }}</td>
+                            <td>{{ audit["technician_name"] }}</td>
+                            <td>{{ audit["vehicle_plate"] }}</td>
+                            <td>{{ audit["location"] }}</td>
+                            <td>{{ audit["result_status"] }}</td>
+                            <td>{{ audit["total_score"] }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Todavia no hay auditorias vinculadas a este movil.</p>
+    {% endif %}
+</section>
+{% endblock %}

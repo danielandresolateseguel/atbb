@@ -1,0 +1,2196 @@
+import sqlite3
+
+from flask import current_app, g
+
+from app.checklist import TOOL_MATCH_RULES
+
+
+def get_db():
+    if "db_conn" not in g:
+        connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
+        connection.row_factory = sqlite3.Row
+        g.db_conn = connection
+    return g.db_conn
+
+
+def close_db(_error=None):
+    connection = g.pop("db_conn", None)
+    if connection is not None:
+        connection.close()
+
+
+def init_db():
+    connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS technicians (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            employee_code TEXT NOT NULL UNIQUE,
+            region TEXT NOT NULL,
+            phone TEXT,
+            commune TEXT,
+            team TEXT,
+            company_name TEXT,
+            supervisor_name TEXT,
+            center_name TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS vehicles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plate TEXT NOT NULL UNIQUE,
+            brand TEXT NOT NULL,
+            model TEXT NOT NULL,
+            year INTEGER,
+            status TEXT NOT NULL DEFAULT 'activo',
+            unit_number TEXT,
+            odometer_km INTEGER,
+            assigned_employee_code TEXT,
+            review_date TEXT,
+            insurance_expiry TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS mobile_units (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mobile_code TEXT NOT NULL UNIQUE,
+            technician_id INTEGER,
+            user_name TEXT,
+            warehouse_description TEXT,
+            warehouse_type TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            notes TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS storage_locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mobile_unit_id INTEGER NOT NULL,
+            center_name TEXT NOT NULL,
+            warehouse_code TEXT NOT NULL,
+            warehouse_name TEXT NOT NULL,
+            warehouse_type TEXT,
+            user_name TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(center_name, warehouse_code),
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_code TEXT,
+            material_name TEXT NOT NULL UNIQUE
+        );
+
+        CREATE TABLE IF NOT EXISTS material_stock (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL,
+            mobile_unit_id INTEGER NOT NULL,
+            quantity REAL NOT NULL DEFAULT 0,
+            UNIQUE(material_id, mobile_unit_id),
+            FOREIGN KEY (material_id) REFERENCES materials (id),
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS equipment_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            storage_location_id INTEGER,
+            mobile_unit_id INTEGER,
+            center_name TEXT NOT NULL,
+            warehouse_code TEXT NOT NULL,
+            warehouse_name TEXT NOT NULL,
+            material_code TEXT NOT NULL,
+            material_name TEXT NOT NULL,
+            serial_number TEXT NOT NULL UNIQUE,
+            FOREIGN KEY (storage_location_id) REFERENCES storage_locations (id),
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS audits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            audit_date TEXT NOT NULL,
+            auditor_name TEXT NOT NULL,
+            auditor_signature_path TEXT,
+            technician_signature_path TEXT,
+            location TEXT NOT NULL,
+            installation_type TEXT NOT NULL,
+            total_score REAL NOT NULL DEFAULT 0,
+            result_status TEXT NOT NULL,
+            general_notes TEXT,
+            mobile_unit_id INTEGER,
+            technician_id INTEGER NOT NULL,
+            vehicle_id INTEGER NOT NULL,
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id),
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS audit_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            audit_id INTEGER NOT NULL,
+            section_key TEXT NOT NULL,
+            section_title TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            is_critical INTEGER NOT NULL DEFAULT 0,
+            notes TEXT,
+            photo_path TEXT,
+            FOREIGN KEY (audit_id) REFERENCES audits (id)
+        );
+        """
+    )
+    ensure_legacy_columns(connection)
+    seed_demo_data(connection)
+    connection.commit()
+    connection.close()
+
+
+def ensure_legacy_columns(connection):
+    add_column_if_missing(connection, "technicians", "phone", "TEXT")
+    add_column_if_missing(connection, "technicians", "commune", "TEXT")
+    add_column_if_missing(connection, "technicians", "team", "TEXT")
+    add_column_if_missing(connection, "technicians", "company_name", "TEXT")
+    add_column_if_missing(connection, "technicians", "supervisor_name", "TEXT")
+    add_column_if_missing(connection, "technicians", "center_name", "TEXT")
+    add_column_if_missing(connection, "technicians", "is_active", "INTEGER NOT NULL DEFAULT 1")
+    add_column_if_missing(connection, "vehicles", "year", "INTEGER")
+    add_column_if_missing(connection, "vehicles", "status", "TEXT NOT NULL DEFAULT 'activo'")
+    add_column_if_missing(connection, "vehicles", "unit_number", "TEXT")
+    add_column_if_missing(connection, "vehicles", "odometer_km", "INTEGER")
+    add_column_if_missing(connection, "vehicles", "assigned_employee_code", "TEXT")
+    add_column_if_missing(connection, "vehicles", "review_date", "TEXT")
+    add_column_if_missing(connection, "vehicles", "insurance_expiry", "TEXT")
+    add_column_if_missing(connection, "mobile_units", "technician_id", "INTEGER")
+    add_column_if_missing(connection, "mobile_units", "user_name", "TEXT")
+    add_column_if_missing(connection, "mobile_units", "warehouse_description", "TEXT")
+    add_column_if_missing(connection, "mobile_units", "warehouse_type", "TEXT")
+    add_column_if_missing(connection, "mobile_units", "is_enabled", "INTEGER NOT NULL DEFAULT 1")
+    add_column_if_missing(connection, "mobile_units", "notes", "TEXT")
+    add_column_if_missing(connection, "materials", "material_code", "TEXT")
+    add_column_if_missing(connection, "audits", "mobile_unit_id", "INTEGER")
+    add_column_if_missing(connection, "audits", "auditor_signature_path", "TEXT")
+    add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
+    add_column_if_missing(connection, "audit_items", "photo_path", "TEXT")
+
+
+def add_column_if_missing(connection, table_name, column_name, column_definition):
+    existing_columns = {
+        row[1]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in existing_columns:
+        connection.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+        )
+
+
+def seed_demo_data(connection):
+    technician_count = connection.execute("SELECT COUNT(*) FROM technicians").fetchone()[0]
+    if technician_count == 0:
+        connection.executemany(
+            """
+            INSERT INTO technicians (name, employee_code, region, phone, commune, team, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("Carlos Mena", "TEC-001", "Valparaiso", "", "Valparaiso", "Cuadrilla Norte", 1),
+                ("Pedro Soto", "TEC-002", "Quilpue", "", "Quilpue", "Cuadrilla Centro", 1),
+            ],
+        )
+
+    vehicle_count = connection.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
+    if vehicle_count == 0:
+        connection.executemany(
+            """
+            INSERT INTO vehicles (plate, brand, model, year, status, assigned_employee_code, review_date, insurance_expiry)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("ABCD-11", "Peugeot", "Partner", 2022, "activo", "TEC-001", "", ""),
+                ("EFGH-22", "Citroen", "Berlingo", 2021, "activo", "TEC-002", "", ""),
+            ],
+        )
+
+
+def fetch_technicians():
+    rows = get_db().execute(
+        """
+        SELECT id, name, employee_code, region, phone, commune, team, company_name, supervisor_name, center_name, is_active
+        FROM technicians
+        ORDER BY name ASC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_vehicles():
+    rows = get_db().execute(
+        """
+        SELECT id, plate, brand, model, year, status, unit_number, odometer_km, assigned_employee_code, review_date, insurance_expiry
+        FROM vehicles
+        ORDER BY plate ASC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_mobile_units():
+    rows = get_db().execute(
+        """
+        SELECT
+            mobile_units.id,
+            mobile_units.mobile_code,
+            mobile_units.technician_id,
+            mobile_units.user_name,
+            mobile_units.warehouse_description,
+            mobile_units.warehouse_type,
+            mobile_units.is_enabled,
+            mobile_units.notes,
+            technicians.name AS technician_name,
+            technicians.employee_code
+        FROM mobile_units
+        LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
+        ORDER BY mobile_units.mobile_code ASC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_mobile_unit_detail(mobile_code):
+    row = get_db().execute(
+        """
+        SELECT
+            mobile_units.id,
+            mobile_units.mobile_code,
+            mobile_units.user_name,
+            mobile_units.warehouse_description,
+            mobile_units.warehouse_type,
+            mobile_units.is_enabled,
+            mobile_units.notes,
+            mobile_units.technician_id,
+            technicians.name AS technician_name,
+            technicians.employee_code,
+            technicians.phone,
+            technicians.region,
+            technicians.commune,
+            technicians.team
+        FROM mobile_units
+        LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
+        WHERE mobile_units.mobile_code = ?
+        """,
+        (mobile_code,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_mobile_unit_by_id(mobile_unit_id):
+    row = get_db().execute(
+        """
+        SELECT
+            mobile_units.id,
+            mobile_units.mobile_code,
+            mobile_units.user_name,
+            mobile_units.warehouse_description,
+            mobile_units.warehouse_type,
+            mobile_units.is_enabled,
+            mobile_units.notes,
+            mobile_units.technician_id,
+            technicians.name AS technician_name,
+            technicians.employee_code
+        FROM mobile_units
+        LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
+        WHERE mobile_units.id = ?
+        """,
+        (mobile_unit_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_mobile_unit_technician(mobile_code, technician_id):
+    connection = get_db()
+    connection.execute(
+        """
+        UPDATE mobile_units
+        SET technician_id = ?
+        WHERE mobile_code = ?
+        """,
+        (technician_id, mobile_code),
+    )
+    connection.commit()
+
+
+def fetch_mobile_overview_stats(mobile_code):
+    row = get_db().execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM storage_locations WHERE storage_locations.warehouse_code = ?) AS storage_count,
+            (SELECT COUNT(*) FROM equipment_inventory WHERE equipment_inventory.warehouse_code = ?) AS equipment_count,
+            (
+                SELECT COUNT(DISTINCT material_stock.material_id)
+                FROM material_stock
+                INNER JOIN mobile_units ON mobile_units.id = material_stock.mobile_unit_id
+                WHERE mobile_units.mobile_code = ?
+            ) AS materials_count,
+            (
+                SELECT COALESCE(SUM(material_stock.quantity), 0)
+                FROM material_stock
+                INNER JOIN mobile_units ON mobile_units.id = material_stock.mobile_unit_id
+                WHERE mobile_units.mobile_code = ?
+            ) AS stock_units_count
+        """,
+        (mobile_code, mobile_code, mobile_code, mobile_code),
+    ).fetchone()
+    return dict(row)
+
+
+def fetch_mobile_storage_locations(mobile_code):
+    rows = get_db().execute(
+        """
+        SELECT
+            center_name,
+            warehouse_code,
+            warehouse_name,
+            warehouse_type,
+            user_name,
+            is_enabled
+        FROM storage_locations
+        WHERE warehouse_code = ?
+        ORDER BY center_name ASC, warehouse_name ASC
+        """,
+        (mobile_code,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_mobile_equipment(mobile_code, limit=100):
+    rows = get_db().execute(
+        """
+        SELECT
+            center_name,
+            warehouse_name,
+            material_code,
+            material_name,
+            serial_number
+        FROM equipment_inventory
+        WHERE warehouse_code = ?
+        ORDER BY material_name ASC, serial_number ASC
+        LIMIT ?
+        """,
+        (mobile_code, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_mobile_material_stock(mobile_code, limit=200):
+    rows = get_db().execute(
+        """
+        SELECT
+            materials.material_code,
+            materials.material_name,
+            material_stock.quantity
+        FROM material_stock
+        INNER JOIN materials ON materials.id = material_stock.material_id
+        INNER JOIN mobile_units ON mobile_units.id = material_stock.mobile_unit_id
+        WHERE mobile_units.mobile_code = ?
+        ORDER BY materials.material_name ASC
+        LIMIT ?
+        """,
+        (mobile_code, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_mobile_related_audits(mobile_code, limit=20):
+    mobile = fetch_mobile_unit_detail(mobile_code)
+    technician_id = mobile["technician_id"] if mobile else None
+    mobile_unit_id = mobile["id"] if mobile else None
+
+    rows = get_db().execute(
+        """
+        SELECT
+            audits.id,
+            audits.audit_date,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            audit_mobile.mobile_code,
+            technicians.name AS technician_name,
+            vehicles.plate AS vehicle_plate
+        FROM audits
+        LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
+        INNER JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        WHERE audits.mobile_unit_id = ? OR audits.technician_id = ?
+        ORDER BY audits.created_at DESC
+        LIMIT ?
+        """,
+        (
+            mobile_unit_id,
+            technician_id,
+            limit,
+        ),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=8, stock_limit=12):
+    mobile = fetch_mobile_unit_by_id(mobile_unit_id)
+    if not mobile:
+        return None
+
+    summary_row = get_db().execute(
+        """
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM equipment_inventory
+                WHERE mobile_unit_id = ?
+            ) AS equipment_count,
+            (
+                SELECT COUNT(*)
+                FROM material_stock
+                WHERE mobile_unit_id = ?
+            ) AS stock_item_count,
+            (
+                SELECT COALESCE(SUM(quantity), 0)
+                FROM material_stock
+                WHERE mobile_unit_id = ?
+            ) AS stock_units_count
+        """,
+        (mobile_unit_id, mobile_unit_id, mobile_unit_id),
+    ).fetchone()
+
+    equipment_rows = get_db().execute(
+        """
+        SELECT
+            material_code,
+            material_name,
+            serial_number
+        FROM equipment_inventory
+        WHERE mobile_unit_id = ?
+        ORDER BY material_name ASC, serial_number ASC
+        LIMIT ?
+        """,
+        (mobile_unit_id, equipment_limit),
+    ).fetchall()
+
+    stock_rows = get_db().execute(
+        """
+        SELECT
+            materials.material_code,
+            materials.material_name,
+            material_stock.quantity
+        FROM material_stock
+        INNER JOIN materials ON materials.id = material_stock.material_id
+        WHERE material_stock.mobile_unit_id = ?
+        ORDER BY material_stock.quantity DESC, materials.material_name ASC
+        LIMIT ?
+        """,
+        (mobile_unit_id, stock_limit),
+    ).fetchall()
+
+    search_rows = get_db().execute(
+        """
+        SELECT material_name AS name
+        FROM equipment_inventory
+        WHERE mobile_unit_id = ?
+        UNION ALL
+        SELECT materials.material_name AS name
+        FROM material_stock
+        INNER JOIN materials ON materials.id = material_stock.material_id
+        WHERE material_stock.mobile_unit_id = ?
+        """,
+        (mobile_unit_id, mobile_unit_id),
+    ).fetchall()
+
+    summary = dict(summary_row)
+    tool_matches = detect_tool_matches([row["name"] for row in search_rows])
+
+    return {
+        "mobile": mobile,
+        "summary": summary,
+        "equipment_rows": [dict(row) for row in equipment_rows],
+        "stock_rows": [dict(row) for row in stock_rows],
+        "tool_matches": tool_matches,
+        "alerts": build_mobile_audit_alerts(mobile, summary, tool_matches),
+    }
+
+
+def fetch_vehicles_by_employee_code(employee_code):
+    if not employee_code:
+        return []
+
+    rows = get_db().execute(
+        """
+        SELECT
+            plate,
+            brand,
+            model,
+            year,
+            status,
+            review_date,
+            insurance_expiry
+        FROM vehicles
+        WHERE assigned_employee_code = ?
+        ORDER BY plate ASC
+        """,
+        (employee_code,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_materials_summary(limit=15):
+    rows = get_db().execute(
+        """
+        SELECT
+            materials.id,
+            materials.material_code,
+            materials.material_name,
+            COALESCE(SUM(material_stock.quantity), 0) AS total_quantity,
+            COUNT(DISTINCT material_stock.mobile_unit_id) AS mobile_count
+        FROM materials
+        LEFT JOIN material_stock ON material_stock.material_id = materials.id
+        GROUP BY materials.id, materials.material_code, materials.material_name
+        ORDER BY materials.material_name ASC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_storage_locations_summary(limit=15):
+    rows = get_db().execute(
+        """
+        SELECT
+            storage_locations.id,
+            storage_locations.center_name,
+            storage_locations.warehouse_code,
+            storage_locations.warehouse_name,
+            storage_locations.user_name,
+            storage_locations.warehouse_type,
+            storage_locations.is_enabled,
+            mobile_units.mobile_code
+        FROM storage_locations
+        INNER JOIN mobile_units ON mobile_units.id = storage_locations.mobile_unit_id
+        ORDER BY storage_locations.center_name ASC, storage_locations.warehouse_code ASC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_equipment_summary(limit=15):
+    rows = get_db().execute(
+        """
+        SELECT
+            center_name,
+            warehouse_code,
+            material_code,
+            material_name,
+            COUNT(*) AS serial_count
+        FROM equipment_inventory
+        GROUP BY center_name, warehouse_code, material_code, material_name
+        ORDER BY serial_count DESC, material_name ASC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_storage_locations(filters=None):
+    filters = filters or {}
+    query = """
+        SELECT
+            storage_locations.id,
+            storage_locations.center_name,
+            storage_locations.warehouse_code,
+            storage_locations.warehouse_name,
+            storage_locations.user_name,
+            storage_locations.warehouse_type,
+            storage_locations.is_enabled,
+            mobile_units.mobile_code
+        FROM storage_locations
+        INNER JOIN mobile_units ON mobile_units.id = storage_locations.mobile_unit_id
+        WHERE 1 = 1
+    """
+    params = []
+
+    search_term = (filters.get("q") or "").strip()
+    if search_term:
+        query += """
+            AND (
+                storage_locations.center_name LIKE ?
+                OR storage_locations.warehouse_code LIKE ?
+                OR storage_locations.warehouse_name LIKE ?
+                OR storage_locations.user_name LIKE ?
+                OR mobile_units.mobile_code LIKE ?
+            )
+        """
+        like_value = f"%{search_term}%"
+        params.extend([like_value, like_value, like_value, like_value, like_value])
+
+    if filters.get("center"):
+        query += " AND storage_locations.center_name = ?"
+        params.append(filters["center"])
+
+    if filters.get("warehouse_type"):
+        query += " AND storage_locations.warehouse_type = ?"
+        params.append(filters["warehouse_type"])
+
+    if filters.get("enabled") in {"0", "1"}:
+        query += " AND storage_locations.is_enabled = ?"
+        params.append(int(filters["enabled"]))
+
+    query += " ORDER BY storage_locations.center_name ASC, storage_locations.warehouse_code ASC"
+    rows = get_db().execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_equipment_inventory(filters=None):
+    filters = filters or {}
+    query = """
+        SELECT
+            equipment_inventory.id,
+            equipment_inventory.center_name,
+            equipment_inventory.warehouse_code,
+            equipment_inventory.warehouse_name,
+            equipment_inventory.material_code,
+            equipment_inventory.material_name,
+            equipment_inventory.serial_number,
+            mobile_units.mobile_code
+        FROM equipment_inventory
+        LEFT JOIN mobile_units ON mobile_units.id = equipment_inventory.mobile_unit_id
+        WHERE 1 = 1
+    """
+    params = []
+
+    search_term = (filters.get("q") or "").strip()
+    if search_term:
+        query += """
+            AND (
+                equipment_inventory.serial_number LIKE ?
+                OR equipment_inventory.material_code LIKE ?
+                OR equipment_inventory.material_name LIKE ?
+                OR equipment_inventory.warehouse_code LIKE ?
+                OR equipment_inventory.warehouse_name LIKE ?
+            )
+        """
+        like_value = f"%{search_term}%"
+        params.extend([like_value, like_value, like_value, like_value, like_value])
+
+    if filters.get("center"):
+        query += " AND equipment_inventory.center_name = ?"
+        params.append(filters["center"])
+
+    if filters.get("warehouse_code"):
+        query += " AND equipment_inventory.warehouse_code = ?"
+        params.append(filters["warehouse_code"])
+
+    query += " ORDER BY equipment_inventory.center_name ASC, equipment_inventory.warehouse_code ASC, equipment_inventory.material_name ASC"
+    rows = get_db().execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_material_stock_rows(filters=None):
+    filters = filters or {}
+    query = """
+        SELECT
+            materials.material_code,
+            materials.material_name,
+            mobile_units.mobile_code,
+            material_stock.quantity,
+            mobile_units.user_name,
+            mobile_units.warehouse_description
+        FROM material_stock
+        INNER JOIN materials ON materials.id = material_stock.material_id
+        INNER JOIN mobile_units ON mobile_units.id = material_stock.mobile_unit_id
+        WHERE 1 = 1
+    """
+    params = []
+
+    search_term = (filters.get("q") or "").strip()
+    if search_term:
+        query += """
+            AND (
+                materials.material_code LIKE ?
+                OR materials.material_name LIKE ?
+                OR mobile_units.mobile_code LIKE ?
+                OR mobile_units.user_name LIKE ?
+            )
+        """
+        like_value = f"%{search_term}%"
+        params.extend([like_value, like_value, like_value, like_value])
+
+    if filters.get("mobile_code"):
+        query += " AND mobile_units.mobile_code = ?"
+        params.append(filters["mobile_code"])
+
+    query += " ORDER BY materials.material_name ASC, mobile_units.mobile_code ASC"
+    rows = get_db().execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_distinct_storage_centers():
+    rows = get_db().execute(
+        "SELECT DISTINCT center_name FROM storage_locations ORDER BY center_name ASC"
+    ).fetchall()
+    return [row["center_name"] for row in rows]
+
+
+def fetch_distinct_warehouse_types():
+    rows = get_db().execute(
+        """
+        SELECT DISTINCT warehouse_type
+        FROM storage_locations
+        WHERE warehouse_type IS NOT NULL AND warehouse_type != ''
+        ORDER BY warehouse_type ASC
+        """
+    ).fetchall()
+    return [row["warehouse_type"] for row in rows]
+
+
+def fetch_distinct_warehouse_codes():
+    rows = get_db().execute(
+        "SELECT DISTINCT warehouse_code FROM equipment_inventory ORDER BY warehouse_code ASC"
+    ).fetchall()
+    return [row["warehouse_code"] for row in rows]
+
+
+def fetch_distinct_mobile_codes():
+    rows = get_db().execute(
+        "SELECT DISTINCT mobile_code FROM mobile_units ORDER BY mobile_code ASC"
+    ).fetchall()
+    return [row["mobile_code"] for row in rows]
+
+
+def fetch_stock_stats():
+    row = get_db().execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM materials) AS materials_count,
+            (SELECT COUNT(*) FROM mobile_units) AS mobile_units_count,
+            (SELECT COUNT(*) FROM storage_locations) AS storage_locations_count,
+            (SELECT COUNT(*) FROM equipment_inventory) AS serialized_equipment_count,
+            COALESCE((SELECT SUM(quantity) FROM material_stock), 0) AS stock_units_count
+        """
+    ).fetchone()
+    return dict(row)
+
+
+def fetch_dashboard_stats():
+    row = get_db().execute(
+        """
+        SELECT
+            COUNT(*) AS total_audits,
+            SUM(CASE WHEN result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count
+        FROM audits
+        """
+    ).fetchone()
+
+    total_audits = row["total_audits"] or 0
+    approved_count = row["approved_count"] or 0
+    critical_count = row["critical_count"] or 0
+    approval_rate = 0 if total_audits == 0 else round((approved_count / total_audits) * 100)
+
+    return {
+        "total_audits": total_audits,
+        "approved_count": approved_count,
+        "critical_count": critical_count,
+        "approval_rate": approval_rate,
+    }
+
+
+def fetch_recent_audits(limit=5):
+    rows = get_db().execute(
+        """
+        SELECT
+            audits.id,
+            audits.audit_date,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            mobile_units.mobile_code,
+            technicians.name AS technician_name,
+            vehicles.plate AS vehicle_plate
+        FROM audits
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        INNER JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        ORDER BY audits.created_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_all_audits():
+    rows = get_db().execute(
+        """
+        SELECT
+            audits.id,
+            audits.audit_date,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            mobile_units.mobile_code,
+            technicians.name AS technician_name,
+            vehicles.plate AS vehicle_plate
+        FROM audits
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        INNER JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        ORDER BY audits.created_at DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_audit_detail(audit_id):
+    row = get_db().execute(
+        """
+        SELECT
+            audits.id,
+            audits.audit_date,
+            audits.auditor_name,
+            audits.auditor_signature_path,
+            audits.technician_signature_path,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            audits.general_notes,
+            datetime(audits.created_at, 'localtime') AS created_at,
+            mobile_units.mobile_code,
+            technicians.name AS technician_name,
+            technicians.employee_code,
+            technicians.company_name AS technician_company,
+            technicians.supervisor_name AS technician_supervisor,
+            technicians.center_name AS technician_center,
+            vehicles.plate AS vehicle_plate,
+            vehicles.brand AS vehicle_brand,
+            vehicles.model AS vehicle_model,
+            vehicles.unit_number AS vehicle_unit_number,
+            vehicles.odometer_km AS vehicle_odometer_km
+        FROM audits
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        INNER JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        WHERE audits.id = ?
+        """,
+        (audit_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_audit_items(audit_id):
+    rows = get_db().execute(
+        """
+        SELECT
+            id,
+            section_key,
+            section_title,
+            item_key,
+            item_label,
+            status,
+            is_critical,
+            notes,
+            photo_path
+        FROM audit_items
+        WHERE audit_id = ?
+        ORDER BY id ASC
+        """,
+        (audit_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_audit(audit_data, items):
+    connection = get_db()
+    cursor = connection.execute(
+        """
+        INSERT INTO audits (
+            audit_date,
+            auditor_name,
+            auditor_signature_path,
+            technician_signature_path,
+            location,
+            installation_type,
+            total_score,
+            result_status,
+            general_notes,
+            mobile_unit_id,
+            technician_id,
+            vehicle_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            audit_data["audit_date"],
+            audit_data["auditor_name"],
+            audit_data.get("auditor_signature_path"),
+            audit_data.get("technician_signature_path"),
+            audit_data["location"],
+            audit_data["installation_type"],
+            audit_data["total_score"],
+            audit_data["result_status"],
+            audit_data["general_notes"],
+            audit_data["mobile_unit_id"],
+            audit_data["technician_id"],
+            audit_data["vehicle_id"],
+        ),
+    )
+    audit_id = cursor.lastrowid
+
+    connection.executemany(
+        """
+        INSERT INTO audit_items (
+            audit_id,
+            section_key,
+            section_title,
+            item_key,
+            item_label,
+            status,
+            is_critical,
+            notes,
+            photo_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                audit_id,
+                item["section_key"],
+                item["section_title"],
+                item["item_key"],
+                item["item_label"],
+                item["status"],
+                1 if item["is_critical"] else 0,
+                item["notes"],
+                item.get("photo_path"),
+            )
+            for item in items
+        ],
+    )
+    connection.commit()
+    return audit_id
+
+
+def import_technicians(rows):
+    connection = get_db()
+    created_count = 0
+    updated_count = 0
+    skipped_rows = []
+
+    for index, row in enumerate(rows, start=2):
+        employee_code = (row.get("employee_code") or "").strip()
+        name = (row.get("name") or "").strip()
+        region = (row.get("region") or "").strip()
+
+        if not employee_code or not name or not region:
+            skipped_rows.append(f"Fila {index}: faltan employee_code, name o region.")
+            continue
+
+        payload = (
+            name,
+            region,
+            (row.get("phone") or "").strip(),
+            (row.get("commune") or "").strip(),
+            (row.get("team") or "").strip(),
+            normalize_active_value(row.get("is_active")),
+            employee_code,
+        )
+
+        exists = connection.execute(
+            "SELECT id FROM technicians WHERE employee_code = ?",
+            (employee_code,),
+        ).fetchone()
+
+        if exists:
+            connection.execute(
+                """
+                UPDATE technicians
+                SET name = ?, region = ?, phone = ?, commune = ?, team = ?, is_active = ?
+                WHERE employee_code = ?
+                """,
+                payload,
+            )
+            updated_count += 1
+        else:
+            connection.execute(
+                """
+                INSERT INTO technicians (name, employee_code, region, phone, commune, team, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    name,
+                    employee_code,
+                    region,
+                    (row.get("phone") or "").strip(),
+                    (row.get("commune") or "").strip(),
+                    (row.get("team") or "").strip(),
+                    normalize_active_value(row.get("is_active")),
+                ),
+            )
+            created_count += 1
+
+    connection.commit()
+    return {
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "skipped_rows": skipped_rows,
+    }
+
+
+def import_checklist_del_dia(rows):
+    import re
+
+    connection = get_db()
+    created_count = 0
+    updated_count = 0
+    skipped_rows = []
+
+    def pick_first(row_data, keys):
+        for key in keys:
+            value = (row_data.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    def parse_unit_plate(value):
+        cleaned = (value or "").strip().upper()
+        if not cleaned:
+            return "", ""
+        match = re.search(r"(?P<unit>\d{1,4})\s*[-–—/]\s*(?P<plate>[A-Z0-9]{5,10})", cleaned)
+        if match:
+            return match.group("unit").strip(), match.group("plate").strip()
+        return "", cleaned
+
+    def normalize_plate(value):
+        return (value or "").strip().upper().replace(" ", "")
+
+    def normalize_km(value):
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if digits:
+            try:
+                return int(digits)
+            except ValueError:
+                return None
+        numeric = normalize_float_value(raw)
+        return int(numeric) if numeric is not None else None
+
+    unit_keys = [
+        "nro_camioneta",
+        "nro_de_camioneta",
+        "numero_camioneta",
+        "numero",
+        "unidad",
+        "nro_unidad",
+    ]
+    plate_keys = [
+        "patente",
+        "plate",
+        "dominio",
+        "matricula",
+    ]
+    combined_vehicle_keys = [
+        "nro_camioneta_patente",
+        "camioneta",
+        "vehiculo",
+        "unidad_patente",
+    ]
+    km_keys = [
+        "km",
+        "kms",
+        "kilometros",
+        "kilometraje",
+        "odometro",
+        "odometer",
+    ]
+    employee_code_keys = [
+        "employee_code",
+        "codigo_tecnico",
+        "cod_tecnico",
+        "tecnico_codigo",
+        "legajo",
+    ]
+    technician_name_keys = [
+        "name",
+        "tecnico",
+        "nombre_tecnico",
+        "tecnico_nombre",
+        "nombre",
+    ]
+    company_keys = [
+        "empresa",
+        "company",
+        "compania",
+        "contratista",
+        "proveedor",
+    ]
+
+    for index, row in enumerate(rows, start=2):
+        unit_number = pick_first(row, unit_keys)
+        plate = pick_first(row, plate_keys)
+        combined_vehicle = pick_first(row, combined_vehicle_keys)
+        if combined_vehicle and (not unit_number or not plate):
+            parsed_unit, parsed_plate = parse_unit_plate(combined_vehicle)
+            unit_number = unit_number or parsed_unit
+            plate = plate or parsed_plate
+
+        plate = normalize_plate(plate)
+        if not plate:
+            skipped_rows.append(f"Fila {index}: no se detecto patente.")
+            continue
+
+        odometer_km = normalize_km(pick_first(row, km_keys))
+        employee_code = pick_first(row, employee_code_keys)
+        technician_name = pick_first(row, technician_name_keys)
+        company_name = pick_first(row, company_keys)
+
+        vehicle_row = connection.execute(
+            "SELECT id FROM vehicles WHERE plate = ?",
+            (plate,),
+        ).fetchone()
+
+        if vehicle_row:
+            connection.execute(
+                """
+                UPDATE vehicles
+                SET unit_number = CASE WHEN ? != '' THEN ? ELSE unit_number END,
+                    odometer_km = CASE WHEN ? IS NOT NULL THEN ? ELSE odometer_km END,
+                    assigned_employee_code = CASE WHEN ? != '' THEN ? ELSE assigned_employee_code END
+                WHERE id = ?
+                """,
+                (
+                    unit_number,
+                    unit_number,
+                    odometer_km,
+                    odometer_km,
+                    employee_code,
+                    employee_code,
+                    vehicle_row["id"],
+                ),
+            )
+            updated_count += 1
+        else:
+            connection.execute(
+                """
+                INSERT INTO vehicles (
+                    plate,
+                    brand,
+                    model,
+                    year,
+                    status,
+                    unit_number,
+                    odometer_km,
+                    assigned_employee_code,
+                    review_date,
+                    insurance_expiry
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    plate,
+                    "-",
+                    "-",
+                    None,
+                    "activo",
+                    unit_number or None,
+                    odometer_km,
+                    employee_code or None,
+                    "",
+                    "",
+                ),
+            )
+            created_count += 1
+
+        if company_name:
+            technician_row = None
+            if employee_code:
+                technician_row = connection.execute(
+                    "SELECT id FROM technicians WHERE employee_code = ?",
+                    (employee_code,),
+                ).fetchone()
+
+            if technician_row is None and technician_name:
+                matches = connection.execute(
+                    "SELECT id FROM technicians WHERE name = ? COLLATE NOCASE",
+                    (technician_name,),
+                ).fetchall()
+                if len(matches) == 1:
+                    technician_row = matches[0]
+                elif len(matches) > 1:
+                    skipped_rows.append(
+                        f"Fila {index}: hay mas de un tecnico con nombre '{technician_name}'."
+                    )
+                    technician_row = None
+
+            if technician_row is not None:
+                connection.execute(
+                    """
+                    UPDATE technicians
+                    SET company_name = CASE WHEN ? != '' THEN ? ELSE company_name END
+                    WHERE id = ?
+                    """,
+                    (
+                        company_name,
+                        company_name,
+                        technician_row["id"],
+                    ),
+                )
+
+    connection.commit()
+    return {
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "skipped_rows": skipped_rows,
+    }
+
+
+def import_novedades_diarias(rows):
+    import re
+
+    connection = get_db()
+    created_count = 0
+    updated_count = 0
+    skipped_rows = []
+
+    def pick_first(row_data, keys):
+        for key in keys:
+            value = (row_data.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    def normalize_placeholder(value):
+        cleaned_value = (value or "").strip()
+        if cleaned_value in {"-", "--", "n/a", "na"}:
+            return ""
+        return cleaned_value
+
+    def parse_technician_cell(value):
+        cleaned_value = " ".join((value or "").strip().split())
+        if not cleaned_value:
+            return "", ""
+
+        match = re.match(r"^(?P<code>\d+)\s*-\s*(?P<name>.+)$", cleaned_value)
+        if match:
+            return match.group("code").strip(), match.group("name").strip()
+
+        match = re.match(r"^(?P<code>\d+)\s+(?P<name>.+)$", cleaned_value)
+        if match:
+            return match.group("code").strip(), match.group("name").strip()
+
+        return "", cleaned_value
+
+    def find_column(header_keys, exact_keys, contains_fragments):
+        for key in exact_keys:
+            if key in header_keys:
+                return key
+        for header_key in header_keys:
+            for fragment in contains_fragments:
+                if fragment in header_key:
+                    return header_key
+        return None
+
+    employee_code_keys = [
+        "employee_code",
+        "codigo_tecnico",
+        "cod_tecnico",
+        "tecnico_codigo",
+        "legajo",
+        "legajo_tecnico",
+        "codigo_empleado",
+        "cod_empleado",
+    ]
+    technician_name_keys = [
+        "name",
+        "tecnico",
+        "nombre_tecnico",
+        "tecnico_nombre",
+        "nombre",
+        "recurso",
+        "tecnico_nombre_apellido",
+    ]
+    supervisor_keys = [
+        "supervisor",
+        "supervisora",
+        "supervisado_por",
+        "supervisor_a_cargo",
+        "jefe",
+        "lider",
+        "encargado",
+        "coordinador",
+        "responsable",
+    ]
+    center_keys = [
+        "centro",
+        "centro_de_trabajo",
+        "centro_trabajo",
+        "centro_operativo",
+        "center",
+        "base",
+        "base_operativa",
+        "sede",
+        "sucursal",
+        "delegacion",
+        "ciudad",
+        "region",
+    ]
+
+    if not rows:
+        raise ValueError("El archivo no contiene filas para importar.")
+
+    ordered_keys = list((rows[0] or {}).keys())
+    header_keys = set(ordered_keys)
+    supervisor_column = find_column(
+        header_keys,
+        supervisor_keys,
+        ["supervis", "jefe", "lider", "encargad", "coordin", "responsab"],
+    )
+    center_column = find_column(
+        header_keys,
+        center_keys,
+        ["centro", "base", "sede", "sucursal", "deleg", "ciudad"],
+    )
+
+    if supervisor_column is None and center_column is None and len(ordered_keys) < 3:
+        sample = sorted(header_keys)[:18]
+        raise ValueError(
+            "No se detectaron columnas de supervisor/centro en NovDiarias. "
+            "Encabezados detectados: " + ", ".join(sample)
+        )
+
+    employee_code_column = find_column(
+        header_keys,
+        employee_code_keys,
+        ["employee", "empleado", "codigo", "legajo"],
+    )
+    technician_name_column = find_column(
+        header_keys,
+        technician_name_keys,
+        ["tecnico", "nombre", "recurso"],
+    )
+
+    if (supervisor_column is None or center_column is None) and len(ordered_keys) >= 3:
+        technician_name_column = technician_name_column or ordered_keys[0]
+        supervisor_column = supervisor_column or ordered_keys[1]
+        center_column = center_column or ordered_keys[2]
+
+    if supervisor_column is None and center_column is None:
+        sample = sorted(header_keys)[:18]
+        raise ValueError(
+            "No se detectaron columnas de supervisor/centro en NovDiarias. "
+            "Encabezados detectados: " + ", ".join(sample)
+        )
+
+    for index, row in enumerate(rows, start=2):
+        employee_code = (row.get(employee_code_column) or "").strip() if employee_code_column else ""
+        technician_name = (row.get(technician_name_column) or "").strip() if technician_name_column else ""
+
+        supervisor_name = normalize_placeholder((row.get(supervisor_column) or "").strip() if supervisor_column else "")
+        center_name = normalize_placeholder((row.get(center_column) or "").strip() if center_column else "")
+
+        parsed_code, parsed_name = parse_technician_cell(technician_name)
+        if not employee_code and parsed_code:
+            employee_code = parsed_code
+        technician_name = parsed_name or technician_name
+
+        if not supervisor_name and not center_name:
+            skipped_rows.append(f"Fila {index}: no trae supervisor ni centro.")
+            continue
+
+        technician_row = None
+        if employee_code:
+            technician_row = connection.execute(
+                "SELECT id FROM technicians WHERE employee_code = ?",
+                (employee_code,),
+            ).fetchone()
+
+            if technician_row is None and employee_code.isdigit():
+                variants = [f"TEC-{employee_code}", f"tec-{employee_code}", f"TEC{employee_code}", f"tec{employee_code}"]
+                for variant in variants:
+                    technician_row = connection.execute(
+                        "SELECT id FROM technicians WHERE employee_code = ?",
+                        (variant,),
+                    ).fetchone()
+                    if technician_row is not None:
+                        break
+
+        if technician_row is None and technician_name:
+            technician_name = " ".join(technician_name.split())
+            matches = connection.execute(
+                "SELECT id FROM technicians WHERE name = ? COLLATE NOCASE",
+                (technician_name,),
+            ).fetchall()
+            if len(matches) == 1:
+                technician_row = matches[0]
+            elif len(matches) > 1:
+                skipped_rows.append(
+                    f"Fila {index}: hay mas de un tecnico con nombre '{technician_name}'."
+                )
+                continue
+
+        if technician_row is None:
+            reference = employee_code or technician_name or "sin identificador"
+            skipped_rows.append(f"Fila {index}: no se encontro tecnico ({reference}).")
+            continue
+
+        connection.execute(
+            """
+            UPDATE technicians
+            SET supervisor_name = CASE WHEN ? != '' THEN ? ELSE supervisor_name END,
+                center_name = CASE WHEN ? != '' THEN ? ELSE center_name END
+            WHERE id = ?
+            """,
+            (
+                supervisor_name,
+                supervisor_name,
+                center_name,
+                center_name,
+                technician_row["id"],
+            ),
+        )
+        updated_count += 1
+
+    connection.commit()
+    return {
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "skipped_rows": skipped_rows,
+    }
+
+
+def import_vehicles(rows):
+    import re
+
+    connection = get_db()
+    created_count = 0
+    updated_count = 0
+    skipped_rows = []
+
+    def pick_first(row_data, keys):
+        for key in keys:
+            value = (row_data.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    def normalize_plate(value):
+        return (value or "").strip().upper().replace(" ", "")
+
+    def parse_unit_plate(value):
+        cleaned = (value or "").strip().upper()
+        if not cleaned:
+            return "", ""
+        match = re.search(r"(?P<unit>\d{1,4})\s*[-–—/]\s*(?P<plate>[A-Z0-9]{5,10})", cleaned)
+        if match:
+            return match.group("unit").strip(), match.group("plate").strip()
+        return "", cleaned
+
+    def normalize_km(value):
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if digits:
+            try:
+                return int(digits)
+            except ValueError:
+                return None
+        numeric = normalize_float_value(raw)
+        return int(numeric) if numeric is not None else None
+
+    unit_keys = [
+        "unit_number",
+        "nro_camioneta",
+        "nro_de_camioneta",
+        "numero_camioneta",
+        "numero",
+        "unidad",
+        "nro_unidad",
+    ]
+    plate_keys = [
+        "plate",
+        "patente",
+        "dominio",
+        "matricula",
+    ]
+    combined_vehicle_keys = [
+        "nro_camioneta_patente",
+        "camioneta",
+        "vehiculo",
+        "unidad_patente",
+    ]
+    brand_keys = [
+        "brand",
+        "marca",
+    ]
+    model_keys = [
+        "model",
+        "modelo",
+    ]
+    km_keys = [
+        "odometer_km",
+        "km",
+        "kms",
+        "kilometros",
+        "kilometraje",
+        "odometro",
+        "odometer",
+    ]
+
+    for index, row in enumerate(rows, start=2):
+        unit_number = pick_first(row, unit_keys)
+        plate = pick_first(row, plate_keys)
+        combined_vehicle = pick_first(row, combined_vehicle_keys)
+        if combined_vehicle and (not unit_number or not plate):
+            parsed_unit, parsed_plate = parse_unit_plate(combined_vehicle)
+            unit_number = unit_number or parsed_unit
+            plate = plate or parsed_plate
+
+        plate = normalize_plate(plate)
+        if not plate:
+            skipped_rows.append(f"Fila {index}: falta patente (plate/patente/dominio).")
+            continue
+
+        brand = pick_first(row, brand_keys)
+        model = pick_first(row, model_keys)
+        year = normalize_integer_value(row.get("year"))
+        status = (row.get("status") or "activo").strip().lower()
+        odometer_km = normalize_km(pick_first(row, km_keys))
+        assigned_employee_code = (row.get("assigned_employee_code") or "").strip()
+        review_date = (row.get("review_date") or "").strip()
+        insurance_expiry = (row.get("insurance_expiry") or "").strip()
+
+        exists = connection.execute(
+            "SELECT id FROM vehicles WHERE plate = ?",
+            (plate,),
+        ).fetchone()
+
+        if exists:
+            connection.execute(
+                """
+                UPDATE vehicles
+                SET brand = CASE WHEN ? != '' AND ? != '-' THEN ? ELSE brand END,
+                    model = CASE WHEN ? != '' AND ? != '-' THEN ? ELSE model END,
+                    year = COALESCE(?, year),
+                    status = CASE WHEN ? != '' THEN ? ELSE status END,
+                    unit_number = CASE WHEN ? != '' THEN ? ELSE unit_number END,
+                    odometer_km = COALESCE(?, odometer_km),
+                    assigned_employee_code = CASE WHEN ? != '' THEN ? ELSE assigned_employee_code END,
+                    review_date = CASE WHEN ? != '' THEN ? ELSE review_date END,
+                    insurance_expiry = CASE WHEN ? != '' THEN ? ELSE insurance_expiry END
+                WHERE plate = ?
+                """,
+                (
+                    brand,
+                    brand,
+                    brand,
+                    model,
+                    model,
+                    model,
+                    year,
+                    status,
+                    status,
+                    unit_number,
+                    unit_number,
+                    odometer_km,
+                    assigned_employee_code,
+                    assigned_employee_code,
+                    review_date,
+                    review_date,
+                    insurance_expiry,
+                    insurance_expiry,
+                    plate,
+                ),
+            )
+            updated_count += 1
+        else:
+            connection.execute(
+                """
+                INSERT INTO vehicles (
+                    plate,
+                    brand,
+                    model,
+                    year,
+                    status,
+                    unit_number,
+                    odometer_km,
+                    assigned_employee_code,
+                    review_date,
+                    insurance_expiry
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    plate,
+                    brand or "-",
+                    model or "-",
+                    year,
+                    status or "activo",
+                    unit_number or None,
+                    odometer_km,
+                    assigned_employee_code or None,
+                    review_date,
+                    insurance_expiry,
+                ),
+            )
+            created_count += 1
+
+    connection.commit()
+    return {
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "skipped_rows": skipped_rows,
+    }
+
+
+def import_material_stock(rows):
+    connection = get_db()
+    created_materials = 0
+    updated_stock_rows = 0
+    skipped_rows = []
+
+    if not rows:
+        raise ValueError("El archivo no contiene filas para importar stock.")
+
+    material_column = detect_material_column(rows[0].keys())
+    mobile_columns = [
+        column
+        for column in rows[0].keys()
+        if column not in {material_column, "total"}
+    ]
+
+    if not mobile_columns:
+        raise ValueError("No se detectaron columnas de moviles tecnicos en el archivo.")
+
+    mobile_id_map = {}
+    for mobile_code in mobile_columns:
+        normalized_mobile_code = normalize_mobile_code(mobile_code)
+        if not normalized_mobile_code:
+            continue
+        mobile_id_map[mobile_code] = ensure_mobile_unit(connection, normalized_mobile_code)
+
+    connection.executemany(
+        "DELETE FROM material_stock WHERE mobile_unit_id = ?",
+        [(mobile_id,) for mobile_id in mobile_id_map.values()],
+    )
+
+    for index, row in enumerate(rows, start=2):
+        material_label = (row.get(material_column) or "").strip()
+        if not material_label:
+            skipped_rows.append(f"Fila {index}: no tiene nombre de material.")
+            continue
+
+        material_code, material_name = split_material_label(material_label)
+        material_id, was_created = ensure_material(connection, material_code, material_name)
+        if was_created:
+            created_materials += 1
+
+        for original_mobile_code, mobile_id in mobile_id_map.items():
+            quantity = normalize_float_value(row.get(original_mobile_code))
+            if quantity is None or quantity <= 0:
+                continue
+
+            connection.execute(
+                """
+                INSERT INTO material_stock (material_id, mobile_unit_id, quantity)
+                VALUES (?, ?, ?)
+                ON CONFLICT(material_id, mobile_unit_id)
+                DO UPDATE SET quantity = excluded.quantity
+                """,
+                (material_id, mobile_id, quantity),
+            )
+            updated_stock_rows += 1
+
+    connection.commit()
+    return {
+        "created_count": created_materials,
+        "updated_count": updated_stock_rows,
+        "skipped_rows": skipped_rows,
+    }
+
+
+def import_storage_locations(rows):
+    connection = get_db()
+    created_count = 0
+    updated_count = 0
+    skipped_rows = []
+
+    for index, row in enumerate(rows, start=2):
+        warehouse_code = (row.get("codigo") or "").strip()
+        user_name = (row.get("usuario") or "").strip()
+        warehouse_name = (row.get("descripcion") or "").strip()
+        center_name = (row.get("centro") or "").strip()
+
+        if not warehouse_code or not warehouse_name or not center_name:
+            skipped_rows.append(f"Fila {index}: faltan codigo, descripcion o centro.")
+            continue
+
+        mobile_unit_id = ensure_mobile_unit(
+            connection,
+            warehouse_code,
+            user_name=user_name,
+            warehouse_description=warehouse_name,
+            warehouse_type=(row.get("tipo_de_almacen") or "").strip(),
+            is_enabled=normalize_yes_no_value(row.get("habilitado")),
+            notes="Importado desde ALMACENES.xlsx",
+        )
+
+        exists = connection.execute(
+            """
+            SELECT id
+            FROM storage_locations
+            WHERE center_name = ? AND warehouse_code = ?
+            """,
+            (center_name, warehouse_code),
+        ).fetchone()
+
+        payload = (
+            mobile_unit_id,
+            warehouse_name,
+            (row.get("tipo_de_almacen") or "").strip(),
+            user_name,
+            normalize_yes_no_value(row.get("habilitado")),
+            center_name,
+            warehouse_code,
+        )
+
+        if exists:
+            connection.execute(
+                """
+                UPDATE storage_locations
+                SET mobile_unit_id = ?, warehouse_name = ?, warehouse_type = ?, user_name = ?, is_enabled = ?
+                WHERE center_name = ? AND warehouse_code = ?
+                """,
+                payload,
+            )
+            updated_count += 1
+        else:
+            connection.execute(
+                """
+                INSERT INTO storage_locations (
+                    mobile_unit_id,
+                    center_name,
+                    warehouse_code,
+                    warehouse_name,
+                    warehouse_type,
+                    user_name,
+                    is_enabled
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    mobile_unit_id,
+                    center_name,
+                    warehouse_code,
+                    warehouse_name,
+                    (row.get("tipo_de_almacen") or "").strip(),
+                    user_name,
+                    normalize_yes_no_value(row.get("habilitado")),
+                ),
+            )
+            created_count += 1
+
+    connection.commit()
+    return {
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "skipped_rows": skipped_rows,
+    }
+
+
+def import_equipment_inventory(rows):
+    connection = get_db()
+    created_count = 0
+    updated_count = 0
+    skipped_rows = []
+
+    for index, row in enumerate(rows, start=2):
+        center_name = (row.get("centro") or "").strip()
+        warehouse_code = (row.get("codigo_almacen") or "").strip()
+        warehouse_name = (row.get("almacen") or "").strip()
+        material_code = (row.get("codigo_material") or "").strip()
+        material_name = (row.get("material") or "").strip()
+        serial_number = (row.get("serial") or "").strip()
+
+        if not warehouse_code or not warehouse_name or not material_code or not material_name or not serial_number:
+            skipped_rows.append(
+                f"Fila {index}: faltan datos clave de almacen, material o serial."
+            )
+            continue
+
+        mobile_unit_id = ensure_mobile_unit(
+            connection,
+            warehouse_code,
+            warehouse_description=warehouse_name,
+            notes="Detectado desde StockDeEquipos.xlsx",
+        )
+        storage_location_id = ensure_storage_location(
+            connection,
+            mobile_unit_id,
+            center_name,
+            warehouse_code,
+            warehouse_name,
+        )
+
+        exists = connection.execute(
+            "SELECT id FROM equipment_inventory WHERE serial_number = ?",
+            (serial_number,),
+        ).fetchone()
+
+        payload = (
+            storage_location_id,
+            mobile_unit_id,
+            center_name,
+            warehouse_code,
+            warehouse_name,
+            material_code,
+            material_name,
+            serial_number,
+        )
+
+        if exists:
+            connection.execute(
+                """
+                UPDATE equipment_inventory
+                SET storage_location_id = ?, mobile_unit_id = ?, center_name = ?, warehouse_code = ?, warehouse_name = ?,
+                    material_code = ?, material_name = ?
+                WHERE serial_number = ?
+                """,
+                payload,
+            )
+            updated_count += 1
+        else:
+            connection.execute(
+                """
+                INSERT INTO equipment_inventory (
+                    storage_location_id,
+                    mobile_unit_id,
+                    center_name,
+                    warehouse_code,
+                    warehouse_name,
+                    material_code,
+                    material_name,
+                    serial_number
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                payload,
+            )
+            created_count += 1
+
+    connection.commit()
+    return {
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "skipped_rows": skipped_rows,
+    }
+
+
+def detect_material_column(fieldnames):
+    for candidate in ("material", "material_name"):
+        if candidate in fieldnames:
+            return candidate
+    return next(iter(fieldnames))
+
+
+def detect_tool_matches(source_names):
+    normalized_sources = [normalize_text_value(name) for name in source_names if name]
+    matches = {}
+
+    for item_key, rule in TOOL_MATCH_RULES.items():
+        matched_name = find_first_keyword_match(normalized_sources, rule["keywords"])
+        if matched_name:
+            matches[item_key] = {
+                "label": rule["label"],
+                "status": "detected",
+                "matched_name": matched_name,
+            }
+        else:
+            matches[item_key] = {
+                "label": rule["label"],
+                "status": "missing",
+                "matched_name": None,
+            }
+
+    matches["orden_kit"] = {
+        "label": "Maletin ordenado y completo",
+        "status": "manual_review",
+        "matched_name": None,
+    }
+    return matches
+
+
+def build_mobile_audit_alerts(mobile, summary, tool_matches):
+    alerts = []
+
+    critical_tools = ("fusionadora", "cortadora", "medidor")
+    missing_critical_tools = [
+        tool_matches[item_key]["label"]
+        for item_key in critical_tools
+        if tool_matches.get(item_key, {}).get("status") == "missing"
+    ]
+
+    if missing_critical_tools:
+        alerts.append(
+            {
+                "severity": "critical",
+                "title": "Herramientas criticas sin evidencia",
+                "detail": "No se detectaron: " + ", ".join(missing_critical_tools) + ".",
+            }
+        )
+
+    if summary["equipment_count"] == 0:
+        alerts.append(
+            {
+                "severity": "warning",
+                "title": "Sin equipos serializados",
+                "detail": "El movil no tiene equipos serializados cargados en la base.",
+            }
+        )
+
+    if summary["stock_item_count"] == 0:
+        alerts.append(
+            {
+                "severity": "warning",
+                "title": "Sin stock cargado",
+                "detail": "No hay materiales o herramientas asociadas al movil en inventario.",
+            }
+        )
+    elif summary["stock_units_count"] < 5:
+        alerts.append(
+            {
+                "severity": "warning",
+                "title": "Stock muy bajo",
+                "detail": "El movil tiene pocas unidades cargadas y conviene revisar su kit antes de auditar.",
+            }
+        )
+
+    if not mobile.get("technician_id"):
+        alerts.append(
+            {
+                "severity": "info",
+                "title": "Movil sin tecnico vinculado",
+                "detail": "La auditoria puede guardarse igual, pero conviene relacionar el movil a un tecnico estable.",
+            }
+        )
+
+    if not alerts:
+        alerts.append(
+            {
+                "severity": "ok",
+                "title": "Contexto operativo consistente",
+                "detail": "Se detecta evidencia base para auditar herramientas del movil.",
+            }
+        )
+
+    return alerts
+
+
+def find_first_keyword_match(normalized_sources, keywords):
+    for source in normalized_sources:
+        for keyword in keywords:
+            if normalize_text_value(keyword) in source:
+                return source
+    return None
+
+
+def normalize_text_value(value):
+    normalized = (value or "").strip().lower()
+    replacements = (
+        ("á", "a"),
+        ("é", "e"),
+        ("í", "i"),
+        ("ó", "o"),
+        ("ú", "u"),
+        ("ñ", "n"),
+    )
+    for original, replacement in replacements:
+        normalized = normalized.replace(original, replacement)
+    return normalized
+
+
+def get_mobile_unit_id_by_code(mobile_code):
+    if not mobile_code:
+        return None
+    row = get_db().execute(
+        "SELECT id FROM mobile_units WHERE mobile_code = ?",
+        (mobile_code,),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def ensure_mobile_unit(
+    connection,
+    mobile_code,
+    user_name=None,
+    warehouse_description=None,
+    warehouse_type=None,
+    is_enabled=None,
+    notes=None,
+):
+    existing_row = connection.execute(
+        "SELECT id FROM mobile_units WHERE mobile_code = ?",
+        (mobile_code,),
+    ).fetchone()
+    if existing_row:
+        connection.execute(
+            """
+            UPDATE mobile_units
+            SET
+                user_name = COALESCE(?, user_name),
+                warehouse_description = COALESCE(?, warehouse_description),
+                warehouse_type = COALESCE(?, warehouse_type),
+                is_enabled = COALESCE(?, is_enabled),
+                notes = COALESCE(?, notes)
+            WHERE id = ?
+            """,
+            (
+                empty_as_none(user_name),
+                empty_as_none(warehouse_description),
+                empty_as_none(warehouse_type),
+                is_enabled,
+                empty_as_none(notes),
+                existing_row[0],
+            ),
+        )
+        return existing_row[0]
+
+    cursor = connection.execute(
+        """
+        INSERT INTO mobile_units (
+            mobile_code,
+            user_name,
+            warehouse_description,
+            warehouse_type,
+            is_enabled,
+            notes
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            mobile_code,
+            empty_as_none(user_name),
+            empty_as_none(warehouse_description),
+            empty_as_none(warehouse_type),
+            1 if is_enabled is None else is_enabled,
+            empty_as_none(notes) or "Codigo de movil tecnico importado",
+        ),
+    )
+    return cursor.lastrowid
+
+
+def ensure_storage_location(connection, mobile_unit_id, center_name, warehouse_code, warehouse_name):
+    existing_row = connection.execute(
+        """
+        SELECT id
+        FROM storage_locations
+        WHERE center_name = ? AND warehouse_code = ?
+        """,
+        (center_name, warehouse_code),
+    ).fetchone()
+    if existing_row:
+        connection.execute(
+            """
+            UPDATE storage_locations
+            SET mobile_unit_id = ?, warehouse_name = COALESCE(?, warehouse_name)
+            WHERE id = ?
+            """,
+            (mobile_unit_id, empty_as_none(warehouse_name), existing_row[0]),
+        )
+        return existing_row[0]
+
+    cursor = connection.execute(
+        """
+        INSERT INTO storage_locations (
+            mobile_unit_id,
+            center_name,
+            warehouse_code,
+            warehouse_name,
+            is_enabled
+        ) VALUES (?, ?, ?, ?, 1)
+        """,
+        (mobile_unit_id, center_name or "Sin centro", warehouse_code, warehouse_name or warehouse_code),
+    )
+    return cursor.lastrowid
+
+
+def ensure_material(connection, material_code, material_name):
+    existing_row = connection.execute(
+        "SELECT id FROM materials WHERE material_name = ?",
+        (material_name,),
+    ).fetchone()
+    if existing_row:
+        connection.execute(
+            "UPDATE materials SET material_code = COALESCE(?, material_code) WHERE id = ?",
+            (material_code, existing_row[0]),
+        )
+        return existing_row[0], False
+
+    cursor = connection.execute(
+        "INSERT INTO materials (material_code, material_name) VALUES (?, ?)",
+        (material_code, material_name),
+    )
+    return cursor.lastrowid, True
+
+
+def split_material_label(material_label):
+    cleaned_label = material_label.strip()
+    if cleaned_label.startswith("[") and "]" in cleaned_label:
+        material_code, material_name = cleaned_label[1:].split("]", 1)
+        return material_code.strip(), material_name.strip()
+    return None, cleaned_label
+
+
+def normalize_mobile_code(value):
+    cleaned_value = (value or "").strip()
+    if cleaned_value.lower() == "total":
+        return None
+    return cleaned_value
+
+
+def normalize_active_value(value):
+    normalized = (value or "1").strip().lower()
+    return 0 if normalized in {"0", "false", "no", "inactivo"} else 1
+
+
+def normalize_integer_value(value):
+    cleaned_value = (value or "").strip()
+    if not cleaned_value:
+        return None
+    try:
+        return int(cleaned_value)
+    except ValueError:
+        return None
+
+
+def normalize_float_value(value):
+    cleaned_value = (value or "").strip().replace(",", ".")
+    if not cleaned_value:
+        return None
+    try:
+        return float(cleaned_value)
+    except ValueError:
+        return None
+
+
+def normalize_yes_no_value(value):
+    normalized = (value or "").strip().lower()
+    if normalized in {"si", "sí", "1", "true", "activo", "habilitado"}:
+        return 1
+    if normalized in {"no", "0", "false", "inactivo", "deshabilitado"}:
+        return 0
+    return 1
+
+
+def empty_as_none(value):
+    cleaned_value = (value or "").strip()
+    return cleaned_value or None

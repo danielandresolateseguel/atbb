@@ -1,0 +1,3 @@
+plate,brand,model,year,status,assigned_employee_code,review_date,insurance_expiry
+ABCD-11,Peugeot,Partner,2022,activo,TEC-001,2026-09-15,2026-12-31
+EFGH-22,Citroen,Berlingo,2021,activo,TEC-002,2026-08-10,2026-11-30

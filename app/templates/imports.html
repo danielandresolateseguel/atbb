@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Importacion de datos{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Carga inicial</p>
+        <h2>Importar datos operativos desde CSV o XLSX</h2>
+        <p class="hero-copy">
+            Usa esta pantalla para cargar datos reales de la empresa y reemplazar progresivamente la informacion demo del MVP.
+        </p>
+    </div>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Tecnicos cargados</span>
+        <strong class="stat-value">{{ technicians_count }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Vehiculos cargados</span>
+        <strong class="stat-value">{{ vehicles_count }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Moviles tecnicos</span>
+        <strong class="stat-value">{{ mobile_units_count }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Materiales</span>
+        <strong class="stat-value">{{ stock_stats["materials_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Unidades stock</span>
+        <strong class="stat-value">{{ stock_stats["stock_units_count"]|round(0)|int }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Almacenes</span>
+        <strong class="stat-value">{{ stock_stats["storage_locations_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Equipos serializados</span>
+        <strong class="stat-value">{{ stock_stats["serialized_equipment_count"] }}</strong>
+    </article>
+</section>
+
+<section class="card import-layout">
+    <div class="import-info">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Plantillas</p>
+                <h3>Formatos recomendados</h3>
+            </div>
+        </div>
+        <p class="hero-copy">
+            Descarga estas plantillas y envialas a la empresa para recibir los datos en un formato listo para importar.
+        </p>
+        <div class="button-row">
+            <a class="button button-secondary" href="{{ url_for('static', filename='templates/tecnicos_template.csv') }}">Plantilla tecnicos</a>
+            <a class="button button-secondary" href="{{ url_for('static', filename='templates/vehiculos_template.csv') }}">Plantilla vehiculos</a>
+            <a class="button button-secondary" href="{{ url_for('static', filename='templates/material_stock_template.csv') }}">Plantilla stock</a>
+        </div>
+
+        <div class="guide-list">
+            <article class="guide-card">
+                <strong>Tecnicos</strong>
+                <p>Columnas minimas: <code>employee_code</code>, <code>name</code>, <code>region</code>.</p>
+            </article>
+            <article class="guide-card">
+                <strong>Vehiculos</strong>
+                <p>Columnas minimas: <code>plate</code>, <code>brand</code>, <code>model</code>.</p>
+            </article>
+            <article class="guide-card">
+                <strong>Stock materiales</strong>
+                <p>Formato matriz: primera columna <code>Material</code>, luego una columna por movil tecnico como <code>600</code>, <code>606</code> y opcional <code>Total</code>.</p>
+            </article>
+            <article class="guide-card">
+                <strong>Almacenes</strong>
+                <p>Archivo padrón con columnas como <code>CODIGO</code>, <code>USUARIO</code>, <code>DESCRIPCION</code>, <code>CENTRO</code>, <code>TIPO DE ALMACEN</code> y <code>HABILITADO</code>.</p>
+            </article>
+            <article class="guide-card">
+                <strong>Equipos</strong>
+                <p>Archivo serializado con <code>Centro</code>, <code>Codigo Almacen</code>, <code>Almacen</code>, <code>Codigo Material</code>, <code>Material</code> y <code>Serial</code>.</p>
+            </article>
+            <article class="guide-card">
+                <strong>Actualizacion</strong>
+                <p>Si el codigo del tecnico, el movil, el almacen o el serial ya existen, la app reutiliza ese registro y actualiza la informacion importada.</p>
+            </article>
+        </div>
+
+        {% if materials_summary %}
+            <div class="guide-list">
+                {% for material in materials_summary %}
+                    <article class="guide-card">
+                        <strong>{{ material["material_name"] }}</strong>
+                        <p>Codigo: {{ material["material_code"] or "sin codigo" }} | Stock total: {{ material["total_quantity"]|round(0)|int }} | Moviles: {{ material["mobile_count"] }}</p>
+                    </article>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if storage_locations_summary %}
+            <div class="guide-list">
+                {% for storage in storage_locations_summary %}
+                    <article class="guide-card">
+                        <strong>{{ storage["center_name"] }} | {{ storage["warehouse_code"] }}</strong>
+                        <p>{{ storage["warehouse_name"] }} | Usuario: {{ storage["user_name"] or "sin usuario" }} | Tipo: {{ storage["warehouse_type"] or "sin tipo" }}</p>
+                    </article>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if equipment_summary %}
+            <div class="guide-list">
+                {% for equipment in equipment_summary %}
+                    <article class="guide-card">
+                        <strong>{{ equipment["material_name"] }}</strong>
+                        <p>Centro: {{ equipment["center_name"] }} | Almacen: {{ equipment["warehouse_code"] }} | Seriales: {{ equipment["serial_count"] }}</p>
+                    </article>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+
+    <form method="post" enctype="multipart/form-data" class="import-form">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Importador</p>
+                <h3>Subir archivo CSV</h3>
+            </div>
+        </div>
+
+        <label>
+            <span>Tipo de archivo</span>
+            <select name="import_type" required>
+                <option value="">Selecciona</option>
+                {% for key, config in import_types.items() %}
+                    <option value="{{ key }}">{{ config["label"] }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            <span>Archivo CSV o XLSX</span>
+            <input type="file" name="csv_file" accept=".csv,.xlsx" required>
+        </label>
+
+        <button class="button button-primary" type="submit">Importar archivo</button>
+
+        {% if import_summary %}
+            <section class="import-summary">
+                <strong>Resultado</strong>
+                <p>Creados: {{ import_summary["created_count"] }}</p>
+                <p>Actualizados: {{ import_summary["updated_count"] }}</p>
+                <p>Filas omitidas: {{ import_summary["skipped_rows"]|length }}</p>
+            </section>
+        {% endif %}
+    </form>
+</section>
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Detalle de auditoria{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Revision</p>
+        <h2>Auditoria {{ audit["id"] }}</h2>
+        <p class="hero-copy">
+            {{ audit["audit_date"] }} | {% if audit["mobile_code"] %}Movil {{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <span class="badge badge-{{ audit['result_status']|lower|replace(' ', '-') }}">{{ audit["result_status"] }}</span>
+        <a class="button button-secondary" href="{{ url_for('main.audit_report', audit_id=audit['id']) }}">Ver informe ejecutivo</a>
+    </div>
+</section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Resumen</p>
+                <h3>Datos generales</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Auditor:</strong> {{ audit["auditor_name"] }}</p>
+            <p><strong>Movil tecnico:</strong> {% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}{% if audit["employee_code"] %} | {{ audit["employee_code"] }}{% endif %}</p>
+            <p><strong>Empresa:</strong> {{ audit["technician_company"] or "-" }}</p>
+            <p><strong>Supervisor:</strong> {{ audit["technician_supervisor"] or "-" }}</p>
+            <p><strong>Centro:</strong> {{ audit["technician_center"] or "-" }}</p>
+            <p><strong>Vehiculo:</strong>
+                {% if audit["vehicle_plate"] %}
+                    {% if audit["vehicle_unit_number"] %}{{ audit["vehicle_unit_number"] }} - {% endif %}{{ audit["vehicle_plate"] }}
+                    | {{ audit["vehicle_brand"] }} {{ audit["vehicle_model"] }}
+                    {% if audit["vehicle_odometer_km"] %} | {{ audit["vehicle_odometer_km"] }} km{% endif %}
+                {% else %}
+                    -
+                {% endif %}
+            </p>
+            <p><strong>Ubicacion:</strong> {{ audit["location"] }}</p>
+            <p><strong>Tipo:</strong> {{ audit["installation_type"] }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Resultado</p>
+                <h3>Cierre de auditoria</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Puntaje:</strong> {{ audit["total_score"] }}</p>
+            <p><strong>Fecha registro:</strong> {{ audit["created_at"] }}</p>
+            <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "-" }}</p>
+        </div>
+    </article>
+</section>
+
+<section class="card signature-display-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Validacion</p>
+            <h3>Firma del auditor</h3>
+        </div>
+    </div>
+    {% if audit["auditor_signature_path"] %}
+        <div class="signature-display">
+            <img src="{{ url_for('static', filename=audit['auditor_signature_path']) }}" alt="Firma del auditor {{ audit['auditor_name'] }}" class="signature-image">
+        </div>
+    {% else %}
+        <p class="empty-state">Esta auditoria no tiene firma registrada.</p>
+    {% endif %}
+</section>
+
+<section class="card signature-display-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Validacion</p>
+            <h3>Firma del tecnico</h3>
+        </div>
+    </div>
+    {% if audit["technician_signature_path"] %}
+        <div class="signature-display">
+            <img src="{{ url_for('static', filename=audit['technician_signature_path']) }}" alt="Firma del tecnico" class="signature-image">
+        </div>
+    {% else %}
+        <p class="empty-state">Esta auditoria no tiene firma de tecnico registrada.</p>
+    {% endif %}
+</section>
+
+{% for section_title, items in grouped_items.items() %}
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Checklist</p>
+                <h3>{{ section_title }}</h3>
+            </div>
+        </div>
+        <div class="audit-detail-grid">
+            {% for item in items %}
+                <article class="checklist-item">
+                    <div class="checklist-header">
+                        <div>
+                            <strong>{{ item["item_label"] }}</strong>
+                            {% if item["is_critical"] %}
+                                <span class="critical-chip">Critico</span>
+                            {% endif %}
+                        </div>
+                        <span class="badge badge-{{ item['status']|replace('_', '-') }}">
+                            {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "no_cumple" %}No cumple{% else %}No aplica{% endif %}
+                        </span>
+                    </div>
+
+                    <div class="info-list">
+                        <p><strong>Observacion:</strong> {{ item["notes"] or "-" }}</p>
+                    </div>
+
+                    {% if item["photo_path"] %}
+                        <div class="evidence-block">
+                            <strong>Evidencia</strong>
+                            <a class="table-link" href="{{ url_for('static', filename=item['photo_path']) }}" target="_blank">Abrir foto</a>
+                            <img src="{{ url_for('static', filename=item['photo_path']) }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
+                        </div>
+                    {% else %}
+                        <p class="empty-state">Sin evidencia fotografica.</p>
+                    {% endif %}
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% endfor %}
+{% endblock %}

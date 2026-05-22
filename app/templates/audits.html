@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Historial de auditorias{% endblock %}
+
+{% block content %}
+<section class="section-heading">
+    <div>
+        <p class="eyebrow">Seguimiento</p>
+        <h2>Historial de auditorias</h2>
+    </div>
+    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Nueva auditoria</a>
+</section>
+
+<section class="card table-card">
+    {% if audits %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Movil tecnico</th>
+                        <th>Vehiculo</th>
+                        <th>Ubicacion</th>
+                        <th>Resultado</th>
+                        <th>Puntaje</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for audit in audits %}
+                        <tr>
+                            <td>{{ audit.audit_date }}</td>
+                            <td>{% if audit.mobile_code %}{{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}</td>
+                            <td>{{ audit.vehicle_plate }}</td>
+                            <td>{{ audit.location }}</td>
+                            <td><span class="badge badge-{{ audit.result_status|lower|replace(' ', '-') }}">{{ audit.result_status }}</span></td>
+                            <td>{{ audit.total_score }}</td>
+                            <td><a class="table-link" href="{{ url_for('main.audit_detail', audit_id=audit.id) }}">Ver detalle</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Todavia no hay registros para mostrar.</p>
+    {% endif %}
+</section>
+{% endblock %}

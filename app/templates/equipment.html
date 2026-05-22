@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Equipos serializados{% endblock %}
+
+{% block content %}
+<section class="section-heading">
+    <div>
+        <p class="eyebrow">Consulta operativa</p>
+        <h2>Equipos serializados</h2>
+    </div>
+</section>
+
+<section class="card filter-card">
+    <form method="get" class="filter-grid">
+        <label>
+            <span>Buscar</span>
+            <input type="text" name="q" value="{{ filters['q'] }}" placeholder="Serial, material o almacen">
+        </label>
+        <label>
+            <span>Centro</span>
+            <select name="center">
+                <option value="">Todos</option>
+                {% for center in centers %}
+                    <option value="{{ center }}" {% if filters['center'] == center %}selected{% endif %}>{{ center }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Codigo almacen</span>
+            <select name="warehouse_code">
+                <option value="">Todos</option>
+                {% for warehouse_code in warehouse_codes %}
+                    <option value="{{ warehouse_code }}" {% if filters['warehouse_code'] == warehouse_code %}selected{% endif %}>{{ warehouse_code }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.equipment') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="card table-card">
+    {% if rows %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Centro</th>
+                        <th>Almacen</th>
+                        <th>Movil</th>
+                        <th>Codigo material</th>
+                        <th>Material</th>
+                        <th>Serial</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>{{ row["center_name"] }}</td>
+                            <td>{{ row["warehouse_code"] }} | {{ row["warehouse_name"] }}</td>
+                            <td>
+                                {% if row["mobile_code"] %}
+                                    <a class="table-link" href="{{ url_for('main.mobile_detail', mobile_code=row['mobile_code']) }}">{{ row["mobile_code"] }}</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>{{ row["material_code"] }}</td>
+                            <td>{{ row["material_name"] }}</td>
+                            <td>{{ row["serial_number"] }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">No hay equipos que coincidan con el filtro.</p>
+    {% endif %}
+</section>
+{% endblock %}

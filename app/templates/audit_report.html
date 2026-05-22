@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Informe auditoria {{ audit["id"] }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body class="report-body">
+    <main class="report-page">
+        <section class="report-shell">
+            <header class="report-header">
+                <div>
+                    <p class="eyebrow">Informe ejecutivo</p>
+                    <h1>Auditoria tecnica de terreno</h1>
+                    <p class="report-subtitle">
+                        Presentacion visual para gerencia con hallazgos, evidencias y estado general de cumplimiento.
+                    </p>
+                </div>
+                <div class="report-actions no-print">
+                    <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=audit['id']) }}">Volver al detalle</a>
+                    <a class="button button-primary" href="{{ url_for('main.audit_report', audit_id=audit['id'], print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
+                </div>
+            </header>
+
+            <section class="report-hero">
+                <div class="report-score-card">
+                    <div class="score-ring">
+                        <svg viewBox="0 0 140 140" aria-hidden="true">
+                            <circle class="score-ring-track" cx="70" cy="70" r="54"></circle>
+                            <circle
+                                class="score-ring-progress"
+                                cx="70"
+                                cy="70"
+                                r="54"
+                                style="stroke-dasharray: {{ report['score_ring']['circumference'] }}; stroke-dashoffset: {{ report['score_ring']['offset'] }};"
+                            ></circle>
+                        </svg>
+                        <div class="score-ring-center">
+                            <strong>{{ audit["total_score"] }}%</strong>
+                            <span>Puntaje final</span>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="badge badge-{{ audit['result_status']|lower|replace(' ', '-') }}">{{ audit["result_status"] }}</span>
+                        <h2>Estado general de la auditoria</h2>
+                        <p class="report-subtitle">
+                            {% if report["summary"]["critical_findings_count"] %}
+                                Se detectaron hallazgos criticos que requieren accion inmediata.
+                            {% elif report["summary"]["findings_count"] %}
+                                La auditoria presenta observaciones y requiere seguimiento.
+                            {% else %}
+                                La auditoria cierra sin hallazgos relevantes.
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="report-meta-card">
+                    <div class="report-meta-grid">
+                        <article>
+                            <span>Fecha</span>
+                            <strong>{{ audit["audit_date"] }}</strong>
+                        </article>
+                        <article>
+                            <span>Auditor</span>
+                            <strong>{{ audit["auditor_name"] }}</strong>
+                        </article>
+                        <article>
+                            <span>Movil tecnico</span>
+                            <strong>{% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}</strong>
+                        </article>
+                        <article>
+                            <span>Empresa</span>
+                            <strong>{{ audit["technician_company"] or "-" }}</strong>
+                        </article>
+                        <article>
+                            <span>Supervisor</span>
+                            <strong>{{ audit["technician_supervisor"] or "-" }}</strong>
+                        </article>
+                        <article>
+                            <span>Centro</span>
+                            <strong>{{ audit["technician_center"] or "-" }}</strong>
+                        </article>
+                        <article>
+                            <span>Vehiculo</span>
+                            <strong>
+                                {% if audit["vehicle_plate"] %}
+                                    {% if audit["vehicle_unit_number"] %}{{ audit["vehicle_unit_number"] }} - {% endif %}{{ audit["vehicle_plate"] }}
+                                    {% if audit["vehicle_odometer_km"] %} | {{ audit["vehicle_odometer_km"] }} km{% endif %}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </strong>
+                        </article>
+                        <article>
+                            <span>Ubicacion</span>
+                            <strong>{{ audit["location"] }}</strong>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section class="report-kpis">
+                <article class="report-kpi">
+                    <span>Items evaluados</span>
+                    <strong>{{ report["summary"]["applicable_count"] }}</strong>
+                    <small>sobre {{ report["summary"]["total_items"] }} del checklist</small>
+                </article>
+                <article class="report-kpi">
+                    <span>Cumplimiento</span>
+                    <strong>{{ report["summary"]["compliance_rate"] }}%</strong>
+                    <small>{{ report["summary"]["compliant_count"] }} cumplen</small>
+                </article>
+                <article class="report-kpi">
+                    <span>Hallazgos</span>
+                    <strong>{{ report["summary"]["findings_count"] }}</strong>
+                    <small>{{ report["summary"]["critical_findings_count"] }} criticos</small>
+                </article>
+                <article class="report-kpi">
+                    <span>Evidencias</span>
+                    <strong>{{ report["summary"]["evidence_count"] }}</strong>
+                    <small>{{ report["summary"]["evidence_rate"] }}% de cobertura sobre fallas</small>
+                </article>
+            </section>
+
+            <section class="report-grid">
+                <article class="report-card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Grafico</p>
+                            <h3>Cumplimiento por seccion</h3>
+                        </div>
+                    </div>
+                    <div class="section-bars">
+                        {% for section in report["sections"] %}
+                            <div class="section-bar-row">
+                                <div class="section-bar-label">
+                                    <strong>{{ section["title"] }}</strong>
+                                    <span>{{ section["score"] }}%</span>
+                                </div>
+                                <div class="section-bar-track">
+                                    <div class="section-bar-fill" style="width: {{ section['score'] }}%;"></div>
+                                </div>
+                                <p class="section-bar-meta">
+                                    {{ section["compliant_count"] }} cumple | {{ section["non_compliant_count"] }} no cumple | {{ section["not_applicable_count"] }} no aplica
+                                </p>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </article>
+
+                <article class="report-card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Lectura ejecutiva</p>
+                            <h3>Resumen gerencial</h3>
+                        </div>
+                    </div>
+                    <div class="executive-list">
+                        <p><strong>Tipo de trabajo:</strong> {{ audit["installation_type"] }}</p>
+                        <p><strong>Registro:</strong> {{ audit["created_at"] }}</p>
+                        <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "Sin observacion general registrada." }}</p>
+                        <p><strong>Vehiculo:</strong>
+                            {% if audit["vehicle_plate"] %}
+                                {% if audit["vehicle_unit_number"] %}Nro {{ audit["vehicle_unit_number"] }} | {% endif %}{{ audit["vehicle_plate"] }}
+                                | {{ audit["vehicle_brand"] }} {{ audit["vehicle_model"] }}
+                                {% if audit["vehicle_odometer_km"] %} | {{ audit["vehicle_odometer_km"] }} km{% endif %}
+                            {% else %}
+                                Sin dato vehicular suficiente
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="status-stack">
+                        <div class="status-pill status-ok">Cumple: {{ report["summary"]["compliant_count"] }}</div>
+                        <div class="status-pill status-warning">No aplica: {{ report["summary"]["not_applicable_count"] }}</div>
+                        <div class="status-pill status-danger">No cumple: {{ report["summary"]["non_compliant_count"] }}</div>
+                    </div>
+                </article>
+            </section>
+
+            <section class="report-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Prioridad</p>
+                        <h3>Hallazgos criticos</h3>
+                    </div>
+                </div>
+                {% if report["critical_findings"] %}
+                    <div class="finding-list">
+                        {% for item in report["critical_findings"] %}
+                            <article class="finding-card finding-critical">
+                                <div class="finding-head">
+                                    <strong>{{ item["section_title"] }}</strong>
+                                    <span class="badge badge-no-cumple">Critico</span>
+                                </div>
+                                <h4>{{ item["item_label"] }}</h4>
+                                <p>{{ item["notes"] or "Sin observacion registrada." }}</p>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="empty-state">No se registraron hallazgos criticos en esta auditoria.</p>
+                {% endif %}
+            </section>
+
+            <section class="report-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Evidencia</p>
+                        <h3>Galeria fotografica</h3>
+                    </div>
+                </div>
+                {% if report["evidence_items"] %}
+                    <div class="photo-gallery">
+                        {% for item in report["evidence_items"] %}
+                            <article class="photo-card">
+                                <img src="{{ url_for('static', filename=item['photo_path']) }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
+                                <div class="photo-meta">
+                                    <strong>{{ item["item_label"] }}</strong>
+                                    <span>{{ item["section_title"] }}</span>
+                                    <p>{{ item["notes"] or "Sin observacion." }}</p>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="empty-state">No hay evidencias fotograficas registradas en esta auditoria.</p>
+                {% endif %}
+            </section>
+
+            <section class="report-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Validacion</p>
+                        <h3>Firma del auditor</h3>
+                    </div>
+                </div>
+                {% if audit["auditor_signature_path"] %}
+                    <div class="signature-display report-signature-display">
+                        <img src="{{ url_for('static', filename=audit['auditor_signature_path']) }}" alt="Firma del auditor {{ audit['auditor_name'] }}" class="signature-image">
+                    </div>
+                {% else %}
+                    <p class="empty-state">No se registro firma del auditor en esta auditoria.</p>
+                {% endif %}
+            </section>
+
+            <section class="report-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Validacion</p>
+                        <h3>Firma del tecnico</h3>
+                    </div>
+                </div>
+                {% if audit["technician_signature_path"] %}
+                    <div class="signature-display report-signature-display">
+                        <img src="{{ url_for('static', filename=audit['technician_signature_path']) }}" alt="Firma del tecnico" class="signature-image">
+                    </div>
+                {% else %}
+                    <p class="empty-state">No se registro firma del tecnico en esta auditoria.</p>
+                {% endif %}
+            </section>
+
+            <section class="report-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Checklist</p>
+                        <h3>Detalle por seccion</h3>
+                    </div>
+                </div>
+                <div class="report-sections">
+                    {% for section_title, items in grouped_items.items() %}
+                        <article class="report-section-block">
+                            <h4>{{ section_title }}</h4>
+                            <div class="report-item-list">
+                                {% for item in items %}
+                                    <div class="report-item-row">
+                                        <div>
+                                            <strong>{{ item["item_label"] }}</strong>
+                                            <p>{{ item["notes"] or "Sin observacion." }}</p>
+                                        </div>
+                                        <span class="badge badge-{{ item['status']|replace('_', '-') }}">
+                                            {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "no_cumple" %}No cumple{% else %}No aplica{% endif %}
+                                        </span>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            </section>
+        </section>
+    </main>
+</body>
+</html>

@@ -1,0 +1,564 @@
+{% extends "base.html" %}
+
+{% block title %}Nueva auditoria{% endblock %}
+
+{% block content %}
+<section class="section-heading">
+    <div>
+        <p class="eyebrow">Registro</p>
+        <h2>Nueva auditoria en terreno</h2>
+    </div>
+</section>
+
+<form method="post" class="audit-form" enctype="multipart/form-data">
+    <section class="card form-grid">
+        <label>
+            <span>Fecha</span>
+            <input type="date" name="audit_date" value="{{ request.form.get('audit_date', today) }}" required>
+        </label>
+
+        <label>
+            <span>Auditor</span>
+            <input type="text" name="auditor_name" value="{{ request.form.get('auditor_name', '') }}" placeholder="Nombre del auditor" required>
+        </label>
+
+        <label>
+            <span>Movil tecnico</span>
+            <select name="mobile_unit_id" id="mobile_unit_id" required>
+                <option value="">Selecciona</option>
+                {% for mobile in mobile_units %}
+                    <option
+                        value="{{ mobile.id }}"
+                        data-mobile-code="{{ mobile.mobile_code }}"
+                        data-technician-id="{{ mobile.technician_id or '' }}"
+                        data-technician-name="{{ mobile.technician_name or '' }}"
+                        data-user-name="{{ mobile.user_name or '' }}"
+                        data-description="{{ mobile.warehouse_description or '' }}"
+                        {% if request.form.get('mobile_unit_id') == mobile.id|string %}selected{% endif %}
+                    >
+                        {{ mobile.mobile_code }}{% if mobile.technician_name %} - {{ mobile.technician_name }}{% elif mobile.user_name %} - {{ mobile.user_name }}{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            <span>Vehiculo</span>
+            <select name="vehicle_id" required>
+                <option value="">Selecciona</option>
+                {% for vehicle in vehicles %}
+                    <option value="{{ vehicle.id }}" {% if request.form.get('vehicle_id') == vehicle.id|string %}selected{% endif %}>
+                        {% if vehicle.unit_number %}{{ vehicle.unit_number }} - {% endif %}{{ vehicle.plate }} - {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.odometer_km %} ({{ vehicle.odometer_km }} km){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>
+            <span>Ubicacion</span>
+            <input type="text" name="location" value="{{ request.form.get('location', '') }}" placeholder="Comuna / sector" required>
+        </label>
+
+        <label>
+            <span>Tipo de instalacion</span>
+            <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '') }}" placeholder="Alta, reparacion, migracion" required>
+        </label>
+    </section>
+
+    <section class="card mobile-context-card" id="mobile_context_card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Contexto operativo</p>
+                <h3>Resumen del movil seleccionado</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Movil:</strong> <span id="selected_mobile_code">Sin seleccionar</span></p>
+            <p><strong>Tecnico vinculado:</strong> <span id="selected_mobile_technician">Sin vinculo</span></p>
+            <p><strong>Responsable operativo:</strong> <span id="selected_mobile_user">-</span></p>
+            <p><strong>Descripcion:</strong> <span id="selected_mobile_description">-</span></p>
+        </div>
+        <small>El movil tecnico debe estar vinculado a un tecnico para poder registrar la auditoria.</small>
+    </section>
+
+    <section class="card mobile-snapshot-card" id="mobile_snapshot_card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Herramientas y stock</p>
+                <h3>Referencia rapida para auditar</h3>
+            </div>
+            <span class="weight-chip" id="snapshot_status_chip">Sin datos</span>
+        </div>
+
+        <div class="alert-grid" id="snapshot_alert_grid">
+            <article class="alert-card alert-info">
+                <strong>Sin alertas cargadas</strong>
+                <p>Selecciona un movil para revisar riesgos operativos antes de auditar.</p>
+            </article>
+        </div>
+
+        <div class="stats-grid compact-stats">
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Equipos serializados</span>
+                <strong class="stat-value compact-value" id="snapshot_equipment_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Items en stock</span>
+                <strong class="stat-value compact-value" id="snapshot_stock_items">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Unidades stock</span>
+                <strong class="stat-value compact-value" id="snapshot_stock_units">0</strong>
+            </article>
+        </div>
+
+        <div class="detail-grid">
+            <article class="guide-card">
+                <strong>Equipos / herramientas detectadas</strong>
+                <p>Usa este bloque para contrastar lo que deberia tener el movil con lo que ves en terreno.</p>
+                <ul class="snapshot-list" id="snapshot_equipment_list">
+                    <li>Selecciona un movil para ver sus equipos.</li>
+                </ul>
+            </article>
+            <article class="guide-card">
+                <strong>Stock relevante del movil</strong>
+                <p>Muestra los materiales con mayor cantidad cargada para tener contexto durante la auditoria.</p>
+                <ul class="snapshot-list" id="snapshot_stock_list">
+                    <li>Selecciona un movil para ver su stock.</li>
+                </ul>
+            </article>
+        </div>
+
+        <article class="guide-card">
+            <strong>Sugerencia automatica para checklist de herramientas</strong>
+            <p>Estas coincidencias se basan en nombres cargados en equipos y stock del movil. Son apoyo visual, no reemplazan la revision del auditor.</p>
+            <div class="tool-match-grid" id="tool_match_grid">
+                <div class="tool-match-item tool-match-neutral">Selecciona un movil para evaluar herramientas clave.</div>
+            </div>
+        </article>
+    </section>
+
+    {% for section in checklist_sections %}
+        <section class="card checklist-section">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Checklist</p>
+                    <h3>{{ section["title"] }}</h3>
+                </div>
+                <span class="weight-chip">{{ section["weight"] }}%</span>
+            </div>
+
+            <div class="checklist-items">
+                {% for item in section["items"] %}
+                    <article class="checklist-item">
+                        <div class="checklist-header">
+                            <div>
+                                <strong>{{ item["label"] }}</strong>
+                                {% if item["critical"] %}
+                                    <span class="critical-chip">Critico</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if section["key"] == "herramientas" %}
+                            <p class="auto-hint" data-tool-hint="{{ item['key'] }}">Sugerencia automatica: sin evaluar aun.</p>
+                        {% endif %}
+
+                        <div class="status-group">
+                            <label><input type="radio" name="status__{{ item['key'] }}" value="cumple" {% if request.form.get('status__' + item['key']) == 'cumple' %}checked{% endif %} required> Cumple</label>
+                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_cumple" {% if request.form.get('status__' + item['key']) == 'no_cumple' %}checked{% endif %}> No cumple</label>
+                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                        </div>
+
+                        <label>
+                            <span>Observacion</span>
+                            <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si no cumple">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
+                        </label>
+
+                        <label>
+                            <span>Evidencia fotografica</span>
+                            <input type="file" name="photo__{{ item['key'] }}" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" capture="environment">
+                            <small>Obligatoria si el item queda en `No cumple`.</small>
+                        </label>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+    {% endfor %}
+
+    <section class="card">
+        <label>
+            <span>Comentario general</span>
+            <textarea name="general_notes" rows="4" placeholder="Resumen general de la auditoria">{{ request.form.get('general_notes', '') }}</textarea>
+        </label>
+    </section>
+
+    <section class="card signature-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Cierre</p>
+                <h3>Firma del auditor</h3>
+            </div>
+        </div>
+        <p class="signature-copy">Dibuja la firma para cerrar la auditoria. La misma se incorporara al detalle y al informe ejecutivo.</p>
+        <input type="hidden" name="auditor_signature" id="auditor_signature" value="{{ request.form.get('auditor_signature', '') }}">
+        <div class="signature-pad-shell">
+            <canvas id="auditor_signature_canvas" class="signature-pad" aria-label="Firma del auditor"></canvas>
+        </div>
+        <div class="button-row">
+            <button type="button" class="button button-secondary" id="clear_signature_button">Limpiar firma</button>
+        </div>
+        <small>Campo obligatorio para cerrar la auditoria.</small>
+    </section>
+
+    <section class="card signature-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Cierre</p>
+                <h3>Firma del tecnico</h3>
+            </div>
+        </div>
+        <p class="signature-copy">Dibuja la firma del tecnico para dejar evidencia del cierre en terreno.</p>
+        <p class="signature-copy"><strong>Tecnico:</strong> <span id="signature_technician_name">-</span></p>
+        <input type="hidden" name="technician_signature" id="technician_signature" value="{{ request.form.get('technician_signature', '') }}">
+        <div class="signature-pad-shell">
+            <canvas id="technician_signature_canvas" class="signature-pad" aria-label="Firma del tecnico"></canvas>
+        </div>
+        <div class="button-row">
+            <button type="button" class="button button-secondary" id="clear_technician_signature_button">Limpiar firma</button>
+        </div>
+        <small>Campo obligatorio para cerrar la auditoria.</small>
+    </section>
+
+    <div class="sticky-actions">
+        <button class="button button-primary" type="submit">Guardar auditoria</button>
+        <a class="button button-secondary" href="{{ url_for('main.dashboard') }}">Cancelar</a>
+    </div>
+</form>
+
+<script>
+    (function () {
+        const mobileSelect = document.getElementById("mobile_unit_id");
+        const mobileCodeTarget = document.getElementById("selected_mobile_code");
+        const mobileTechnicianTarget = document.getElementById("selected_mobile_technician");
+        const mobileUserTarget = document.getElementById("selected_mobile_user");
+        const mobileDescriptionTarget = document.getElementById("selected_mobile_description");
+        const signatureTechnicianNameTarget = document.getElementById("signature_technician_name");
+        const statusChip = document.getElementById("snapshot_status_chip");
+        const equipmentCountTarget = document.getElementById("snapshot_equipment_count");
+        const stockItemsTarget = document.getElementById("snapshot_stock_items");
+        const stockUnitsTarget = document.getElementById("snapshot_stock_units");
+        const equipmentListTarget = document.getElementById("snapshot_equipment_list");
+        const stockListTarget = document.getElementById("snapshot_stock_list");
+        const toolMatchGridTarget = document.getElementById("tool_match_grid");
+        const alertGridTarget = document.getElementById("snapshot_alert_grid");
+        const toolHintTargets = document.querySelectorAll("[data-tool-hint]");
+        const auditorSignatureInput = document.getElementById("auditor_signature");
+        const auditorSignatureCanvas = document.getElementById("auditor_signature_canvas");
+        const clearAuditorSignatureButton = document.getElementById("clear_signature_button");
+        const technicianSignatureInput = document.getElementById("technician_signature");
+        const technicianSignatureCanvas = document.getElementById("technician_signature_canvas");
+        const clearTechnicianSignatureButton = document.getElementById("clear_technician_signature_button");
+        const form = document.querySelector(".audit-form");
+        const pads = [];
+
+        function setupSignaturePad(canvas, input, clearButton) {
+            const context = canvas.getContext("2d");
+            let isDrawing = false;
+            let hasSignature = false;
+
+            function clearCanvas() {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                hasSignature = false;
+                input.value = "";
+            }
+
+            function restore(signatureData) {
+                const image = new Image();
+                image.onload = function () {
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(image, 0, 0, canvas.clientWidth, canvas.clientHeight);
+                    hasSignature = true;
+                };
+                image.src = signatureData;
+            }
+
+            function resize() {
+                const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width * ratio;
+                canvas.height = rect.height * ratio;
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                context.scale(ratio, ratio);
+                context.lineCap = "round";
+                context.lineJoin = "round";
+                context.lineWidth = 2.5;
+                context.strokeStyle = "#18212f";
+
+                const existingSignature = input.value;
+                if (existingSignature) {
+                    restore(existingSignature);
+                } else {
+                    clearCanvas();
+                }
+            }
+
+            function getCanvasPoint(event) {
+                const rect = canvas.getBoundingClientRect();
+                return {
+                    x: event.clientX - rect.left,
+                    y: event.clientY - rect.top,
+                };
+            }
+
+            function start(event) {
+                event.preventDefault();
+                const point = getCanvasPoint(event);
+                isDrawing = true;
+                context.beginPath();
+                context.moveTo(point.x, point.y);
+            }
+
+            function draw(event) {
+                if (!isDrawing) {
+                    return;
+                }
+                event.preventDefault();
+                const point = getCanvasPoint(event);
+                context.lineTo(point.x, point.y);
+                context.stroke();
+                hasSignature = true;
+            }
+
+            function end() {
+                if (!isDrawing) {
+                    return;
+                }
+                isDrawing = false;
+                context.closePath();
+                input.value = hasSignature ? canvas.toDataURL("image/png") : "";
+            }
+
+            canvas.addEventListener("pointerdown", start);
+            canvas.addEventListener("pointermove", draw);
+            canvas.addEventListener("pointerup", end);
+            canvas.addEventListener("pointerleave", end);
+            canvas.addEventListener("pointercancel", end);
+            clearButton.addEventListener("click", clearCanvas);
+
+            return {
+                resize,
+                hasSignature: () => Boolean(hasSignature && input.value),
+            };
+        }
+
+        function renderList(target, items, formatter, emptyMessage) {
+            target.innerHTML = "";
+            if (!items || items.length === 0) {
+                const emptyItem = document.createElement("li");
+                emptyItem.textContent = emptyMessage;
+                target.appendChild(emptyItem);
+                return;
+            }
+
+            items.forEach((item) => {
+                const li = document.createElement("li");
+                li.textContent = formatter(item);
+                target.appendChild(li);
+            });
+        }
+
+        function resetSnapshot(message) {
+            statusChip.textContent = message || "Sin datos";
+            equipmentCountTarget.textContent = "0";
+            stockItemsTarget.textContent = "0";
+            stockUnitsTarget.textContent = "0";
+            alertGridTarget.innerHTML = '<article class="alert-card alert-info"><strong>Sin alertas cargadas</strong><p>Selecciona un movil para revisar riesgos operativos antes de auditar.</p></article>';
+            toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">Selecciona un movil para evaluar herramientas clave.</div>';
+            toolHintTargets.forEach((element) => {
+                element.textContent = "Sugerencia automatica: sin evaluar aun.";
+                element.className = "auto-hint";
+            });
+            renderList(
+                equipmentListTarget,
+                [],
+                () => "",
+                "Selecciona un movil para ver sus equipos."
+            );
+            renderList(
+                stockListTarget,
+                [],
+                () => "",
+                "Selecciona un movil para ver su stock."
+            );
+        }
+
+        function renderAlerts(alerts) {
+            alertGridTarget.innerHTML = "";
+            if (!alerts || alerts.length === 0) {
+                alertGridTarget.innerHTML = '<article class="alert-card alert-info"><strong>Sin alertas activas</strong><p>No se detectaron riesgos automaticos para este movil.</p></article>';
+                return;
+            }
+
+            alerts.forEach((alert) => {
+                const article = document.createElement("article");
+                article.className = `alert-card alert-${alert.severity}`;
+                article.innerHTML = `<strong>${alert.title}</strong><p>${alert.detail}</p>`;
+                alertGridTarget.appendChild(article);
+            });
+        }
+
+        function getToolMatchText(match) {
+            if (!match) {
+                return "Sin sugerencia automatica.";
+            }
+            if (match.status === "detected") {
+                return `Detectada en inventario: ${match.matched_name}`;
+            }
+            if (match.status === "missing") {
+                return "Sin evidencia automatica en stock o equipos.";
+            }
+            return "Requiere revision manual del auditor.";
+        }
+
+        function getToolMatchClass(match) {
+            if (!match) {
+                return "tool-match-neutral";
+            }
+            if (match.status === "detected") {
+                return "tool-match-ok";
+            }
+            if (match.status === "missing") {
+                return "tool-match-missing";
+            }
+            return "tool-match-neutral";
+        }
+
+        function renderToolMatches(matches) {
+            toolMatchGridTarget.innerHTML = "";
+            const entries = Object.entries(matches || {});
+            if (entries.length === 0) {
+                toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">No hay coincidencias disponibles.</div>';
+                return;
+            }
+
+            entries.forEach(([itemKey, match]) => {
+                const block = document.createElement("div");
+                block.className = `tool-match-item ${getToolMatchClass(match)}`;
+                block.innerHTML = `<strong>${match.label}</strong><span>${getToolMatchText(match)}</span>`;
+                toolMatchGridTarget.appendChild(block);
+
+                const hintTarget = document.querySelector(`[data-tool-hint="${itemKey}"]`);
+                if (hintTarget) {
+                    hintTarget.textContent = `Sugerencia automatica: ${getToolMatchText(match)}`;
+                    hintTarget.className = `auto-hint ${getToolMatchClass(match)}`;
+                }
+            });
+        }
+
+        async function loadSnapshot(mobileUnitId) {
+            if (!mobileUnitId) {
+                resetSnapshot("Sin datos");
+                return;
+            }
+
+            statusChip.textContent = "Cargando";
+
+            try {
+                const response = await fetch(`/api/mobiles/${mobileUnitId}/audit-context`);
+                if (!response.ok) {
+                    throw new Error("No se pudo cargar el contexto del movil.");
+                }
+
+                const data = await response.json();
+                const severities = (data.alerts || []).map((alert) => alert.severity);
+                statusChip.textContent = severities.includes("critical")
+                    ? "Riesgo critico"
+                    : severities.includes("warning")
+                        ? "Revisar"
+                        : "Contexto listo";
+                equipmentCountTarget.textContent = data.summary.equipment_count || 0;
+                stockItemsTarget.textContent = data.summary.stock_item_count || 0;
+                stockUnitsTarget.textContent = Math.round(data.summary.stock_units_count || 0);
+                renderAlerts(data.alerts);
+
+                renderList(
+                    equipmentListTarget,
+                    data.equipment_rows,
+                    (item) => `${item.material_name}${item.serial_number ? " | Serial: " + item.serial_number : ""}`,
+                    "No hay equipos serializados cargados para este movil."
+                );
+
+                renderList(
+                    stockListTarget,
+                    data.stock_rows,
+                    (item) => `${item.material_name} | Cantidad: ${Math.round(item.quantity || 0)}`,
+                    "No hay stock cargado para este movil."
+                );
+                renderToolMatches(data.tool_matches);
+            } catch (_error) {
+                statusChip.textContent = "Sin datos";
+                alertGridTarget.innerHTML = '<article class="alert-card alert-warning"><strong>No se pudo cargar el contexto</strong><p>Intenta nuevamente o revisa la informacion del movil.</p></article>';
+                toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">No fue posible evaluar las herramientas del movil.</div>';
+                toolHintTargets.forEach((element) => {
+                    element.textContent = "Sugerencia automatica: no fue posible cargar datos del movil.";
+                    element.className = "auto-hint tool-match-neutral";
+                });
+                renderList(
+                    equipmentListTarget,
+                    [],
+                    () => "",
+                    "No fue posible cargar los equipos del movil."
+                );
+                renderList(
+                    stockListTarget,
+                    [],
+                    () => "",
+                    "No fue posible cargar el stock del movil."
+                );
+            }
+        }
+
+        function syncMobileContext() {
+            const option = mobileSelect.options[mobileSelect.selectedIndex];
+            if (!option || !option.value) {
+                mobileCodeTarget.textContent = "Sin seleccionar";
+                mobileTechnicianTarget.textContent = "Sin vinculo";
+                mobileUserTarget.textContent = "-";
+                mobileDescriptionTarget.textContent = "-";
+                resetSnapshot("Sin datos");
+                return;
+            }
+
+            mobileCodeTarget.textContent = option.dataset.mobileCode || option.textContent.trim();
+            mobileTechnicianTarget.textContent = option.dataset.technicianName || "Sin vinculo";
+            signatureTechnicianNameTarget.textContent = option.dataset.technicianName || "-";
+            mobileUserTarget.textContent = option.dataset.userName || "-";
+            mobileDescriptionTarget.textContent = option.dataset.description || "-";
+
+            loadSnapshot(option.value);
+        }
+
+        mobileSelect.addEventListener("change", syncMobileContext);
+        window.addEventListener("resize", resizeSignatureCanvas);
+        form.addEventListener("submit", function (event) {
+            const missingAuditorSignature = !pads[0].hasSignature();
+            const missingTechnicianSignature = !pads[1].hasSignature();
+            if (missingAuditorSignature || missingTechnicianSignature) {
+                event.preventDefault();
+                window.alert("Debes registrar la firma del auditor y del tecnico antes de guardar la auditoria.");
+            }
+        });
+
+        pads.push(setupSignaturePad(auditorSignatureCanvas, auditorSignatureInput, clearAuditorSignatureButton));
+        pads.push(setupSignaturePad(technicianSignatureCanvas, technicianSignatureInput, clearTechnicianSignatureButton));
+
+        function resizeSignatureCanvas() {
+            pads.forEach((pad) => pad.resize());
+        }
+
+        resizeSignatureCanvas();
+        syncMobileContext();
+    }());
+</script>
+{% endblock %}

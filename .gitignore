@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+audit_app.db
+.vscode/

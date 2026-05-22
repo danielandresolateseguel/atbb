@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Stock de materiales{% endblock %}
+
+{% block content %}
+<section class="section-heading">
+    <div>
+        <p class="eyebrow">Consulta operativa</p>
+        <h2>Stock de materiales por movil</h2>
+    </div>
+</section>
+
+<section class="card filter-card">
+    <form method="get" class="filter-grid">
+        <label>
+            <span>Buscar</span>
+            <input type="text" name="q" value="{{ filters['q'] }}" placeholder="Material, codigo o movil">
+        </label>
+        <label>
+            <span>Movil</span>
+            <select name="mobile_code">
+                <option value="">Todos</option>
+                {% for mobile_code in mobile_codes %}
+                    <option value="{{ mobile_code }}" {% if filters['mobile_code'] == mobile_code %}selected{% endif %}>{{ mobile_code }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.materials_stock') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="card table-card">
+    {% if rows %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Codigo material</th>
+                        <th>Material</th>
+                        <th>Movil</th>
+                        <th>Responsable</th>
+                        <th>Descripcion</th>
+                        <th>Cantidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td>{{ row["material_code"] or "-" }}</td>
+                            <td>{{ row["material_name"] }}</td>
+                            <td><a class="table-link" href="{{ url_for('main.mobile_detail', mobile_code=row['mobile_code']) }}">{{ row["mobile_code"] }}</a></td>
+                            <td>{{ row["user_name"] or "-" }}</td>
+                            <td>{{ row["warehouse_description"] or "-" }}</td>
+                            <td>{{ row["quantity"]|round(0)|int }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">No hay stock que coincida con el filtro.</p>
+    {% endif %}
+</section>
+{% endblock %}
