@@ -390,6 +390,7 @@
 
 <script>
     (function () {
+        const DRAFT_STORAGE_KEY = "audit_form_draft_v1";
         const mobileSelect = document.getElementById("mobile_unit_id");
         const mobileCodeTarget = document.getElementById("selected_mobile_code");
         const mobileTechnicianTarget = document.getElementById("selected_mobile_technician");
@@ -435,6 +436,130 @@
         const botiquinExpiryInput = document.getElementById("expiry__botiquin");
         const recordBotiquinTarget = document.getElementById("record_botiquin_expiry");
         const pads = [];
+
+        function clearDraft() {
+            try {
+                window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+            } catch (_error) {
+                // ignore
+            }
+        }
+
+        function readDraft() {
+            try {
+                const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+                if (!raw) {
+                    return null;
+                }
+                return JSON.parse(raw);
+            } catch (_error) {
+                return null;
+            }
+        }
+
+        function writeDraft(payload) {
+            try {
+                window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+            } catch (_error) {
+                // ignore (quota, privacy mode, etc.)
+            }
+        }
+
+        let draftTimer = null;
+        function scheduleDraftSave() {
+            if (draftTimer) {
+                window.clearTimeout(draftTimer);
+            }
+            draftTimer = window.setTimeout(saveDraftNow, 250);
+        }
+
+        function saveDraftNow() {
+            if (!form) {
+                return;
+            }
+
+            const values = {};
+            const fields = Array.from(form.querySelectorAll("[name]"));
+            fields.forEach((field) => {
+                if (!field || field.disabled) {
+                    return;
+                }
+                const tag = String(field.tagName || "").toLowerCase();
+                const type = String(field.type || "").toLowerCase();
+                const name = field.name;
+                if (!name) {
+                    return;
+                }
+                if (type === "file") {
+                    return;
+                }
+                if (type === "radio") {
+                    if (field.checked) {
+                        values[name] = field.value;
+                    }
+                    return;
+                }
+                if (type === "checkbox") {
+                    values[name] = field.checked ? "1" : "0";
+                    return;
+                }
+                if (tag === "select") {
+                    values[name] = field.value;
+                    return;
+                }
+                values[name] = field.value;
+            });
+
+            writeDraft({
+                version: 1,
+                saved_at: new Date().toISOString(),
+                values: values,
+                scroll_y: window.scrollY || 0,
+            });
+        }
+
+        function restoreDraftIfAny() {
+            const draft = readDraft();
+            if (!draft || !draft.values || typeof draft.values !== "object") {
+                return;
+            }
+
+            Object.entries(draft.values).forEach(([name, value]) => {
+                const fields = Array.from(form.querySelectorAll(`[name="${CSS.escape(name)}"]`));
+                if (fields.length === 0) {
+                    return;
+                }
+                const first = fields[0];
+                const type = String(first.type || "").toLowerCase();
+
+                if (type === "radio") {
+                    fields.forEach((field) => {
+                        field.checked = String(field.value) === String(value);
+                    });
+                    return;
+                }
+
+                if (type === "checkbox") {
+                    fields.forEach((field) => {
+                        field.checked = String(value) === "1";
+                    });
+                    return;
+                }
+
+                fields.forEach((field) => {
+                    if (String(field.type || "").toLowerCase() === "file") {
+                        return;
+                    }
+                    field.value = value;
+                });
+            });
+
+            if (typeof draft.scroll_y === "number" && draft.scroll_y > 0) {
+                window.requestAnimationFrame(() => {
+                    window.scrollTo(0, draft.scroll_y);
+                });
+            }
+        }
 
         function setupSignaturePad(canvas, input, clearButton) {
             const context = canvas.getContext("2d");
@@ -511,6 +636,7 @@
                 isDrawing = false;
                 context.closePath();
                 input.value = hasSignature ? canvas.toDataURL("image/png") : "";
+                scheduleDraftSave();
             }
 
             canvas.addEventListener("pointerdown", start);
@@ -519,6 +645,7 @@
             canvas.addEventListener("pointerleave", end);
             canvas.addEventListener("pointercancel", end);
             clearButton.addEventListener("click", clearCanvas);
+            clearButton.addEventListener("click", scheduleDraftSave);
 
             return {
                 resize,
@@ -981,6 +1108,7 @@
             ) {
                 evaluateClosure();
             }
+            scheduleDraftSave();
         });
 
         form.addEventListener("input", function (event) {
@@ -991,6 +1119,7 @@
             if (target.name && target.name.startsWith("notes__")) {
                 evaluateClosure();
             }
+            scheduleDraftSave();
         });
 
         const requestTypeSelects = Array.from(document.querySelectorAll("[data-request-type]"));
@@ -1125,7 +1254,9 @@
             if (missingAuditorSignature || missingTechnicianSignature) {
                 event.preventDefault();
                 window.alert("Debes registrar la firma del auditor y del tecnico antes de guardar la auditoria.");
+                return;
             }
+            clearDraft();
         });
 
         pads.push(setupSignaturePad(auditorSignatureCanvas, auditorSignatureInput, clearAuditorSignatureButton));
@@ -1135,10 +1266,16 @@
             pads.forEach((pad) => pad.resize());
         }
 
+        restoreDraftIfAny();
         resizeSignatureCanvas();
         syncMobileContext();
         syncVehicleContext();
         evaluateClosure();
+
+        const cancelLink = document.querySelector('.sticky-actions a.button-secondary');
+        if (cancelLink) {
+            cancelLink.addEventListener("click", clearDraft);
+        }
     }());
 </script>
 {% endblock %}
