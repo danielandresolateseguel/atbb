@@ -35,6 +35,13 @@ CHECKLIST_SECTIONS = [
                 "label": "Cartuchera para destornilladores mini",
                 "critical": False,
             },
+        ],
+    },
+    {
+        "key": "herramientas_mano",
+        "title": "Herramientas de mano",
+        "weight": 0,
+        "items": [
             {
                 "key": "mano_alicate_chico_aislado",
                 "label": "280300103 - Alicate chico aislado a 1000V",

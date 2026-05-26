@@ -621,14 +621,18 @@ def new_audit():
     herramientas_section = next((section for section in CHECKLIST_SECTIONS if section["key"] == "herramientas"), None)
     herramientas_title = herramientas_section["title"] if herramientas_section else "Herramientas"
     hand_tools = []
-    if herramientas_section:
+    hand_tools_section = next(
+        (section for section in CHECKLIST_SECTIONS if section["key"] == "herramientas_mano"),
+        None,
+    )
+    if hand_tools_section:
         hand_tools = [
             {
                 "key": item["key"],
                 "label": item["label"],
                 "material_code": item.get("material_code") or "",
             }
-            for item in herramientas_section["items"]
+            for item in hand_tools_section["items"]
             if item.get("hand_tool")
         ]
 

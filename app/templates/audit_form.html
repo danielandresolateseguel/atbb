@@ -156,7 +156,7 @@
                 <span class="weight-chip">{{ section["weight"] }}%</span>
             </div>
 
-            {% if section["key"] == "herramientas" and hand_tools %}
+            {% if section["key"] == "herramientas_mano" and hand_tools %}
                 <article class="checklist-item hand-tools-card" id="hand_tools_card">
                     <div class="checklist-header">
                         <div>
@@ -180,7 +180,7 @@
 
             <div class="checklist-items">
                 {% for item in section["items"] %}
-                    {% if section["key"] == "herramientas" and item.get("hand_tool") %}
+                    {% if section["key"] == "herramientas_mano" and item.get("hand_tool") %}
                     {% else %}
                     <article
                         class="checklist-item"
@@ -889,8 +889,8 @@
 
                 function paint() {
                     const value = handToolSelections[tool.key];
-                    yesButton.classList.toggle("button-primary", value === true);
-                    noButton.classList.toggle("button-primary", value === false);
+                        yesButton.className = `button ${value === true ? "button-primary" : "button-secondary"} hand-tool-yes`;
+                        noButton.className = `button ${value === false ? "button-primary" : "button-secondary"} hand-tool-no`;
                 }
 
                 yesButton.addEventListener("click", function () {
