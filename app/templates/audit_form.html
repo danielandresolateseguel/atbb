@@ -253,31 +253,6 @@
                             <input type="file" name="photo__{{ item['key'] }}" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" capture="environment">
                             <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
                         </label>
-
-                        {% if section["key"] == "herramientas" %}
-                            <div class="request-grid">
-                                <label>
-                                    <span>Solicitud</span>
-                                    <select name="request_type__{{ item['key'] }}" data-request-type="{{ item['key'] }}">
-                                        <option value="" {% if not request.form.get('request_type__' + item['key']) %}selected{% endif %}>Sin solicitud</option>
-                                        <option value="reponer" {% if request.form.get('request_type__' + item['key']) == 'reponer' %}selected{% endif %}>Reponer</option>
-                                        <option value="cambiar" {% if request.form.get('request_type__' + item['key']) == 'cambiar' %}selected{% endif %}>Cambiar</option>
-                                    </select>
-                                </label>
-                                <label>
-                                    <span>Codigo</span>
-                                    <input type="text" name="request_code__{{ item['key'] }}" value="{{ request.form.get('request_code__' + item['key'], '') }}" placeholder="Codigo del material" data-request-code="{{ item['key'] }}">
-                                </label>
-                                <label>
-                                    <span>Cantidad</span>
-                                    <input type="text" name="request_qty__{{ item['key'] }}" value="{{ request.form.get('request_qty__' + item['key'], '') }}" inputmode="numeric" placeholder="Opcional">
-                                </label>
-                                <label class="request-notes">
-                                    <span>Nota</span>
-                                    <input type="text" name="request_notes__{{ item['key'] }}" value="{{ request.form.get('request_notes__' + item['key'], '') }}" placeholder="Opcional">
-                                </label>
-                            </div>
-                        {% endif %}
                     </article>
                 {% endfor %}
             </div>
@@ -289,6 +264,37 @@
             <span>Comentario general</span>
             <textarea name="general_notes" rows="4" placeholder="Resumen general de la auditoria">{{ request.form.get('general_notes', '') }}</textarea>
         </label>
+    </section>
+
+    <section class="card" id="supply_requests_card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Accion</p>
+                <h3>Solicitudes de reposicion / cambio</h3>
+            </div>
+            <button class="button button-secondary" type="button" id="add_supply_request_button">Agregar</button>
+        </div>
+
+        {% if not material_index %}
+            <p class="empty-state">Importa Stock de materiales para habilitar la seleccion de codigos.</p>
+        {% endif %}
+
+        <div id="supply_requests_list"></div>
+
+        <datalist id="materials_datalist">
+            {% for code, name in (material_index or {}).items() %}
+                <option value="{{ code }} - {{ name }}"></option>
+            {% endfor %}
+        </datalist>
+
+        <select id="supply_item_options_source" style="display:none">
+            <option value="">Sin item asociado</option>
+            {% if herramientas_section %}
+                {% for item in herramientas_section["items"] %}
+                    <option value="{{ item['key'] }}">{{ item["label"] }}</option>
+                {% endfor %}
+            {% endif %}
+        </select>
     </section>
 
     <section class="card closure-card" id="closure_check_card">
@@ -435,7 +441,167 @@
         const recordRtoTarget = document.getElementById("record_rto_expiry");
         const botiquinExpiryInput = document.getElementById("expiry__botiquin");
         const recordBotiquinTarget = document.getElementById("record_botiquin_expiry");
+        const supplyRequestsList = document.getElementById("supply_requests_list");
+        const addSupplyRequestButton = document.getElementById("add_supply_request_button");
+        const supplyItemOptionsSource = document.getElementById("supply_item_options_source");
         const pads = [];
+
+        const materialIndex = {{ (material_index or {})|tojson }};
+        let nextSupplyRequestIndex = 0;
+
+        function parseMaterialCode(rawValue) {
+            return String(rawValue || "").split(" - ", 1)[0].trim();
+        }
+
+        function buildSupplyItemSelect(index) {
+            const select = document.createElement("select");
+            select.name = `supply_request_item__${index}`;
+            if (supplyItemOptionsSource) {
+                Array.from(supplyItemOptionsSource.options).forEach((option) => {
+                    select.appendChild(option.cloneNode(true));
+                });
+            } else {
+                const fallback = document.createElement("option");
+                fallback.value = "";
+                fallback.textContent = "Sin item asociado";
+                select.appendChild(fallback);
+            }
+            return select;
+        }
+
+        function updateSupplyRowHint(row) {
+            const codeInput = row.querySelector('input[name^="supply_request_code__"]');
+            const hint = row.querySelector("[data-material-hint]");
+            if (!codeInput || !hint) {
+                return;
+            }
+            const code = parseMaterialCode(codeInput.value);
+            const name = code ? materialIndex[code] : "";
+            hint.textContent = name ? name : "-";
+        }
+
+        function addSupplyRequestRow(index) {
+            if (!supplyRequestsList) {
+                return;
+            }
+
+            const row = document.createElement("article");
+            row.className = "card";
+            row.id = `supply_row__${index}`;
+            row.dataset.supplyRow = "1";
+
+            const grid = document.createElement("div");
+            grid.className = "request-grid";
+
+            const typeLabel = document.createElement("label");
+            const typeSpan = document.createElement("span");
+            typeSpan.textContent = "Solicitud";
+            const typeSelect = document.createElement("select");
+            typeSelect.name = `supply_request_type__${index}`;
+            typeSelect.innerHTML = '<option value="">Sin solicitud</option><option value="reponer">Reponer</option><option value="cambiar">Cambiar</option>';
+            typeLabel.appendChild(typeSpan);
+            typeLabel.appendChild(typeSelect);
+
+            const itemLabel = document.createElement("label");
+            itemLabel.className = "request-notes";
+            const itemSpan = document.createElement("span");
+            itemSpan.textContent = "Relacionado a item";
+            const itemSelect = buildSupplyItemSelect(index);
+            itemLabel.appendChild(itemSpan);
+            itemLabel.appendChild(itemSelect);
+
+            const codeLabel = document.createElement("label");
+            const codeSpan = document.createElement("span");
+            codeSpan.textContent = "Codigo";
+            const codeInput = document.createElement("input");
+            codeInput.type = "text";
+            codeInput.name = `supply_request_code__${index}`;
+            codeInput.placeholder = "Ej: 320700029";
+            codeInput.setAttribute("list", "materials_datalist");
+            codeLabel.appendChild(codeSpan);
+            codeLabel.appendChild(codeInput);
+
+            const qtyLabel = document.createElement("label");
+            const qtySpan = document.createElement("span");
+            qtySpan.textContent = "Cantidad";
+            const qtyInput = document.createElement("input");
+            qtyInput.type = "text";
+            qtyInput.name = `supply_request_qty__${index}`;
+            qtyInput.inputMode = "numeric";
+            qtyInput.placeholder = "Opcional";
+            qtyLabel.appendChild(qtySpan);
+            qtyLabel.appendChild(qtyInput);
+
+            const notesLabel = document.createElement("label");
+            notesLabel.className = "request-notes";
+            const notesSpan = document.createElement("span");
+            notesSpan.textContent = "Nota";
+            const notesInput = document.createElement("input");
+            notesInput.type = "text";
+            notesInput.name = `supply_request_notes__${index}`;
+            notesInput.placeholder = "Opcional";
+            notesLabel.appendChild(notesSpan);
+            notesLabel.appendChild(notesInput);
+
+            const materialHint = document.createElement("small");
+            materialHint.dataset.materialHint = "1";
+            materialHint.textContent = "-";
+
+            const actions = document.createElement("div");
+            actions.className = "button-row";
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.className = "button button-secondary";
+            removeButton.textContent = "Quitar";
+            removeButton.addEventListener("click", function () {
+                row.remove();
+                scheduleDraftSave();
+            });
+            actions.appendChild(removeButton);
+
+            grid.appendChild(typeLabel);
+            grid.appendChild(codeLabel);
+            grid.appendChild(qtyLabel);
+            grid.appendChild(itemLabel);
+            grid.appendChild(notesLabel);
+
+            row.appendChild(grid);
+            row.appendChild(materialHint);
+            row.appendChild(actions);
+            supplyRequestsList.appendChild(row);
+
+            codeInput.addEventListener("input", function () {
+                updateSupplyRowHint(row);
+                scheduleDraftSave();
+            });
+            typeSelect.addEventListener("change", scheduleDraftSave);
+            qtyInput.addEventListener("input", scheduleDraftSave);
+            notesInput.addEventListener("input", scheduleDraftSave);
+            itemSelect.addEventListener("change", scheduleDraftSave);
+
+            updateSupplyRowHint(row);
+        }
+
+        function ensureSupplyRowsForDraft(draftValues) {
+            const indices = [];
+            Object.keys(draftValues || {}).forEach((key) => {
+                if (!key.startsWith("supply_request_type__")) {
+                    return;
+                }
+                const rawIndex = key.split("__")[1];
+                const idx = Number.parseInt(rawIndex, 10);
+                if (Number.isFinite(idx)) {
+                    indices.push(idx);
+                }
+            });
+            const uniqueSorted = Array.from(new Set(indices)).sort((a, b) => a - b);
+            uniqueSorted.forEach((idx) => {
+                if (!document.getElementById(`supply_row__${idx}`)) {
+                    addSupplyRequestRow(idx);
+                }
+                nextSupplyRequestIndex = Math.max(nextSupplyRequestIndex, idx + 1);
+            });
+        }
 
         function clearDraft() {
             try {
@@ -522,6 +688,8 @@
                 return;
             }
 
+            ensureSupplyRowsForDraft(draft.values);
+
             Object.entries(draft.values).forEach(([name, value]) => {
                 const fields = Array.from(form.querySelectorAll(`[name="${CSS.escape(name)}"]`));
                 if (fields.length === 0) {
@@ -555,6 +723,12 @@
             if (typeof draft.scroll_y === "number" && draft.scroll_y > 0) {
                 window.requestAnimationFrame(() => {
                     window.scrollTo(0, draft.scroll_y);
+                });
+            }
+
+            if (supplyRequestsList) {
+                Array.from(supplyRequestsList.querySelectorAll("[data-supply-row]")).forEach((row) => {
+                    updateSupplyRowHint(row);
                 });
             }
         }
@@ -1120,43 +1294,6 @@
             scheduleDraftSave();
         });
 
-        const requestTypeSelects = Array.from(document.querySelectorAll("[data-request-type]"));
-
-        function syncRequestRequirement(key) {
-            const typeSelect = document.querySelector(`[data-request-type="${key}"]`);
-            const codeInput = document.querySelector(`[data-request-code="${key}"]`);
-            if (!typeSelect || !codeInput) {
-                return;
-            }
-            const hasRequest = Boolean(typeSelect.value);
-            codeInput.required = hasRequest;
-            if (!hasRequest) {
-                codeInput.value = "";
-            }
-        }
-
-        requestTypeSelects.forEach((select) => {
-            const key = select.dataset.requestType;
-            syncRequestRequirement(key);
-            select.addEventListener("change", function () {
-                syncRequestRequirement(key);
-            });
-        });
-
-        function validateRequests() {
-            for (const select of requestTypeSelects) {
-                const key = select.dataset.requestType;
-                const codeInput = document.querySelector(`[data-request-code="${key}"]`);
-                if (!select.value) {
-                    continue;
-                }
-                if (!codeInput || !codeInput.value.trim()) {
-                    return { valid: false, targetId: `item__${key}` };
-                }
-            }
-            return { valid: true, targetId: null };
-        }
-
         function formatVehicleExpiryText(label, expiry, baseDate) {
             const cleanExpiry = String(expiry || "").trim();
             if (!cleanExpiry) {
@@ -1225,6 +1362,37 @@
             }
         }
 
+        function validateSupplyRequests() {
+            const rows = supplyRequestsList ? Array.from(supplyRequestsList.querySelectorAll("[data-supply-row]")) : [];
+            for (const row of rows) {
+                const typeSelect = row.querySelector('select[name^="supply_request_type__"]');
+                const codeInput = row.querySelector('input[name^="supply_request_code__"]');
+                if (!typeSelect || !codeInput) {
+                    continue;
+                }
+                const typeValue = String(typeSelect.value || "").trim();
+                if (!typeValue) {
+                    continue;
+                }
+                const code = parseMaterialCode(codeInput.value);
+                if (!code) {
+                    return { valid: false, targetId: row.id, message: "Debes indicar el codigo del material en la solicitud." };
+                }
+                if (Object.keys(materialIndex).length > 0 && !materialIndex[code]) {
+                    return { valid: false, targetId: row.id, message: "El codigo indicado no existe en materiales importados." };
+                }
+            }
+            return { valid: true, targetId: null, message: null };
+        }
+
+        if (addSupplyRequestButton) {
+            addSupplyRequestButton.addEventListener("click", function () {
+                addSupplyRequestRow(nextSupplyRequestIndex);
+                nextSupplyRequestIndex += 1;
+                scheduleDraftSave();
+            });
+        }
+
         mobileSelect.addEventListener("change", syncMobileContext);
         if (vehicleSelect) {
             vehicleSelect.addEventListener("change", syncVehicleContext);
@@ -1232,7 +1400,7 @@
         window.addEventListener("resize", resizeSignatureCanvas);
         form.addEventListener("submit", function (event) {
             const closure = evaluateClosure();
-            const requestValidation = validateRequests();
+            const requestValidation = validateSupplyRequests();
             const missingAuditorSignature = !pads[0].hasSignature();
             const missingTechnicianSignature = !pads[1].hasSignature();
             if (closure.blockingIssues.length > 0) {
@@ -1246,7 +1414,7 @@
                 if (target) {
                     target.scrollIntoView({ behavior: "smooth", block: "center" });
                 }
-                window.alert("Si seleccionas una solicitud, debes indicar el codigo correspondiente.");
+                window.alert(requestValidation.message || "Revisa las solicitudes ingresadas.");
                 return;
             }
             if (missingAuditorSignature || missingTechnicianSignature) {

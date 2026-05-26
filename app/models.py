@@ -808,6 +808,38 @@ def fetch_materials_summary(limit=15):
     return [dict(row) for row in rows]
 
 
+def fetch_material_catalog(limit=3000):
+    rows = get_db().execute(
+        """
+        SELECT
+            material_code,
+            material_name
+        FROM materials
+        WHERE material_code IS NOT NULL AND material_code != ''
+        ORDER BY material_name ASC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_material_by_code(material_code):
+    code = (material_code or "").strip()
+    if not code:
+        return None
+    row = get_db().execute(
+        """
+        SELECT material_code, material_name
+        FROM materials
+        WHERE material_code = ?
+        LIMIT 1
+        """,
+        (code,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def fetch_storage_locations_summary(limit=15):
     rows = get_db().execute(
         """

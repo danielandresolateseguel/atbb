@@ -30,6 +30,8 @@ from app.models import (
     fetch_mobile_unit_by_id,
     fetch_mobile_unit_detail,
     fetch_vehicles_by_employee_code,
+    fetch_material_by_code,
+    fetch_material_catalog,
     fetch_materials_summary,
     fetch_material_stock_rows,
     fetch_recent_audits,
@@ -612,6 +614,10 @@ def mobile_audit_context(mobile_unit_id):
 def new_audit():
     mobile_units = fetch_mobile_units()
     vehicles = fetch_vehicles()
+    material_catalog = fetch_material_catalog()
+    material_index = {row["material_code"]: row["material_name"] for row in material_catalog}
+    herramientas_section = next((section for section in CHECKLIST_SECTIONS if section["key"] == "herramientas"), None)
+    herramientas_title = herramientas_section["title"] if herramientas_section else "Herramientas"
 
     if request.method == "POST":
         try:
@@ -693,49 +699,69 @@ def new_audit():
                 update_vehicle_botiquin_expiry(int(vehicle_id_raw), botiquin_expiry)
 
             supply_requests = []
-            for section in CHECKLIST_SECTIONS:
-                if section["key"] != "herramientas":
-                    continue
-                for item in section["items"]:
-                    item_key = item["key"]
-                    request_type = (request.form.get(f"request_type__{item_key}") or "").strip()
-                    if not request_type:
+            indices = []
+            for key in request.form.keys():
+                if key.startswith("supply_request_type__"):
+                    try:
+                        indices.append(int(key.split("__", 1)[1]))
+                    except (IndexError, ValueError):
                         continue
 
-                    if request_type not in {"reponer", "cambiar"}:
-                        raise ValueError(
-                            f"Solicitud invalida para {item['label']}. Usa reponer o cambiar."
-                        )
-
-                    material_code = (request.form.get(f"request_code__{item_key}") or "").strip()
-                    if not material_code:
-                        raise ValueError(
-                            f"Debes indicar el codigo para solicitar {item['label']}."
-                        )
-
-                    quantity_raw = (request.form.get(f"request_qty__{item_key}") or "").strip()
-                    quantity = None
-                    if quantity_raw:
-                        try:
-                            quantity = int(quantity_raw)
-                        except ValueError:
-                            raise ValueError(
-                                f"La cantidad solicitada para {item['label']} no es valida."
-                            )
-
-                    notes = (request.form.get(f"request_notes__{item_key}") or "").strip() or None
-                    supply_requests.append(
-                        {
-                            "section_key": section["key"],
-                            "section_title": section["title"],
-                            "item_key": item_key,
-                            "item_label": item["label"],
-                            "request_type": request_type,
-                            "material_code": material_code,
-                            "quantity": quantity,
-                            "notes": notes,
-                        }
+            if indices:
+                if not material_index:
+                    raise ValueError(
+                        "No hay materiales importados para validar codigos. Importa Stock de materiales primero."
                     )
+
+            herramientas_item_map = {}
+            if herramientas_section:
+                herramientas_item_map = {
+                    item["key"]: item["label"] for item in herramientas_section["items"]
+                }
+
+            for index in sorted(set(indices)):
+                request_type = (request.form.get(f"supply_request_type__{index}") or "").strip()
+                if not request_type:
+                    continue
+
+                if request_type not in {"reponer", "cambiar"}:
+                    raise ValueError("Solicitud invalida. Usa reponer o cambiar.")
+
+                material_code_raw = (request.form.get(f"supply_request_code__{index}") or "").strip()
+                if not material_code_raw:
+                    raise ValueError("Debes indicar el codigo del material en la solicitud.")
+
+                material_code = material_code_raw.split(" - ", 1)[0].strip()
+                material = fetch_material_by_code(material_code)
+                if not material:
+                    raise ValueError(
+                        f"El codigo {material_code} no existe en materiales importados."
+                    )
+
+                quantity_raw = (request.form.get(f"supply_request_qty__{index}") or "").strip()
+                quantity = None
+                if quantity_raw:
+                    try:
+                        quantity = int(quantity_raw)
+                    except ValueError:
+                        raise ValueError("La cantidad solicitada no es valida.")
+
+                notes = (request.form.get(f"supply_request_notes__{index}") or "").strip() or None
+                related_item_key = (request.form.get(f"supply_request_item__{index}") or "").strip()
+                related_label = herramientas_item_map.get(related_item_key)
+
+                supply_requests.append(
+                    {
+                        "section_key": "herramientas",
+                        "section_title": herramientas_title,
+                        "item_key": related_item_key or f"material_{material_code}",
+                        "item_label": related_label or material["material_name"],
+                        "request_type": request_type,
+                        "material_code": material_code,
+                        "quantity": quantity,
+                        "notes": notes,
+                    }
+                )
 
             audit_id = create_audit(
                 {
@@ -767,5 +793,7 @@ def new_audit():
         checklist_sections=CHECKLIST_SECTIONS,
         mobile_units=mobile_units,
         vehicles=vehicles,
+        material_index=material_index,
+        herramientas_section=herramientas_section,
         today=datetime.today().strftime("%Y-%m-%d"),
     )
