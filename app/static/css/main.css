@@ -412,9 +412,10 @@ small {
 
     .sticky-actions .button {
         width: 100%;
-        min-height: 38px;
-        padding: 0.65rem 0.9rem;
-        font-size: 0.95rem;
+        min-height: 34px;
+        padding: 0.55rem 0.75rem;
+        font-size: 0.9rem;
+        border-radius: 10px;
     }
 }
 
