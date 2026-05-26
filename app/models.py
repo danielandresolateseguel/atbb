@@ -368,7 +368,7 @@ def seed_demo_data(connection):
             [
                 (
                     "M-001",
-                    tech_1["id"] if tech_1 else None,
+                    tech_1[0] if tech_1 else None,
                     "Usuario demo 1",
                     "Movil tecnico demo 1",
                     "movil",
@@ -377,7 +377,7 @@ def seed_demo_data(connection):
                 ),
                 (
                     "M-002",
-                    tech_2["id"] if tech_2 else None,
+                    tech_2[0] if tech_2 else None,
                     "Usuario demo 2",
                     "Movil tecnico demo 2",
                     "movil",
