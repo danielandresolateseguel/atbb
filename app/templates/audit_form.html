@@ -441,7 +441,6 @@
             try {
                 window.localStorage.removeItem(DRAFT_STORAGE_KEY);
             } catch (_error) {
-                // ignore
             }
         }
 
@@ -461,7 +460,6 @@
             try {
                 window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
             } catch (_error) {
-                // ignore (quota, privacy mode, etc.)
             }
         }
 
