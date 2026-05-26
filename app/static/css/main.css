@@ -417,6 +417,67 @@ small {
     gap: 1rem;
 }
 
+.modal-open {
+    overflow: hidden;
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    z-index: 50;
+}
+
+.modal {
+    width: min(720px, 100%);
+    max-height: calc(100vh - 2rem);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    overflow: hidden;
+}
+
+.modal-head {
+    padding: 1rem 1rem 0.5rem;
+}
+
+.modal-body {
+    padding: 0.5rem 1rem 1rem;
+    overflow: auto;
+    display: grid;
+    gap: 0.75rem;
+}
+
+.modal-actions {
+    position: sticky;
+    bottom: 0;
+}
+
+.hand-tool-row {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-alt);
+}
+
+.hand-tool-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.hand-tools-card .button-row {
+    grid-template-columns: 1fr;
+}
+
 @media (max-width: 720px) {
     #supply_requests_card .section-heading {
         flex-wrap: wrap;
@@ -425,6 +486,14 @@ small {
 
     #add_supply_request_button {
         width: 100%;
+    }
+
+    .modal-head {
+        padding: 0.9rem 0.9rem 0.4rem;
+    }
+
+    .modal-body {
+        padding: 0.4rem 0.9rem 0.9rem;
     }
 }
 

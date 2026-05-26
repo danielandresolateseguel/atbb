@@ -156,8 +156,32 @@
                 <span class="weight-chip">{{ section["weight"] }}%</span>
             </div>
 
+            {% if section["key"] == "herramientas" and hand_tools %}
+                <article class="checklist-item hand-tools-card" id="hand_tools_card">
+                    <div class="checklist-header">
+                        <div>
+                            <strong>Herramientas de mano</strong>
+                        </div>
+                        <span class="badge" id="hand_tools_badge">Pendiente</span>
+                    </div>
+                    <p class="signature-copy">Responde si el tecnico cuenta con cada herramienta (Si / No).</p>
+                    <div class="button-row">
+                        <button class="button button-secondary" type="button" id="open_hand_tools_button">Completar herramientas</button>
+                    </div>
+                    <small id="hand_tools_summary">Pendiente de completar.</small>
+
+                    {% for tool in hand_tools %}
+                        <input type="hidden" name="status__{{ tool['key'] }}" id="status__{{ tool['key'] }}" value="{{ request.form.get('status__' + tool['key'], '') }}">
+                        <input type="hidden" name="reason__{{ tool['key'] }}" id="reason__{{ tool['key'] }}" value="{{ request.form.get('reason__' + tool['key'], '') }}">
+                        <input type="hidden" name="notes__{{ tool['key'] }}" id="notes__{{ tool['key'] }}" value="{{ request.form.get('notes__' + tool['key'], '') }}">
+                    {% endfor %}
+                </article>
+            {% endif %}
+
             <div class="checklist-items">
                 {% for item in section["items"] %}
+                    {% if section["key"] == "herramientas" and item.get("hand_tool") %}
+                    {% else %}
                     <article
                         class="checklist-item"
                         id="item__{{ item['key'] }}"
@@ -165,6 +189,7 @@
                         data-item-label="{{ item['label'] }}"
                         data-section-title="{{ section['title'] }}"
                         data-critical="{{ 1 if item['critical'] else 0 }}"
+                        data-evidence-required="{{ 1 if item.get('evidence_required', True) else 0 }}"
                     >
                         <div class="checklist-header">
                             <div>
@@ -254,6 +279,7 @@
                             <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
                         </label>
                     </article>
+                    {% endif %}
                 {% endfor %}
             </div>
         </section>
@@ -296,6 +322,25 @@
             {% endif %}
         </select>
     </section>
+
+    {% if hand_tools %}
+        <div class="modal-overlay" id="hand_tools_modal" hidden>
+            <div class="modal">
+                <div class="section-heading modal-head">
+                    <div>
+                        <p class="eyebrow">Checklist</p>
+                        <h3>Herramientas de mano</h3>
+                    </div>
+                    <button class="button button-secondary" type="button" id="close_hand_tools_button">Cerrar</button>
+                </div>
+                <div class="modal-body" id="hand_tools_modal_body"></div>
+                <div class="sticky-actions modal-actions">
+                    <button class="button button-primary" type="button" id="save_hand_tools_button">Guardar</button>
+                    <button class="button button-secondary" type="button" id="cancel_hand_tools_button">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    {% endif %}
 
     <section class="card closure-card" id="closure_check_card">
         <div class="section-heading">
@@ -444,10 +489,21 @@
         const supplyRequestsList = document.getElementById("supply_requests_list");
         const addSupplyRequestButton = document.getElementById("add_supply_request_button");
         const supplyItemOptionsSource = document.getElementById("supply_item_options_source");
+        const handToolsModal = document.getElementById("hand_tools_modal");
+        const handToolsModalBody = document.getElementById("hand_tools_modal_body");
+        const openHandToolsButton = document.getElementById("open_hand_tools_button");
+        const closeHandToolsButton = document.getElementById("close_hand_tools_button");
+        const cancelHandToolsButton = document.getElementById("cancel_hand_tools_button");
+        const saveHandToolsButton = document.getElementById("save_hand_tools_button");
+        const handToolsBadge = document.getElementById("hand_tools_badge");
+        const handToolsSummary = document.getElementById("hand_tools_summary");
+        const handToolsCard = document.getElementById("hand_tools_card");
         const pads = [];
 
         const materialIndex = {{ (material_index or {})|tojson }};
+        const handTools = {{ (hand_tools or [])|tojson }};
         let nextSupplyRequestIndex = 0;
+        const handToolSelections = {};
 
         function parseMaterialCode(rawValue) {
             return String(rawValue || "").split(" - ", 1)[0].trim();
@@ -733,6 +789,128 @@
             }
         }
 
+        function openHandToolsModal() {
+            if (!handToolsModal) {
+                return;
+            }
+            handToolsModal.hidden = false;
+            document.body.classList.add("modal-open");
+        }
+
+        function closeHandToolsModal() {
+            if (!handToolsModal) {
+                return;
+            }
+            handToolsModal.hidden = true;
+            document.body.classList.remove("modal-open");
+        }
+
+        function syncHandToolsStatus() {
+            if (!handTools || handTools.length === 0) {
+                return;
+            }
+            let answered = 0;
+            let missing = 0;
+            handTools.forEach((tool) => {
+                const statusInput = document.getElementById(`status__${tool.key}`);
+                const status = statusInput ? String(statusInput.value || "").trim() : "";
+                if (!status) {
+                    return;
+                }
+                answered += 1;
+                if (status === "no_cumple") {
+                    missing += 1;
+                }
+            });
+            if (handToolsBadge) {
+                handToolsBadge.textContent = answered === handTools.length ? "Listo" : "Pendiente";
+            }
+            if (handToolsSummary) {
+                handToolsSummary.textContent = answered === 0
+                    ? "Pendiente de completar."
+                    : `${answered}/${handTools.length} respondidas | Faltan: ${missing}`;
+            }
+        }
+
+        function setHandToolAnswer(toolKey, hasTool) {
+            const statusInput = document.getElementById(`status__${toolKey}`);
+            const reasonInput = document.getElementById(`reason__${toolKey}`);
+            const notesInput = document.getElementById(`notes__${toolKey}`);
+            if (!statusInput || !reasonInput || !notesInput) {
+                return;
+            }
+            if (hasTool) {
+                statusInput.value = "cumple";
+                reasonInput.value = "";
+                notesInput.value = "";
+            } else {
+                statusInput.value = "no_cumple";
+                reasonInput.value = "no_asignado";
+                notesInput.value = "No disponible";
+            }
+        }
+
+        function buildHandToolsModal() {
+            if (!handToolsModalBody || !handTools || handTools.length === 0) {
+                return;
+            }
+            handToolsModalBody.innerHTML = "";
+            handTools.forEach((tool) => {
+                const currentStatusInput = document.getElementById(`status__${tool.key}`);
+                const currentStatus = currentStatusInput ? String(currentStatusInput.value || "").trim() : "";
+                if (currentStatus === "cumple") {
+                    handToolSelections[tool.key] = true;
+                } else if (currentStatus === "no_cumple") {
+                    handToolSelections[tool.key] = false;
+                } else if (handToolSelections[tool.key] === undefined) {
+                    handToolSelections[tool.key] = null;
+                }
+
+                const row = document.createElement("div");
+                row.className = "hand-tool-row";
+                row.dataset.toolKey = tool.key;
+
+                const title = document.createElement("div");
+                title.className = "hand-tool-title";
+                const label = document.createElement("strong");
+                label.textContent = tool.label;
+                title.appendChild(label);
+
+                const actions = document.createElement("div");
+                actions.className = "hand-tool-actions";
+                const yesButton = document.createElement("button");
+                yesButton.type = "button";
+                yesButton.className = "button button-secondary hand-tool-yes";
+                yesButton.textContent = "Si";
+                const noButton = document.createElement("button");
+                noButton.type = "button";
+                noButton.className = "button button-secondary hand-tool-no";
+                noButton.textContent = "No";
+
+                function paint() {
+                    const value = handToolSelections[tool.key];
+                    yesButton.classList.toggle("button-primary", value === true);
+                    noButton.classList.toggle("button-primary", value === false);
+                }
+
+                yesButton.addEventListener("click", function () {
+                    handToolSelections[tool.key] = true;
+                    paint();
+                });
+                noButton.addEventListener("click", function () {
+                    handToolSelections[tool.key] = false;
+                    paint();
+                });
+
+                actions.appendChild(yesButton);
+                actions.appendChild(noButton);
+                row.appendChild(title);
+                row.appendChild(actions);
+                handToolsModalBody.appendChild(row);
+                paint();
+            });
+        }
+
         function setupSignaturePad(canvas, input, clearButton) {
             const context = canvas.getContext("2d");
             let isDrawing = false;
@@ -860,6 +1038,9 @@
                 item.classList.remove("closure-issue-critical");
 
                 const itemKey = item.dataset.itemKey;
+                if (!itemKey) {
+                    return;
+                }
                 const itemLabel = item.dataset.itemLabel || itemKey;
                 const sectionTitle = item.dataset.sectionTitle || "";
                 const isCritical = item.dataset.critical === "1";
@@ -878,6 +1059,7 @@
                 const notesValue = notesInput ? notesInput.value.trim() : "";
                 const hasPhoto = photoInput ? (photoInput.files && photoInput.files.length > 0) : false;
                 const reasonValue = reasonSelect ? String(reasonSelect.value || "").trim() : "";
+                const evidenceRequired = item.dataset.evidenceRequired !== "0";
                 const expiryValue = expiryInput ? String(expiryInput.value || "").trim() : "";
                 const insuranceValue = insuranceInput ? String(insuranceInput.value || "").trim() : "";
                 const gncValue = gncInput ? String(gncInput.value || "").trim() : "";
@@ -920,7 +1102,7 @@
                     }
 
                     const photoOptional = reasonValue === "olvido" || reasonValue === "perdida";
-                    if (reasonValue && !photoOptional && !hasPhoto) {
+                    if (evidenceRequired && reasonValue && !photoOptional && !hasPhoto) {
                         missingPhotoCount += 1;
                         hasItemIssue = true;
                         issues.push({
@@ -1016,6 +1198,49 @@
                     }
                 }
             });
+
+            if (handTools && handTools.length > 0 && form && handToolsCard) {
+                handTools.forEach((tool) => {
+                    const statusInput = document.getElementById(`status__${tool.key}`);
+                    const reasonInput = document.getElementById(`reason__${tool.key}`);
+                    const notesInput = document.getElementById(`notes__${tool.key}`);
+                    const statusValue = statusInput ? String(statusInput.value || "").trim() : "";
+                    const reasonValue = reasonInput ? String(reasonInput.value || "").trim() : "";
+                    const notesValue = notesInput ? String(notesInput.value || "").trim() : "";
+
+                    if (!statusValue) {
+                        pendingCount += 1;
+                        issues.push({
+                            kind: "pending",
+                            message: `Herramientas de mano: falta responder "${tool.label}".`,
+                            targetId: "hand_tools_card",
+                            isCritical: false,
+                        });
+                        return;
+                    }
+
+                    if (statusValue === "no_cumple") {
+                        if (!notesValue) {
+                            missingNotesCount += 1;
+                            issues.push({
+                                kind: "missing_notes",
+                                message: `Herramientas de mano: falta observacion en "${tool.label}" (No cumple).`,
+                                targetId: "hand_tools_card",
+                                isCritical: false,
+                            });
+                        }
+                        if (!reasonValue) {
+                            missingReasonCount += 1;
+                            issues.push({
+                                kind: "missing_reason",
+                                message: `Herramientas de mano: falta motivo en "${tool.label}" (No cumple).`,
+                                targetId: "hand_tools_card",
+                                isCritical: false,
+                            });
+                        }
+                    }
+                });
+            }
 
             closurePendingCount.textContent = String(pendingCount);
             closureMissingNotesCount.textContent = String(missingNotesCount);
@@ -1393,6 +1618,38 @@
             });
         }
 
+        if (openHandToolsButton) {
+            openHandToolsButton.addEventListener("click", function () {
+                buildHandToolsModal();
+                openHandToolsModal();
+            });
+        }
+        if (closeHandToolsButton) {
+            closeHandToolsButton.addEventListener("click", closeHandToolsModal);
+        }
+        if (cancelHandToolsButton) {
+            cancelHandToolsButton.addEventListener("click", closeHandToolsModal);
+        }
+        if (saveHandToolsButton) {
+            saveHandToolsButton.addEventListener("click", function () {
+                const pending = handTools.filter((tool) => handToolSelections[tool.key] === null);
+                if (pending.length > 0) {
+                    window.alert("Completa todas las herramientas de mano antes de guardar.");
+                    return;
+                }
+                handTools.forEach((tool) => {
+                    setHandToolAnswer(tool.key, handToolSelections[tool.key] === true);
+                });
+                syncHandToolsStatus();
+                evaluateClosure();
+                scheduleDraftSave();
+                closeHandToolsModal();
+                if (handToolsCard) {
+                    handToolsCard.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+            });
+        }
+
         mobileSelect.addEventListener("change", syncMobileContext);
         if (vehicleSelect) {
             vehicleSelect.addEventListener("change", syncVehicleContext);
@@ -1436,6 +1693,7 @@
         resizeSignatureCanvas();
         syncMobileContext();
         syncVehicleContext();
+        syncHandToolsStatus();
         evaluateClosure();
 
         const cancelLink = document.querySelector('.sticky-actions a.button-secondary');

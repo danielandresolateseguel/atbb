@@ -114,6 +114,7 @@ def calculate_section_score(section, form_data, files):
         non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
         notes = form_data.get(f"notes__{item['key']}", "").strip()
         photo_file = files.get(f"photo__{item['key']}")
+        evidence_required = item.get("evidence_required", True)
         extinguisher_expiry = ""
         if item["key"] == "extintor":
             extinguisher_expiry = (form_data.get("expiry__extintor") or "").strip()
@@ -180,7 +181,8 @@ def calculate_section_score(section, form_data, files):
             raise ValueError(f"Debes seleccionar el motivo en: {item['label']}")
 
         requires_photo = (
-            status == "no_cumple"
+            evidence_required
+            and status == "no_cumple"
             and non_compliance_reason not in photo_optional_reasons
         )
         if requires_photo and not has_uploaded_file(photo_file):
@@ -618,6 +620,17 @@ def new_audit():
     material_index = {row["material_code"]: row["material_name"] for row in material_catalog}
     herramientas_section = next((section for section in CHECKLIST_SECTIONS if section["key"] == "herramientas"), None)
     herramientas_title = herramientas_section["title"] if herramientas_section else "Herramientas"
+    hand_tools = []
+    if herramientas_section:
+        hand_tools = [
+            {
+                "key": item["key"],
+                "label": item["label"],
+                "material_code": item.get("material_code") or "",
+            }
+            for item in herramientas_section["items"]
+            if item.get("hand_tool")
+        ]
 
     if request.method == "POST":
         try:
@@ -795,5 +808,6 @@ def new_audit():
         vehicles=vehicles,
         material_index=material_index,
         herramientas_section=herramientas_section,
+        hand_tools=hand_tools,
         today=datetime.today().strftime("%Y-%m-%d"),
     )
