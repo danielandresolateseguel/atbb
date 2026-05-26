@@ -64,12 +64,12 @@
 
         <label>
             <span>Ubicacion</span>
-            <input type="text" name="location" value="{{ request.form.get('location', '') }}" placeholder="Comuna / sector" required>
+            <input type="text" name="location" value="{{ request.form.get('location', '') }}" placeholder="Distrito / Provincia" required>
         </label>
 
         <label>
             <span>Tipo de instalacion</span>
-            <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '') }}" placeholder="Alta, reparacion, migracion" required>
+            <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '') }}" placeholder="Alta / Service" required>
         </label>
     </section>
 
