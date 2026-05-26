@@ -343,6 +343,50 @@ def seed_demo_data(connection):
             ],
         )
 
+    mobile_count = connection.execute("SELECT COUNT(*) FROM mobile_units").fetchone()[0]
+    if mobile_count == 0:
+        tech_1 = connection.execute(
+            "SELECT id FROM technicians WHERE employee_code = ?",
+            ("TEC-001",),
+        ).fetchone()
+        tech_2 = connection.execute(
+            "SELECT id FROM technicians WHERE employee_code = ?",
+            ("TEC-002",),
+        ).fetchone()
+        connection.executemany(
+            """
+            INSERT INTO mobile_units (
+                mobile_code,
+                technician_id,
+                user_name,
+                warehouse_description,
+                warehouse_type,
+                is_enabled,
+                notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "M-001",
+                    tech_1["id"] if tech_1 else None,
+                    "Usuario demo 1",
+                    "Movil tecnico demo 1",
+                    "movil",
+                    1,
+                    "",
+                ),
+                (
+                    "M-002",
+                    tech_2["id"] if tech_2 else None,
+                    "Usuario demo 2",
+                    "Movil tecnico demo 2",
+                    "movil",
+                    1,
+                    "",
+                ),
+            ],
+        )
+
 
 def fetch_technicians():
     rows = get_db().execute(
