@@ -31,7 +31,7 @@
                         value="{{ mobile.id }}"
                         data-mobile-code="{{ mobile.mobile_code }}"
                         data-technician-id="{{ mobile.technician_id or '' }}"
-                        data-technician-name="{{ mobile.technician_name or '' }}"
+                        data-technician-name="{{ mobile.technician_name or mobile.user_name or '' }}"
                         data-user-name="{{ mobile.user_name or '' }}"
                         data-description="{{ mobile.warehouse_description or '' }}"
                         {% if request.form.get('mobile_unit_id') == mobile.id|string %}selected{% endif %}
@@ -44,10 +44,18 @@
 
         <label>
             <span>Vehiculo</span>
-            <select name="vehicle_id" required>
+            <select name="vehicle_id" id="vehicle_id" required>
                 <option value="">Selecciona</option>
                 {% for vehicle in vehicles %}
-                    <option value="{{ vehicle.id }}" {% if request.form.get('vehicle_id') == vehicle.id|string %}selected{% endif %}>
+                    <option
+                        value="{{ vehicle.id }}"
+                        data-extinguisher-expiry="{{ vehicle.extinguisher_expiry or '' }}"
+                        data-insurance-expiry="{{ vehicle.insurance_expiry or '' }}"
+                        data-gnc-expiry="{{ vehicle.gnc_expiry or '' }}"
+                        data-rto-expiry="{{ vehicle.rto_expiry or '' }}"
+                        data-botiquin-expiry="{{ vehicle.botiquin_expiry or '' }}"
+                        {% if request.form.get('vehicle_id') == vehicle.id|string %}selected{% endif %}
+                    >
                         {% if vehicle.unit_number %}{{ vehicle.unit_number }} - {% endif %}{{ vehicle.plate }} - {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.odometer_km %} ({{ vehicle.odometer_km }} km){% endif %}
                     </option>
                 {% endfor %}
@@ -74,11 +82,11 @@
         </div>
         <div class="info-list">
             <p><strong>Movil:</strong> <span id="selected_mobile_code">Sin seleccionar</span></p>
-            <p><strong>Tecnico vinculado:</strong> <span id="selected_mobile_technician">Sin vinculo</span></p>
+            <p><strong>Tecnico (segun movil):</strong> <span id="selected_mobile_technician">Sin dato</span></p>
             <p><strong>Responsable operativo:</strong> <span id="selected_mobile_user">-</span></p>
             <p><strong>Descripcion:</strong> <span id="selected_mobile_description">-</span></p>
         </div>
-        <small>El movil tecnico debe estar vinculado a un tecnico para poder registrar la auditoria.</small>
+        <small>El nombre del tecnico se toma desde el movil seleccionado.</small>
     </section>
 
     <section class="card mobile-snapshot-card" id="mobile_snapshot_card">
@@ -150,7 +158,14 @@
 
             <div class="checklist-items">
                 {% for item in section["items"] %}
-                    <article class="checklist-item">
+                    <article
+                        class="checklist-item"
+                        id="item__{{ item['key'] }}"
+                        data-item-key="{{ item['key'] }}"
+                        data-item-label="{{ item['label'] }}"
+                        data-section-title="{{ section['title'] }}"
+                        data-critical="{{ 1 if item['critical'] else 0 }}"
+                    >
                         <div class="checklist-header">
                             <div>
                                 <strong>{{ item["label"] }}</strong>
@@ -170,6 +185,64 @@
                             <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
                         </div>
 
+                        {% if item["key"] == "extintor" %}
+                            <label>
+                                <span>Fecha de caducidad del extintor</span>
+                                <input type="date" name="expiry__extintor" id="expiry__extintor" value="{{ request.form.get('expiry__extintor', '') }}">
+                                <small>Obligatoria si el item queda en `Cumple`.</small>
+                                <small id="record_extintor_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                            </label>
+                        {% endif %}
+
+                        {% if item["key"] == "documentacion" %}
+                            <label>
+                                <span>Fecha de vencimiento del seguro</span>
+                                <input type="date" name="expiry__insurance" id="expiry__insurance" value="{{ request.form.get('expiry__insurance', '') }}">
+                                <small>Obligatoria si el item queda en `Cumple`.</small>
+                                <small id="record_insurance_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                            </label>
+                        {% endif %}
+
+                        {% if item["key"] == "oblea_gnc" %}
+                            <label>
+                                <span>Fecha de caducidad de la oblea de GNC</span>
+                                <input type="date" name="expiry__gnc" id="expiry__gnc" value="{{ request.form.get('expiry__gnc', '') }}">
+                                <small>Obligatoria si el item queda en `Cumple`.</small>
+                                <small id="record_gnc_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                            </label>
+                        {% endif %}
+
+                        {% if item["key"] == "rto" %}
+                            <label>
+                                <span>Fecha de vencimiento de la RTO</span>
+                                <input type="date" name="expiry__rto" id="expiry__rto" value="{{ request.form.get('expiry__rto', '') }}">
+                                <small>Obligatoria si el item queda en `Cumple`.</small>
+                                <small id="record_rto_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                            </label>
+                        {% endif %}
+
+                        {% if item["key"] == "botiquin" %}
+                            <label>
+                                <span>Fecha de vencimiento del botiquin</span>
+                                <input type="date" name="expiry__botiquin" id="expiry__botiquin" value="{{ request.form.get('expiry__botiquin', '') }}">
+                                <small>Obligatoria si el item queda en `Cumple`.</small>
+                                <small id="record_botiquin_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                            </label>
+                        {% endif %}
+
+                        <label>
+                            <span>Motivo (si no cumple)</span>
+                            <select name="reason__{{ item['key'] }}">
+                                <option value="" {% if not request.form.get('reason__' + item['key']) %}selected{% endif %}>Selecciona</option>
+                                <option value="olvido" {% if request.form.get('reason__' + item['key']) == 'olvido' %}selected{% endif %}>Olvido / En otro cliente</option>
+                                <option value="danio" {% if request.form.get('reason__' + item['key']) == 'danio' %}selected{% endif %}>Daño</option>
+                                <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida / Robo</option>
+                                <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
+                            </select>
+                        </label>
+
                         <label>
                             <span>Observacion</span>
                             <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si no cumple">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
@@ -178,8 +251,33 @@
                         <label>
                             <span>Evidencia fotografica</span>
                             <input type="file" name="photo__{{ item['key'] }}" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" capture="environment">
-                            <small>Obligatoria si el item queda en `No cumple`.</small>
+                            <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
                         </label>
+
+                        {% if section["key"] == "herramientas" %}
+                            <div class="request-grid">
+                                <label>
+                                    <span>Solicitud</span>
+                                    <select name="request_type__{{ item['key'] }}" data-request-type="{{ item['key'] }}">
+                                        <option value="" {% if not request.form.get('request_type__' + item['key']) %}selected{% endif %}>Sin solicitud</option>
+                                        <option value="reponer" {% if request.form.get('request_type__' + item['key']) == 'reponer' %}selected{% endif %}>Reponer</option>
+                                        <option value="cambiar" {% if request.form.get('request_type__' + item['key']) == 'cambiar' %}selected{% endif %}>Cambiar</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    <span>Codigo</span>
+                                    <input type="text" name="request_code__{{ item['key'] }}" value="{{ request.form.get('request_code__' + item['key'], '') }}" placeholder="Codigo del material" data-request-code="{{ item['key'] }}">
+                                </label>
+                                <label>
+                                    <span>Cantidad</span>
+                                    <input type="text" name="request_qty__{{ item['key'] }}" value="{{ request.form.get('request_qty__' + item['key'], '') }}" inputmode="numeric" placeholder="Opcional">
+                                </label>
+                                <label class="request-notes">
+                                    <span>Nota</span>
+                                    <input type="text" name="request_notes__{{ item['key'] }}" value="{{ request.form.get('request_notes__' + item['key'], '') }}" placeholder="Opcional">
+                                </label>
+                            </div>
+                        {% endif %}
                     </article>
                 {% endfor %}
             </div>
@@ -191,6 +289,60 @@
             <span>Comentario general</span>
             <textarea name="general_notes" rows="4" placeholder="Resumen general de la auditoria">{{ request.form.get('general_notes', '') }}</textarea>
         </label>
+    </section>
+
+    <section class="card closure-card" id="closure_check_card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Cierre</p>
+                <h3>Checklist de cierre</h3>
+            </div>
+            <span class="weight-chip" id="closure_status_chip">Sin evaluar</span>
+        </div>
+
+        <div class="stats-grid compact-stats closure-stats">
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Pendientes</span>
+                <strong class="stat-value compact-value" id="closure_pending_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin observacion</span>
+                <strong class="stat-value compact-value" id="closure_missing_notes_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin evidencia</span>
+                <strong class="stat-value compact-value" id="closure_missing_photo_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin motivo</span>
+                <strong class="stat-value compact-value" id="closure_missing_reason_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin vencimiento</span>
+                <strong class="stat-value compact-value" id="closure_missing_expiry_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin seguro</span>
+                <strong class="stat-value compact-value" id="closure_missing_insurance_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin GNC</span>
+                <strong class="stat-value compact-value" id="closure_missing_gnc_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin RTO</span>
+                <strong class="stat-value compact-value" id="closure_missing_rto_count">0</strong>
+            </article>
+            <article class="card stat-card compact-stat">
+                <span class="stat-label">Sin botiquin</span>
+                <strong class="stat-value compact-value" id="closure_missing_botiquin_count">0</strong>
+            </article>
+        </div>
+
+        <ul class="closure-issue-list" id="closure_issue_list">
+            <li>Completa el checklist para ver el resumen de cierre.</li>
+        </ul>
+        <small>Los items en `No cumple` deben tener observacion y motivo. La evidencia fotografica es obligatoria salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
     </section>
 
     <section class="card signature-card">
@@ -260,6 +412,28 @@
         const technicianSignatureCanvas = document.getElementById("technician_signature_canvas");
         const clearTechnicianSignatureButton = document.getElementById("clear_technician_signature_button");
         const form = document.querySelector(".audit-form");
+        const closureStatusChip = document.getElementById("closure_status_chip");
+        const closurePendingCount = document.getElementById("closure_pending_count");
+        const closureMissingNotesCount = document.getElementById("closure_missing_notes_count");
+        const closureMissingPhotoCount = document.getElementById("closure_missing_photo_count");
+        const closureMissingReasonCount = document.getElementById("closure_missing_reason_count");
+        const closureMissingExpiryCount = document.getElementById("closure_missing_expiry_count");
+        const closureMissingInsuranceCount = document.getElementById("closure_missing_insurance_count");
+        const closureMissingGncCount = document.getElementById("closure_missing_gnc_count");
+        const closureMissingRtoCount = document.getElementById("closure_missing_rto_count");
+        const closureMissingBotiquinCount = document.getElementById("closure_missing_botiquin_count");
+        const closureIssueList = document.getElementById("closure_issue_list");
+        const vehicleSelect = document.getElementById("vehicle_id");
+        const extinguisherExpiryInput = document.getElementById("expiry__extintor");
+        const insuranceExpiryInput = document.getElementById("expiry__insurance");
+        const gncExpiryInput = document.getElementById("expiry__gnc");
+        const rtoExpiryInput = document.getElementById("expiry__rto");
+        const recordExtinguisherTarget = document.getElementById("record_extintor_expiry");
+        const recordInsuranceTarget = document.getElementById("record_insurance_expiry");
+        const recordGncTarget = document.getElementById("record_gnc_expiry");
+        const recordRtoTarget = document.getElementById("record_rto_expiry");
+        const botiquinExpiryInput = document.getElementById("expiry__botiquin");
+        const recordBotiquinTarget = document.getElementById("record_botiquin_expiry");
         const pads = [];
 
         function setupSignaturePad(canvas, input, clearButton) {
@@ -366,6 +540,258 @@
                 li.textContent = formatter(item);
                 target.appendChild(li);
             });
+        }
+
+        function evaluateClosure() {
+            const issues = [];
+            const checklistItems = Array.from(document.querySelectorAll(".checklist-item"));
+
+            let pendingCount = 0;
+            let missingNotesCount = 0;
+            let missingPhotoCount = 0;
+            let missingReasonCount = 0;
+            let missingExpiryCount = 0;
+            let missingInsuranceCount = 0;
+            let missingGncCount = 0;
+            let missingRtoCount = 0;
+            let missingBotiquinCount = 0;
+
+            checklistItems.forEach((item) => {
+                item.classList.remove("closure-issue");
+                item.classList.remove("closure-issue-critical");
+
+                const itemKey = item.dataset.itemKey;
+                const itemLabel = item.dataset.itemLabel || itemKey;
+                const sectionTitle = item.dataset.sectionTitle || "";
+                const isCritical = item.dataset.critical === "1";
+
+                const statusInput = item.querySelector(`input[name="status__${itemKey}"]:checked`);
+                const notesInput = item.querySelector(`textarea[name="notes__${itemKey}"]`);
+                const photoInput = item.querySelector(`input[name="photo__${itemKey}"]`);
+                const reasonSelect = item.querySelector(`select[name="reason__${itemKey}"]`);
+                const expiryInput = itemKey === "extintor" ? item.querySelector(`input[name="expiry__extintor"]`) : null;
+                const insuranceInput = itemKey === "documentacion" ? item.querySelector(`input[name="expiry__insurance"]`) : null;
+                const gncInput = itemKey === "oblea_gnc" ? item.querySelector(`input[name="expiry__gnc"]`) : null;
+                const rtoInput = itemKey === "rto" ? item.querySelector(`input[name="expiry__rto"]`) : null;
+                const botiquinInput = itemKey === "botiquin" ? item.querySelector(`input[name="expiry__botiquin"]`) : null;
+
+                const statusValue = statusInput ? statusInput.value : "";
+                const notesValue = notesInput ? notesInput.value.trim() : "";
+                const hasPhoto = photoInput ? (photoInput.files && photoInput.files.length > 0) : false;
+                const reasonValue = reasonSelect ? String(reasonSelect.value || "").trim() : "";
+                const expiryValue = expiryInput ? String(expiryInput.value || "").trim() : "";
+                const insuranceValue = insuranceInput ? String(insuranceInput.value || "").trim() : "";
+                const gncValue = gncInput ? String(gncInput.value || "").trim() : "";
+                const rtoValue = rtoInput ? String(rtoInput.value || "").trim() : "";
+                const botiquinValue = botiquinInput ? String(botiquinInput.value || "").trim() : "";
+
+                if (!statusValue) {
+                    pendingCount += 1;
+                    issues.push({
+                        kind: "pending",
+                        message: `${sectionTitle}: falta responder "${itemLabel}".`,
+                        targetId: item.id,
+                        isCritical: isCritical,
+                    });
+                    return;
+                }
+
+                if (statusValue === "no_cumple") {
+                    let hasItemIssue = false;
+                    if (!notesValue) {
+                        missingNotesCount += 1;
+                        hasItemIssue = true;
+                        issues.push({
+                            kind: "missing_notes",
+                            message: `${sectionTitle}: falta observacion en "${itemLabel}" (No cumple).`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+
+                    if (!reasonValue) {
+                        missingReasonCount += 1;
+                        hasItemIssue = true;
+                        issues.push({
+                            kind: "missing_reason",
+                            message: `${sectionTitle}: falta motivo en "${itemLabel}" (No cumple).`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+
+                    const photoOptional = reasonValue === "olvido" || reasonValue === "perdida";
+                    if (reasonValue && !photoOptional && !hasPhoto) {
+                        missingPhotoCount += 1;
+                        hasItemIssue = true;
+                        issues.push({
+                            kind: "missing_photo",
+                            message: `${sectionTitle}: falta evidencia fotografica en "${itemLabel}" (No cumple).`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+
+                    if (hasItemIssue) {
+                        item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
+                    }
+                }
+
+                if (itemKey === "extintor") {
+                    if (expiryInput) {
+                        expiryInput.required = statusValue === "cumple";
+                    }
+                    if (statusValue === "cumple" && !expiryValue) {
+                        missingExpiryCount += 1;
+                        item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
+                        issues.push({
+                            kind: "missing_expiry",
+                            message: `${sectionTitle}: falta fecha de caducidad en "${itemLabel}".`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+                }
+
+                if (itemKey === "documentacion") {
+                    if (insuranceInput) {
+                        insuranceInput.required = statusValue === "cumple";
+                    }
+                    if (statusValue === "cumple" && !insuranceValue) {
+                        missingInsuranceCount += 1;
+                        item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
+                        issues.push({
+                            kind: "missing_insurance_expiry",
+                            message: `${sectionTitle}: falta vencimiento del seguro en "${itemLabel}".`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+                }
+
+                if (itemKey === "oblea_gnc") {
+                    if (gncInput) {
+                        gncInput.required = statusValue === "cumple";
+                    }
+                    if (statusValue === "cumple" && !gncValue) {
+                        missingGncCount += 1;
+                        item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
+                        issues.push({
+                            kind: "missing_gnc_expiry",
+                            message: `${sectionTitle}: falta caducidad de GNC en "${itemLabel}".`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+                }
+
+                if (itemKey === "rto") {
+                    if (rtoInput) {
+                        rtoInput.required = statusValue === "cumple";
+                    }
+                    if (statusValue === "cumple" && !rtoValue) {
+                        missingRtoCount += 1;
+                        item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
+                        issues.push({
+                            kind: "missing_rto_expiry",
+                            message: `${sectionTitle}: falta vencimiento de la RTO en "${itemLabel}".`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+                }
+
+                if (itemKey === "botiquin") {
+                    if (botiquinInput) {
+                        botiquinInput.required = statusValue === "cumple";
+                    }
+                    if (statusValue === "cumple" && !botiquinValue) {
+                        missingBotiquinCount += 1;
+                        item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
+                        issues.push({
+                            kind: "missing_botiquin_expiry",
+                            message: `${sectionTitle}: falta vencimiento del botiquin en "${itemLabel}".`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+                }
+            });
+
+            closurePendingCount.textContent = String(pendingCount);
+            closureMissingNotesCount.textContent = String(missingNotesCount);
+            closureMissingPhotoCount.textContent = String(missingPhotoCount);
+            closureMissingReasonCount.textContent = String(missingReasonCount);
+            closureMissingExpiryCount.textContent = String(missingExpiryCount);
+            closureMissingInsuranceCount.textContent = String(missingInsuranceCount);
+            closureMissingGncCount.textContent = String(missingGncCount);
+            closureMissingRtoCount.textContent = String(missingRtoCount);
+            closureMissingBotiquinCount.textContent = String(missingBotiquinCount);
+
+            const blockingIssues = issues;
+            const allPending = checklistItems.length > 0 && pendingCount === checklistItems.length;
+            const hasAnyIssue = issues.length > 0;
+
+            if (closureIssueList) {
+                closureIssueList.innerHTML = "";
+                if (allPending) {
+                    const li = document.createElement("li");
+                    li.textContent = "Completa el checklist para ver el resumen de cierre.";
+                    closureIssueList.appendChild(li);
+                } else if (!hasAnyIssue) {
+                    const li = document.createElement("li");
+                    li.textContent = "Listo para cerrar: no hay pendientes ni datos faltantes.";
+                    closureIssueList.appendChild(li);
+                } else {
+                    const kindOrder = {
+                        missing_expiry: 0,
+                        missing_insurance_expiry: 1,
+                        missing_gnc_expiry: 2,
+                        missing_rto_expiry: 3,
+                        missing_botiquin_expiry: 4,
+                        missing_photo: 5,
+                        missing_notes: 6,
+                        missing_reason: 7,
+                        pending: 8,
+                    };
+
+                    const sortedIssues = issues
+                        .slice()
+                        .sort((a, b) => {
+                            const criticalDiff = (b.isCritical ? 1 : 0) - (a.isCritical ? 1 : 0);
+                            if (criticalDiff !== 0) {
+                                return criticalDiff;
+                            }
+                            const kindDiff = (kindOrder[a.kind] ?? 99) - (kindOrder[b.kind] ?? 99);
+                            if (kindDiff !== 0) {
+                                return kindDiff;
+                            }
+                            return String(a.message).localeCompare(String(b.message));
+                        });
+
+                    sortedIssues.slice(0, 25).forEach((issue) => {
+                        const li = document.createElement("li");
+                        const link = document.createElement("a");
+                        link.href = `#${issue.targetId}`;
+                        link.className = "table-link";
+                        link.textContent = issue.message;
+                        li.appendChild(link);
+                        closureIssueList.appendChild(li);
+                    });
+
+                    if (sortedIssues.length > 25) {
+                        const li = document.createElement("li");
+                        li.textContent = `Se muestran 25 de ${sortedIssues.length} observaciones.`;
+                        closureIssueList.appendChild(li);
+                    }
+                }
+            }
+
+            if (closureStatusChip) {
+                closureStatusChip.textContent = allPending ? "Sin evaluar" : (hasAnyIssue ? "Pendiente" : "Listo");
+            }
+
+            return { issues, blockingIssues };
         }
 
         function resetSnapshot(message) {
@@ -523,7 +949,7 @@
             const option = mobileSelect.options[mobileSelect.selectedIndex];
             if (!option || !option.value) {
                 mobileCodeTarget.textContent = "Sin seleccionar";
-                mobileTechnicianTarget.textContent = "Sin vinculo";
+                mobileTechnicianTarget.textContent = "Sin dato";
                 mobileUserTarget.textContent = "-";
                 mobileDescriptionTarget.textContent = "-";
                 resetSnapshot("Sin datos");
@@ -531,7 +957,7 @@
             }
 
             mobileCodeTarget.textContent = option.dataset.mobileCode || option.textContent.trim();
-            mobileTechnicianTarget.textContent = option.dataset.technicianName || "Sin vinculo";
+            mobileTechnicianTarget.textContent = option.dataset.technicianName || "Sin dato";
             signatureTechnicianNameTarget.textContent = option.dataset.technicianName || "-";
             mobileUserTarget.textContent = option.dataset.userName || "-";
             mobileDescriptionTarget.textContent = option.dataset.description || "-";
@@ -539,11 +965,163 @@
             loadSnapshot(option.value);
         }
 
+        form.addEventListener("change", function (event) {
+            const target = event.target;
+            if (!target) {
+                return;
+            }
+            if (
+                target.name
+                && (
+                    target.name.startsWith("status__")
+                    || target.name.startsWith("photo__")
+                    || target.name.startsWith("reason__")
+                    || target.name.startsWith("expiry__")
+                )
+            ) {
+                evaluateClosure();
+            }
+        });
+
+        form.addEventListener("input", function (event) {
+            const target = event.target;
+            if (!target) {
+                return;
+            }
+            if (target.name && target.name.startsWith("notes__")) {
+                evaluateClosure();
+            }
+        });
+
+        const requestTypeSelects = Array.from(document.querySelectorAll("[data-request-type]"));
+
+        function syncRequestRequirement(key) {
+            const typeSelect = document.querySelector(`[data-request-type="${key}"]`);
+            const codeInput = document.querySelector(`[data-request-code="${key}"]`);
+            if (!typeSelect || !codeInput) {
+                return;
+            }
+            const hasRequest = Boolean(typeSelect.value);
+            codeInput.required = hasRequest;
+            if (!hasRequest) {
+                codeInput.value = "";
+            }
+        }
+
+        requestTypeSelects.forEach((select) => {
+            const key = select.dataset.requestType;
+            syncRequestRequirement(key);
+            select.addEventListener("change", function () {
+                syncRequestRequirement(key);
+            });
+        });
+
+        function validateRequests() {
+            for (const select of requestTypeSelects) {
+                const key = select.dataset.requestType;
+                const codeInput = document.querySelector(`[data-request-code="${key}"]`);
+                if (!select.value) {
+                    continue;
+                }
+                if (!codeInput || !codeInput.value.trim()) {
+                    return { valid: false, targetId: `item__${key}` };
+                }
+            }
+            return { valid: true, targetId: null };
+        }
+
+        function formatVehicleExpiryText(label, expiry, baseDate) {
+            const cleanExpiry = String(expiry || "").trim();
+            if (!cleanExpiry) {
+                return `Registro del vehiculo: sin fecha registrada.`;
+            }
+
+            const expiryDate = new Date(`${cleanExpiry}T00:00:00`);
+            if (Number.isNaN(expiryDate.getTime())) {
+                return `Registro del vehiculo: ${label} con fecha invalida (${cleanExpiry}).`;
+            }
+
+            const diffDays = Math.ceil((expiryDate.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
+            if (diffDays < 0) {
+                return `Registro del vehiculo: vencido (venció el ${cleanExpiry}).`;
+            }
+            if (diffDays <= 30) {
+                return `Registro del vehiculo: por vencer (vence el ${cleanExpiry}).`;
+            }
+            return `Registro del vehiculo: vence el ${cleanExpiry}.`;
+        }
+
+        function syncVehicleContext() {
+            if (!vehicleSelect) {
+                return;
+            }
+            const option = vehicleSelect.options[vehicleSelect.selectedIndex];
+            const expiry = option ? String(option.dataset.extinguisherExpiry || "").trim() : "";
+            const insuranceExpiry = option ? String(option.dataset.insuranceExpiry || "").trim() : "";
+            const gncExpiry = option ? String(option.dataset.gncExpiry || "").trim() : "";
+            const rtoExpiry = option ? String(option.dataset.rtoExpiry || "").trim() : "";
+            const botiquinExpiry = option ? String(option.dataset.botiquinExpiry || "").trim() : "";
+
+            if (extinguisherExpiryInput && !String(extinguisherExpiryInput.value || "").trim()) {
+                extinguisherExpiryInput.value = expiry;
+            }
+            if (insuranceExpiryInput && !String(insuranceExpiryInput.value || "").trim()) {
+                insuranceExpiryInput.value = insuranceExpiry;
+            }
+            if (gncExpiryInput && !String(gncExpiryInput.value || "").trim()) {
+                gncExpiryInput.value = gncExpiry;
+            }
+            if (rtoExpiryInput && !String(rtoExpiryInput.value || "").trim()) {
+                rtoExpiryInput.value = rtoExpiry;
+            }
+            if (botiquinExpiryInput && !String(botiquinExpiryInput.value || "").trim()) {
+                botiquinExpiryInput.value = botiquinExpiry;
+            }
+
+            const auditDateInput = document.querySelector('input[name="audit_date"]');
+            const baseDate = auditDateInput && auditDateInput.value ? new Date(`${auditDateInput.value}T00:00:00`) : new Date();
+
+            if (recordExtinguisherTarget) {
+                recordExtinguisherTarget.textContent = formatVehicleExpiryText("Extintor", expiry, baseDate);
+            }
+            if (recordInsuranceTarget) {
+                recordInsuranceTarget.textContent = formatVehicleExpiryText("Seguro", insuranceExpiry, baseDate);
+            }
+            if (recordGncTarget) {
+                recordGncTarget.textContent = formatVehicleExpiryText("GNC", gncExpiry, baseDate);
+            }
+            if (recordRtoTarget) {
+                recordRtoTarget.textContent = formatVehicleExpiryText("RTO", rtoExpiry, baseDate);
+            }
+            if (recordBotiquinTarget) {
+                recordBotiquinTarget.textContent = formatVehicleExpiryText("Botiquin", botiquinExpiry, baseDate);
+            }
+        }
+
         mobileSelect.addEventListener("change", syncMobileContext);
+        if (vehicleSelect) {
+            vehicleSelect.addEventListener("change", syncVehicleContext);
+        }
         window.addEventListener("resize", resizeSignatureCanvas);
         form.addEventListener("submit", function (event) {
+            const closure = evaluateClosure();
+            const requestValidation = validateRequests();
             const missingAuditorSignature = !pads[0].hasSignature();
             const missingTechnicianSignature = !pads[1].hasSignature();
+            if (closure.blockingIssues.length > 0) {
+                event.preventDefault();
+                document.getElementById("closure_check_card").scrollIntoView({ behavior: "smooth", block: "start" });
+                return;
+            }
+            if (!requestValidation.valid) {
+                event.preventDefault();
+                const target = document.getElementById(requestValidation.targetId);
+                if (target) {
+                    target.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+                window.alert("Si seleccionas una solicitud, debes indicar el codigo correspondiente.");
+                return;
+            }
             if (missingAuditorSignature || missingTechnicianSignature) {
                 event.preventDefault();
                 window.alert("Debes registrar la firma del auditor y del tecnico antes de guardar la auditoria.");
@@ -559,6 +1137,8 @@
 
         resizeSignatureCanvas();
         syncMobileContext();
+        syncVehicleContext();
+        evaluateClosure();
     }());
 </script>
 {% endblock %}

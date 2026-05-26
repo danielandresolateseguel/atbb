@@ -12,6 +12,7 @@ from app.models import (
     create_audit,
     fetch_audit_detail,
     fetch_audit_items,
+    fetch_audit_supply_requests,
     fetch_all_audits,
     fetch_dashboard_stats,
     fetch_distinct_mobile_codes,
@@ -46,6 +47,11 @@ from app.models import (
     import_technicians,
     import_vehicles,
     update_mobile_unit_technician,
+    update_vehicle_extinguisher_expiry,
+    update_vehicle_insurance_expiry,
+    update_vehicle_gnc_expiry,
+    update_vehicle_rto_expiry,
+    update_vehicle_botiquin_expiry,
 )
 from app.spreadsheets import parse_tabular_upload
 
@@ -99,18 +105,83 @@ def calculate_section_score(section, form_data, files):
     has_critical_failure = False
     serialized_items = []
 
+    photo_optional_reasons = {"olvido", "perdida"}
+
     for item in section["items"]:
         status = form_data.get(f"status__{item['key']}", "")
+        non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
         notes = form_data.get(f"notes__{item['key']}", "").strip()
         photo_file = files.get(f"photo__{item['key']}")
+        extinguisher_expiry = ""
+        if item["key"] == "extintor":
+            extinguisher_expiry = (form_data.get("expiry__extintor") or "").strip()
+        insurance_expiry = ""
+        if item["key"] == "documentacion":
+            insurance_expiry = (form_data.get("expiry__insurance") or "").strip()
+        gnc_expiry = ""
+        if item["key"] == "oblea_gnc":
+            gnc_expiry = (form_data.get("expiry__gnc") or "").strip()
+        rto_expiry = ""
+        if item["key"] == "rto":
+            rto_expiry = (form_data.get("expiry__rto") or "").strip()
+        botiquin_expiry = ""
+        if item["key"] == "botiquin":
+            botiquin_expiry = (form_data.get("expiry__botiquin") or "").strip()
 
         if not status:
             raise ValueError(f"Debes responder el item: {item['label']}")
 
+        if item["key"] == "extintor" and status == "cumple":
+            if not extinguisher_expiry:
+                raise ValueError("Debes indicar la fecha de caducidad del extintor.")
+            try:
+                datetime.fromisoformat(extinguisher_expiry)
+            except ValueError as exc:
+                raise ValueError("La fecha de caducidad del extintor no es valida.") from exc
+
+        if item["key"] == "documentacion" and status == "cumple":
+            if not insurance_expiry:
+                raise ValueError("Debes indicar la fecha de vencimiento del seguro del vehiculo.")
+            try:
+                datetime.fromisoformat(insurance_expiry)
+            except ValueError as exc:
+                raise ValueError("La fecha de vencimiento del seguro no es valida.") from exc
+
+        if item["key"] == "oblea_gnc" and status == "cumple":
+            if not gnc_expiry:
+                raise ValueError("Debes indicar la fecha de caducidad de la oblea de GNC.")
+            try:
+                datetime.fromisoformat(gnc_expiry)
+            except ValueError as exc:
+                raise ValueError("La fecha de caducidad de la oblea de GNC no es valida.") from exc
+
+        if item["key"] == "rto" and status == "cumple":
+            if not rto_expiry:
+                raise ValueError("Debes indicar la fecha de vencimiento de la RTO.")
+            try:
+                datetime.fromisoformat(rto_expiry)
+            except ValueError as exc:
+                raise ValueError("La fecha de vencimiento de la RTO no es valida.") from exc
+
+        if item["key"] == "botiquin" and status == "cumple":
+            if not botiquin_expiry:
+                raise ValueError("Debes indicar la fecha de vencimiento del botiquin.")
+            try:
+                datetime.fromisoformat(botiquin_expiry)
+            except ValueError as exc:
+                raise ValueError("La fecha de vencimiento del botiquin no es valida.") from exc
+
         if status == "no_cumple" and not notes:
             raise ValueError(f"Debes agregar observacion en: {item['label']}")
 
-        if status == "no_cumple" and not has_uploaded_file(photo_file):
+        if status == "no_cumple" and not non_compliance_reason:
+            raise ValueError(f"Debes seleccionar el motivo en: {item['label']}")
+
+        requires_photo = (
+            status == "no_cumple"
+            and non_compliance_reason not in photo_optional_reasons
+        )
+        if requires_photo and not has_uploaded_file(photo_file):
             raise ValueError(f"Debes adjuntar evidencia fotografica en: {item['label']}")
 
         if status != "no_aplica":
@@ -129,6 +200,7 @@ def calculate_section_score(section, form_data, files):
                 "item_label": item["label"],
                 "status": status,
                 "is_critical": item["critical"],
+                "non_compliance_reason": non_compliance_reason or None,
                 "notes": notes or None,
                 "photo_file": photo_file if has_uploaded_file(photo_file) else None,
             }
@@ -362,11 +434,13 @@ def audit_detail(audit_id):
 
     items = fetch_audit_items(audit_id)
     grouped_items = build_grouped_audit_items(items)
+    supply_requests = fetch_audit_supply_requests(audit_id)
 
     return render_template(
         "audit_detail.html",
         audit=audit,
         grouped_items=grouped_items,
+        supply_requests=supply_requests,
     )
 
 
@@ -378,11 +452,13 @@ def audit_report(audit_id):
 
     items = fetch_audit_items(audit_id)
     report = build_audit_report_metrics(audit, items)
+    supply_requests = fetch_audit_supply_requests(audit_id)
     return render_template(
         "audit_report.html",
         audit=audit,
         grouped_items=build_grouped_audit_items(items),
         report=report,
+        supply_requests=supply_requests,
         print_mode=request.args.get("print") == "1",
     )
 
@@ -548,11 +624,12 @@ def new_audit():
             if not selected_mobile:
                 raise ValueError("Debes seleccionar un movil tecnico valido.")
 
-            resolved_technician_id = selected_mobile["technician_id"]
-            if resolved_technician_id is None:
-                raise ValueError(
-                    f"El movil tecnico {selected_mobile['mobile_code']} no tiene tecnico vinculado."
-                )
+            technician_display_name = (
+                selected_mobile.get("technician_name")
+                or selected_mobile.get("user_name")
+                or None
+            )
+            technician_employee_code = selected_mobile.get("employee_code") or None
 
             vehicle_id_raw = request.form.get("vehicle_id", "").strip()
             if not vehicle_id_raw:
@@ -570,22 +647,115 @@ def new_audit():
                 audit_date,
             )
 
+            extinguisher_expiry = (request.form.get("expiry__extintor") or "").strip()
+            extintor_status = (request.form.get("status__extintor") or "").strip()
+            if extintor_status == "cumple" and extinguisher_expiry:
+                if extinguisher_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de caducidad del extintor no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_extinguisher_expiry(int(vehicle_id_raw), extinguisher_expiry)
+
+            insurance_expiry = (request.form.get("expiry__insurance") or "").strip()
+            documentacion_status = (request.form.get("status__documentacion") or "").strip()
+            if documentacion_status == "cumple" and insurance_expiry:
+                if insurance_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de vencimiento del seguro no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_insurance_expiry(int(vehicle_id_raw), insurance_expiry)
+
+            gnc_expiry = (request.form.get("expiry__gnc") or "").strip()
+            gnc_status = (request.form.get("status__oblea_gnc") or "").strip()
+            if gnc_status == "cumple" and gnc_expiry:
+                if gnc_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de caducidad de la oblea de GNC no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_gnc_expiry(int(vehicle_id_raw), gnc_expiry)
+
+            rto_expiry = (request.form.get("expiry__rto") or "").strip()
+            rto_status = (request.form.get("status__rto") or "").strip()
+            if rto_status == "cumple" and rto_expiry:
+                if rto_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de vencimiento de la RTO no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_rto_expiry(int(vehicle_id_raw), rto_expiry)
+
+            botiquin_expiry = (request.form.get("expiry__botiquin") or "").strip()
+            botiquin_status = (request.form.get("status__botiquin") or "").strip()
+            if botiquin_status == "cumple" and botiquin_expiry:
+                if botiquin_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de vencimiento del botiquin no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_botiquin_expiry(int(vehicle_id_raw), botiquin_expiry)
+
+            supply_requests = []
+            for section in CHECKLIST_SECTIONS:
+                if section["key"] != "herramientas":
+                    continue
+                for item in section["items"]:
+                    item_key = item["key"]
+                    request_type = (request.form.get(f"request_type__{item_key}") or "").strip()
+                    if not request_type:
+                        continue
+
+                    if request_type not in {"reponer", "cambiar"}:
+                        raise ValueError(
+                            f"Solicitud invalida para {item['label']}. Usa reponer o cambiar."
+                        )
+
+                    material_code = (request.form.get(f"request_code__{item_key}") or "").strip()
+                    if not material_code:
+                        raise ValueError(
+                            f"Debes indicar el codigo para solicitar {item['label']}."
+                        )
+
+                    quantity_raw = (request.form.get(f"request_qty__{item_key}") or "").strip()
+                    quantity = None
+                    if quantity_raw:
+                        try:
+                            quantity = int(quantity_raw)
+                        except ValueError:
+                            raise ValueError(
+                                f"La cantidad solicitada para {item['label']} no es valida."
+                            )
+
+                    notes = (request.form.get(f"request_notes__{item_key}") or "").strip() or None
+                    supply_requests.append(
+                        {
+                            "section_key": section["key"],
+                            "section_title": section["title"],
+                            "item_key": item_key,
+                            "item_label": item["label"],
+                            "request_type": request_type,
+                            "material_code": material_code,
+                            "quantity": quantity,
+                            "notes": notes,
+                        }
+                    )
+
             audit_id = create_audit(
                 {
                     "audit_date": audit_date,
                     "auditor_name": request.form["auditor_name"].strip(),
                     "auditor_signature_path": auditor_signature_path,
                     "technician_signature_path": technician_signature_path,
+                    "technician_display_name": technician_display_name,
+                    "technician_employee_code": technician_employee_code,
                     "location": request.form["location"].strip(),
                     "installation_type": request.form["installation_type"].strip(),
                     "mobile_unit_id": mobile_unit_id,
-                    "technician_id": resolved_technician_id,
+                    "technician_id": selected_mobile.get("technician_id"),
                     "vehicle_id": int(vehicle_id_raw),
                     "total_score": total_score,
                     "result_status": result_status,
                     "general_notes": request.form.get("general_notes", "").strip() or None,
                 },
                 items,
+                supply_requests,
             )
             flash("Auditoria guardada correctamente.", "success")
             return redirect(url_for("main.audit_detail", audit_id=audit_id))

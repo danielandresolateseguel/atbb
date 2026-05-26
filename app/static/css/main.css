@@ -387,6 +387,18 @@ small {
     margin-bottom: 0.9rem;
 }
 
+.request-grid {
+    margin-top: 0.85rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--border);
+    display: grid;
+    gap: 0.75rem;
+}
+
+.request-notes {
+    grid-column: 1 / -1;
+}
+
 label {
     display: grid;
     gap: 0.45rem;
@@ -558,6 +570,141 @@ td {
     display: grid;
     gap: 0.55rem;
     color: var(--muted);
+}
+
+.closure-card {
+    display: grid;
+    gap: 1rem;
+}
+
+.closure-stats {
+    margin-bottom: 0;
+}
+
+.closure-issue-list {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    list-style: none;
+    display: grid;
+    gap: 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-alt);
+    max-height: clamp(180px, 22vh, 260px);
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.closure-issue-list li {
+    margin: 0;
+}
+
+.checklist-item.closure-issue {
+    border-color: rgba(180, 83, 9, 0.28);
+    background: rgba(254, 243, 199, 0.35);
+}
+
+.checklist-item.closure-issue-critical {
+    border-color: rgba(220, 38, 38, 0.28);
+    background: rgba(254, 226, 226, 0.45);
+}
+
+.mobile-snapshot-card .detail-grid .guide-card {
+    display: flex;
+    flex-direction: column;
+    height: clamp(240px, 34vh, 360px);
+}
+
+.mobile-snapshot-card .detail-grid .snapshot-list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.5rem;
+}
+
+.mobile-inventory-grid .table-card {
+    display: flex;
+    flex-direction: column;
+    height: clamp(280px, 42vh, 520px);
+    min-width: 0;
+    overflow: hidden;
+}
+
+.mobile-inventory-grid .table-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    min-width: 0;
+    scrollbar-gutter: stable both-edges;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.85) transparent;
+}
+
+.mobile-inventory-grid .table-wrap table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.inventory-table {
+    font-size: 0.88rem;
+}
+
+.inventory-table th,
+.inventory-table td {
+    padding: 0.65rem 0.65rem;
+    line-height: 1.25;
+}
+
+.inventory-table th {
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+}
+
+.inventory-table td {
+    white-space: normal;
+    word-break: break-word;
+}
+
+.inventory-serialized td:nth-child(1),
+.inventory-materials td:nth-child(1),
+.inventory-materials td:nth-child(3) {
+    white-space: nowrap;
+}
+
+.inventory-serialized th:nth-child(1),
+.inventory-serialized td:nth-child(1) {
+    width: 18%;
+}
+
+.inventory-serialized th:nth-child(2),
+.inventory-serialized td:nth-child(2) {
+    width: 52%;
+}
+
+.inventory-serialized th:nth-child(3),
+.inventory-serialized td:nth-child(3) {
+    width: 30%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.inventory-materials th:nth-child(1),
+.inventory-materials td:nth-child(1) {
+    width: 20%;
+}
+
+.inventory-materials th:nth-child(2),
+.inventory-materials td:nth-child(2) {
+    width: 60%;
+}
+
+.inventory-materials th:nth-child(3),
+.inventory-materials td:nth-child(3) {
+    width: 20%;
 }
 
 .tool-match-grid {
@@ -1032,6 +1179,11 @@ td {
 
     .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .request-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: end;
     }
 
     .filter-grid {

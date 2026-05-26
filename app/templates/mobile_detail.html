@@ -167,7 +167,7 @@
     {% endif %}
 </section>
 
-<section class="detail-grid">
+<section class="detail-grid mobile-inventory-grid">
     <article class="card table-card">
         <div class="section-heading">
             <div>
@@ -177,7 +177,7 @@
         </div>
         {% if equipment_rows %}
             <div class="table-wrap compact-table">
-                <table>
+                <table class="inventory-table inventory-serialized">
                     <thead>
                         <tr>
                             <th>Centro</th>
@@ -210,7 +210,7 @@
         </div>
         {% if stock_rows %}
             <div class="table-wrap compact-table">
-                <table>
+                <table class="inventory-table inventory-materials">
                     <thead>
                         <tr>
                             <th>Codigo</th>

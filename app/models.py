@@ -48,7 +48,11 @@ def init_db():
             odometer_km INTEGER,
             assigned_employee_code TEXT,
             review_date TEXT,
-            insurance_expiry TEXT
+            insurance_expiry TEXT,
+            extinguisher_expiry TEXT,
+            gnc_expiry TEXT,
+            rto_expiry TEXT,
+            botiquin_expiry TEXT
         );
 
         CREATE TABLE IF NOT EXISTS mobile_units (
@@ -113,13 +117,15 @@ def init_db():
             auditor_name TEXT NOT NULL,
             auditor_signature_path TEXT,
             technician_signature_path TEXT,
+            technician_display_name TEXT,
+            technician_employee_code TEXT,
             location TEXT NOT NULL,
             installation_type TEXT NOT NULL,
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
             general_notes TEXT,
             mobile_unit_id INTEGER,
-            technician_id INTEGER NOT NULL,
+            technician_id INTEGER,
             vehicle_id INTEGER NOT NULL,
             FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id),
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
@@ -135,8 +141,24 @@ def init_db():
             item_label TEXT NOT NULL,
             status TEXT NOT NULL,
             is_critical INTEGER NOT NULL DEFAULT 0,
+            non_compliance_reason TEXT,
             notes TEXT,
             photo_path TEXT,
+            FOREIGN KEY (audit_id) REFERENCES audits (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS audit_supply_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            audit_id INTEGER NOT NULL,
+            section_key TEXT NOT NULL,
+            section_title TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            request_type TEXT NOT NULL,
+            material_code TEXT NOT NULL,
+            quantity INTEGER,
+            notes TEXT,
             FOREIGN KEY (audit_id) REFERENCES audits (id)
         );
         """
@@ -162,6 +184,10 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "vehicles", "assigned_employee_code", "TEXT")
     add_column_if_missing(connection, "vehicles", "review_date", "TEXT")
     add_column_if_missing(connection, "vehicles", "insurance_expiry", "TEXT")
+    add_column_if_missing(connection, "vehicles", "extinguisher_expiry", "TEXT")
+    add_column_if_missing(connection, "vehicles", "gnc_expiry", "TEXT")
+    add_column_if_missing(connection, "vehicles", "rto_expiry", "TEXT")
+    add_column_if_missing(connection, "vehicles", "botiquin_expiry", "TEXT")
     add_column_if_missing(connection, "mobile_units", "technician_id", "INTEGER")
     add_column_if_missing(connection, "mobile_units", "user_name", "TEXT")
     add_column_if_missing(connection, "mobile_units", "warehouse_description", "TEXT")
@@ -172,7 +198,111 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "mobile_unit_id", "INTEGER")
     add_column_if_missing(connection, "audits", "auditor_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
+    add_column_if_missing(connection, "audits", "technician_display_name", "TEXT")
+    add_column_if_missing(connection, "audits", "technician_employee_code", "TEXT")
+    add_column_if_missing(connection, "audit_items", "non_compliance_reason", "TEXT")
     add_column_if_missing(connection, "audit_items", "photo_path", "TEXT")
+    ensure_audits_nullable_technician(connection)
+
+
+def ensure_audits_nullable_technician(connection):
+    rows = connection.execute("PRAGMA table_info(audits)").fetchall()
+    columns = {row[1]: row for row in rows}
+    technician_info = columns.get("technician_id")
+    if not technician_info:
+        return
+
+    technician_notnull = technician_info[3] == 1
+    if not technician_notnull:
+        return
+
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audits_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            audit_date TEXT NOT NULL,
+            auditor_name TEXT NOT NULL,
+            auditor_signature_path TEXT,
+            technician_signature_path TEXT,
+            technician_display_name TEXT,
+            technician_employee_code TEXT,
+            location TEXT NOT NULL,
+            installation_type TEXT NOT NULL,
+            total_score REAL NOT NULL DEFAULT 0,
+            result_status TEXT NOT NULL,
+            general_notes TEXT,
+            mobile_unit_id INTEGER,
+            technician_id INTEGER,
+            vehicle_id INTEGER NOT NULL,
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id),
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id)
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        INSERT INTO audits_new (
+            id,
+            created_at,
+            audit_date,
+            auditor_name,
+            auditor_signature_path,
+            technician_signature_path,
+            technician_display_name,
+            technician_employee_code,
+            location,
+            installation_type,
+            total_score,
+            result_status,
+            general_notes,
+            mobile_unit_id,
+            technician_id,
+            vehicle_id
+        )
+        SELECT
+            id,
+            created_at,
+            audit_date,
+            auditor_name,
+            auditor_signature_path,
+            technician_signature_path,
+            technician_display_name,
+            technician_employee_code,
+            location,
+            installation_type,
+            total_score,
+            result_status,
+            general_notes,
+            mobile_unit_id,
+            technician_id,
+            vehicle_id
+        FROM audits
+        """
+    )
+
+    connection.execute("DROP TABLE audits")
+    connection.execute("ALTER TABLE audits_new RENAME TO audits")
+    connection.execute("PRAGMA foreign_keys = ON")
+
+    connection.execute(
+        """
+        UPDATE audits
+        SET
+            technician_display_name = COALESCE(
+                NULLIF(technician_display_name, ''),
+                (SELECT technicians.name FROM technicians WHERE technicians.id = audits.technician_id)
+            ),
+            technician_employee_code = COALESCE(
+                NULLIF(technician_employee_code, ''),
+                (SELECT technicians.employee_code FROM technicians WHERE technicians.id = audits.technician_id)
+            )
+        WHERE technician_id IS NOT NULL
+        """
+    )
 
 
 def add_column_if_missing(connection, table_name, column_name, column_definition):
@@ -228,12 +358,57 @@ def fetch_technicians():
 def fetch_vehicles():
     rows = get_db().execute(
         """
-        SELECT id, plate, brand, model, year, status, unit_number, odometer_km, assigned_employee_code, review_date, insurance_expiry
+        SELECT id, plate, brand, model, year, status, unit_number, odometer_km, assigned_employee_code, review_date, insurance_expiry, extinguisher_expiry, gnc_expiry, rto_expiry, botiquin_expiry
         FROM vehicles
         ORDER BY plate ASC
         """
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def update_vehicle_extinguisher_expiry(vehicle_id, expiry_date):
+    connection = get_db()
+    connection.execute(
+        "UPDATE vehicles SET extinguisher_expiry = ? WHERE id = ?",
+        (expiry_date, vehicle_id),
+    )
+    connection.commit()
+
+
+def update_vehicle_insurance_expiry(vehicle_id, expiry_date):
+    connection = get_db()
+    connection.execute(
+        "UPDATE vehicles SET insurance_expiry = ? WHERE id = ?",
+        (expiry_date, vehicle_id),
+    )
+    connection.commit()
+
+
+def update_vehicle_gnc_expiry(vehicle_id, expiry_date):
+    connection = get_db()
+    connection.execute(
+        "UPDATE vehicles SET gnc_expiry = ? WHERE id = ?",
+        (expiry_date, vehicle_id),
+    )
+    connection.commit()
+
+
+def update_vehicle_rto_expiry(vehicle_id, expiry_date):
+    connection = get_db()
+    connection.execute(
+        "UPDATE vehicles SET rto_expiry = ? WHERE id = ?",
+        (expiry_date, vehicle_id),
+    )
+    connection.commit()
+
+
+def update_vehicle_botiquin_expiry(vehicle_id, expiry_date):
+    connection = get_db()
+    connection.execute(
+        "UPDATE vehicles SET botiquin_expiry = ? WHERE id = ?",
+        (expiry_date, vehicle_id),
+    )
+    connection.commit()
 
 
 def fetch_mobile_units():
@@ -407,32 +582,59 @@ def fetch_mobile_related_audits(mobile_code, limit=20):
     technician_id = mobile["technician_id"] if mobile else None
     mobile_unit_id = mobile["id"] if mobile else None
 
-    rows = get_db().execute(
-        """
-        SELECT
-            audits.id,
-            audits.audit_date,
-            audits.location,
-            audits.installation_type,
-            audits.total_score,
-            audits.result_status,
-            audit_mobile.mobile_code,
-            technicians.name AS technician_name,
-            vehicles.plate AS vehicle_plate
-        FROM audits
-        LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
-        INNER JOIN technicians ON technicians.id = audits.technician_id
-        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-        WHERE audits.mobile_unit_id = ? OR audits.technician_id = ?
-        ORDER BY audits.created_at DESC
-        LIMIT ?
-        """,
-        (
-            mobile_unit_id,
-            technician_id,
-            limit,
-        ),
-    ).fetchall()
+    if technician_id is None:
+        rows = get_db().execute(
+            """
+            SELECT
+                audits.id,
+                audits.audit_date,
+                audits.location,
+                audits.installation_type,
+                audits.total_score,
+                audits.result_status,
+                audit_mobile.mobile_code,
+                COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+                vehicles.plate AS vehicle_plate
+            FROM audits
+            LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
+            LEFT JOIN technicians ON technicians.id = audits.technician_id
+            INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+            WHERE audits.mobile_unit_id = ?
+            ORDER BY audits.created_at DESC
+            LIMIT ?
+            """,
+            (
+                mobile_unit_id,
+                limit,
+            ),
+        ).fetchall()
+    else:
+        rows = get_db().execute(
+            """
+            SELECT
+                audits.id,
+                audits.audit_date,
+                audits.location,
+                audits.installation_type,
+                audits.total_score,
+                audits.result_status,
+                audit_mobile.mobile_code,
+                COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+                vehicles.plate AS vehicle_plate
+            FROM audits
+            LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
+            LEFT JOIN technicians ON technicians.id = audits.technician_id
+            INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+            WHERE audits.mobile_unit_id = ? OR audits.technician_id = ?
+            ORDER BY audits.created_at DESC
+            LIMIT ?
+            """,
+            (
+                mobile_unit_id,
+                technician_id,
+                limit,
+            ),
+        ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -818,11 +1020,11 @@ def fetch_recent_audits(limit=5):
             audits.total_score,
             audits.result_status,
             mobile_units.mobile_code,
-            technicians.name AS technician_name,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
             vehicles.plate AS vehicle_plate
         FROM audits
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
-        INNER JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
         ORDER BY audits.created_at DESC
         LIMIT ?
@@ -843,11 +1045,11 @@ def fetch_all_audits():
             audits.total_score,
             audits.result_status,
             mobile_units.mobile_code,
-            technicians.name AS technician_name,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
             vehicles.plate AS vehicle_plate
         FROM audits
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
-        INNER JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
         ORDER BY audits.created_at DESC
         """
@@ -864,6 +1066,8 @@ def fetch_audit_detail(audit_id):
             audits.auditor_name,
             audits.auditor_signature_path,
             audits.technician_signature_path,
+            audits.technician_display_name,
+            audits.technician_employee_code,
             audits.location,
             audits.installation_type,
             audits.total_score,
@@ -871,8 +1075,8 @@ def fetch_audit_detail(audit_id):
             audits.general_notes,
             datetime(audits.created_at, 'localtime') AS created_at,
             mobile_units.mobile_code,
-            technicians.name AS technician_name,
-            technicians.employee_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, audits.technician_employee_code) AS employee_code,
             technicians.company_name AS technician_company,
             technicians.supervisor_name AS technician_supervisor,
             technicians.center_name AS technician_center,
@@ -880,10 +1084,15 @@ def fetch_audit_detail(audit_id):
             vehicles.brand AS vehicle_brand,
             vehicles.model AS vehicle_model,
             vehicles.unit_number AS vehicle_unit_number,
-            vehicles.odometer_km AS vehicle_odometer_km
+            vehicles.odometer_km AS vehicle_odometer_km,
+            vehicles.extinguisher_expiry AS vehicle_extinguisher_expiry,
+            vehicles.insurance_expiry AS vehicle_insurance_expiry,
+            vehicles.gnc_expiry AS vehicle_gnc_expiry,
+            vehicles.rto_expiry AS vehicle_rto_expiry,
+            vehicles.botiquin_expiry AS vehicle_botiquin_expiry
         FROM audits
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
-        INNER JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
         WHERE audits.id = ?
         """,
@@ -903,6 +1112,7 @@ def fetch_audit_items(audit_id):
             item_label,
             status,
             is_critical,
+            non_compliance_reason,
             notes,
             photo_path
         FROM audit_items
@@ -914,7 +1124,28 @@ def fetch_audit_items(audit_id):
     return [dict(row) for row in rows]
 
 
-def create_audit(audit_data, items):
+def fetch_audit_supply_requests(audit_id):
+    rows = get_db().execute(
+        """
+        SELECT
+            id,
+            datetime(created_at, 'localtime') AS created_at,
+            section_title,
+            item_label,
+            request_type,
+            material_code,
+            quantity,
+            notes
+        FROM audit_supply_requests
+        WHERE audit_id = ?
+        ORDER BY id ASC
+        """,
+        (audit_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_audit(audit_data, items, supply_requests=None):
     connection = get_db()
     cursor = connection.execute(
         """
@@ -923,6 +1154,8 @@ def create_audit(audit_data, items):
             auditor_name,
             auditor_signature_path,
             technician_signature_path,
+            technician_display_name,
+            technician_employee_code,
             location,
             installation_type,
             total_score,
@@ -931,20 +1164,22 @@ def create_audit(audit_data, items):
             mobile_unit_id,
             technician_id,
             vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             audit_data["audit_date"],
             audit_data["auditor_name"],
             audit_data.get("auditor_signature_path"),
             audit_data.get("technician_signature_path"),
+            audit_data.get("technician_display_name"),
+            audit_data.get("technician_employee_code"),
             audit_data["location"],
             audit_data["installation_type"],
             audit_data["total_score"],
             audit_data["result_status"],
             audit_data["general_notes"],
             audit_data["mobile_unit_id"],
-            audit_data["technician_id"],
+            audit_data.get("technician_id"),
             audit_data["vehicle_id"],
         ),
     )
@@ -960,9 +1195,10 @@ def create_audit(audit_data, items):
             item_label,
             status,
             is_critical,
+            non_compliance_reason,
             notes,
             photo_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -973,12 +1209,44 @@ def create_audit(audit_data, items):
                 item["item_label"],
                 item["status"],
                 1 if item["is_critical"] else 0,
+                item.get("non_compliance_reason"),
                 item["notes"],
                 item.get("photo_path"),
             )
             for item in items
         ],
     )
+
+    if supply_requests:
+        connection.executemany(
+            """
+            INSERT INTO audit_supply_requests (
+                audit_id,
+                section_key,
+                section_title,
+                item_key,
+                item_label,
+                request_type,
+                material_code,
+                quantity,
+                notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    audit_id,
+                    req["section_key"],
+                    req["section_title"],
+                    req["item_key"],
+                    req["item_label"],
+                    req["request_type"],
+                    req["material_code"],
+                    req.get("quantity"),
+                    req.get("notes"),
+                )
+                for req in supply_requests
+            ],
+        )
     connection.commit()
     return audit_id
 

@@ -25,6 +25,16 @@ CHECKLIST_SECTIONS = [
             {"key": "limpieza", "label": "Kit de limpieza completo", "critical": False},
             {"key": "baterias", "label": "Baterias cargadas", "critical": False},
             {"key": "orden_kit", "label": "Maletin ordenado y completo", "critical": False},
+            {
+                "key": "cartuchera_herramientas",
+                "label": "Cartuchera porta herramientas",
+                "critical": False,
+            },
+            {
+                "key": "cartuchera_destornilladores_mini",
+                "label": "Cartuchera para destornilladores mini",
+                "critical": False,
+            },
         ],
     },
     {
@@ -33,12 +43,24 @@ CHECKLIST_SECTIONS = [
         "weight": 25,
         "items": [
             {"key": "documentacion", "label": "Documentacion vigente", "critical": True},
+            {"key": "oblea_gnc", "label": "Oblea de GNC vigente", "critical": True},
+            {"key": "rto", "label": "RTO vigente", "critical": True},
             {"key": "neumaticos", "label": "Neumaticos en buen estado", "critical": True},
             {"key": "luces", "label": "Luces operativas", "critical": True},
             {"key": "extintor", "label": "Extintor vigente", "critical": True},
             {"key": "botiquin", "label": "Botiquin disponible", "critical": False},
             {"key": "elementos_emergencia", "label": "Elementos de emergencia disponibles", "critical": True},
             {"key": "carga_segura", "label": "Escalera y herramientas aseguradas", "critical": True},
+            {
+                "key": "escalera_aluminio_extensible",
+                "label": "Escalera de aluminio extensible (11/13 peldaños) en buen estado (zapatas)",
+                "critical": True,
+            },
+            {
+                "key": "escalera_fibra_tijera_doble",
+                "label": "Escalera de fibra de vidrio tipo tijera doble en buen estado (zapatas antideslizantes)",
+                "critical": True,
+            },
         ],
     },
 ]
@@ -68,5 +90,13 @@ TOOL_MATCH_RULES = {
     "baterias": {
         "label": "Baterias o cargadores",
         "keywords": ["bateria", "baterias", "cargador", "charger"],
+    },
+    "cartuchera_herramientas": {
+        "label": "Cartuchera porta herramientas",
+        "keywords": ["cartuchera", "porta herramientas", "porta-herramientas", "cinturon", "cinturón"],
+    },
+    "cartuchera_destornilladores_mini": {
+        "label": "Cartuchera destornilladores mini",
+        "keywords": ["cartuchera", "destornillador", "destornilladores", "mini", "precision", "precisión"],
     },
 }

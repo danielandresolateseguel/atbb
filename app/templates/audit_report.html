@@ -94,6 +94,26 @@
                             </strong>
                         </article>
                         <article>
+                            <span>Extintor vence</span>
+                            <strong>{{ audit["vehicle_extinguisher_expiry"] or "-" }}</strong>
+                        </article>
+                        <article>
+                            <span>Seguro vence</span>
+                            <strong>{{ audit["vehicle_insurance_expiry"] or "-" }}</strong>
+                        </article>
+                        <article>
+                            <span>Oblea GNC vence</span>
+                            <strong>{{ audit["vehicle_gnc_expiry"] or "-" }}</strong>
+                        </article>
+                        <article>
+                            <span>RTO vence</span>
+                            <strong>{{ audit["vehicle_rto_expiry"] or "-" }}</strong>
+                        </article>
+                        <article>
+                            <span>Botiquin vence</span>
+                            <strong>{{ audit["vehicle_botiquin_expiry"] or "-" }}</strong>
+                        </article>
+                        <article>
                             <span>Ubicacion</span>
                             <strong>{{ audit["location"] }}</strong>
                         </article>
@@ -196,11 +216,47 @@
                                 </div>
                                 <h4>{{ item["item_label"] }}</h4>
                                 <p>{{ item["notes"] or "Sin observacion registrada." }}</p>
+                                <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|replace('_', ' ')|capitalize if item["non_compliance_reason"] else "-" }}</p>
                             </article>
                         {% endfor %}
                     </div>
                 {% else %}
                     <p class="empty-state">No se registraron hallazgos criticos en esta auditoria.</p>
+                {% endif %}
+            </section>
+
+            <section class="report-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Accion</p>
+                        <h3>Solicitudes de reposicion / cambio</h3>
+                    </div>
+                </div>
+                {% if supply_requests %}
+                    <div class="table-wrap">
+                        <table class="compact-table">
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Item</th>
+                                    <th>Codigo</th>
+                                    <th>Cantidad</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for req in supply_requests %}
+                                    <tr>
+                                        <td>{{ req["request_type"]|capitalize }}</td>
+                                        <td>{{ req["item_label"] }}</td>
+                                        <td>{{ req["material_code"] }}</td>
+                                        <td>{{ req["quantity"] if req["quantity"] is not none else "-" }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="empty-state">No se registraron solicitudes asociadas a la auditoria.</p>
                 {% endif %}
             </section>
 
@@ -278,6 +334,9 @@
                                         <div>
                                             <strong>{{ item["item_label"] }}</strong>
                                             <p>{{ item["notes"] or "Sin observacion." }}</p>
+                                            {% if item["status"] == "no_cumple" %}
+                                                <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|replace('_', ' ')|capitalize if item["non_compliance_reason"] else "-" }}</p>
+                                            {% endif %}
                                         </div>
                                         <span class="badge badge-{{ item['status']|replace('_', '-') }}">
                                             {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "no_cumple" %}No cumple{% else %}No aplica{% endif %}
