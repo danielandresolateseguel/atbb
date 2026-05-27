@@ -298,6 +298,11 @@ small {
     gap: 1rem;
 }
 
+.signature-grid {
+    display: grid;
+    gap: 1rem;
+}
+
 .form-grid,
 .checklist-items {
     display: grid;
@@ -1261,6 +1266,10 @@ td {
 }
 
 @media (min-width: 768px) {
+    .page {
+        width: min(1400px, calc(100% - 2.5rem));
+    }
+
     .topbar {
         flex-direction: row;
         align-items: center;
@@ -1311,6 +1320,11 @@ td {
 
     .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .signature-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
     }
 
     .request-grid {

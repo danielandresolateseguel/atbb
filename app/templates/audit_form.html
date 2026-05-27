@@ -398,42 +398,44 @@
         <small>Los items en `No cumple` deben tener observacion y motivo. La evidencia fotografica es obligatoria salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
     </section>
 
-    <section class="card signature-card">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Cierre</p>
-                <h3>Firma del auditor</h3>
+    <div class="signature-grid">
+        <section class="card signature-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Cierre</p>
+                    <h3>Firma del auditor</h3>
+                </div>
             </div>
-        </div>
-        <p class="signature-copy">Dibuja la firma para cerrar la auditoria. La misma se incorporara al detalle y al informe ejecutivo.</p>
-        <input type="hidden" name="auditor_signature" id="auditor_signature" value="{{ request.form.get('auditor_signature', '') }}">
-        <div class="signature-pad-shell">
-            <canvas id="auditor_signature_canvas" class="signature-pad" aria-label="Firma del auditor"></canvas>
-        </div>
-        <div class="button-row">
-            <button type="button" class="button button-secondary" id="clear_signature_button">Limpiar firma</button>
-        </div>
-        <small>Campo obligatorio para cerrar la auditoria.</small>
-    </section>
+            <p class="signature-copy">Dibuja la firma para cerrar la auditoria. La misma se incorporara al detalle y al informe ejecutivo.</p>
+            <input type="hidden" name="auditor_signature" id="auditor_signature" value="{{ request.form.get('auditor_signature', '') }}">
+            <div class="signature-pad-shell">
+                <canvas id="auditor_signature_canvas" class="signature-pad" aria-label="Firma del auditor"></canvas>
+            </div>
+            <div class="button-row">
+                <button type="button" class="button button-secondary" id="clear_signature_button">Limpiar firma</button>
+            </div>
+            <small>Campo obligatorio para cerrar la auditoria.</small>
+        </section>
 
-    <section class="card signature-card">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Cierre</p>
-                <h3>Firma del tecnico</h3>
+        <section class="card signature-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Cierre</p>
+                    <h3>Firma del tecnico</h3>
+                </div>
             </div>
-        </div>
-        <p class="signature-copy">Dibuja la firma del tecnico para dejar evidencia del cierre en terreno.</p>
-        <p class="signature-copy"><strong>Tecnico:</strong> <span id="signature_technician_name">-</span></p>
-        <input type="hidden" name="technician_signature" id="technician_signature" value="{{ request.form.get('technician_signature', '') }}">
-        <div class="signature-pad-shell">
-            <canvas id="technician_signature_canvas" class="signature-pad" aria-label="Firma del tecnico"></canvas>
-        </div>
-        <div class="button-row">
-            <button type="button" class="button button-secondary" id="clear_technician_signature_button">Limpiar firma</button>
-        </div>
-        <small>Campo obligatorio para cerrar la auditoria.</small>
-    </section>
+            <p class="signature-copy">Dibuja la firma del tecnico para dejar evidencia del cierre en terreno.</p>
+            <p class="signature-copy"><strong>Tecnico:</strong> <span id="signature_technician_name">-</span></p>
+            <input type="hidden" name="technician_signature" id="technician_signature" value="{{ request.form.get('technician_signature', '') }}">
+            <div class="signature-pad-shell">
+                <canvas id="technician_signature_canvas" class="signature-pad" aria-label="Firma del tecnico"></canvas>
+            </div>
+            <div class="button-row">
+                <button type="button" class="button button-secondary" id="clear_technician_signature_button">Limpiar firma</button>
+            </div>
+            <small>Campo obligatorio para cerrar la auditoria.</small>
+        </section>
+    </div>
 
     <div class="sticky-actions">
         <button class="button button-primary" type="submit">Guardar auditoria</button>
