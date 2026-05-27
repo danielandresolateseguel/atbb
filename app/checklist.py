@@ -16,7 +16,7 @@ CHECKLIST_SECTIONS = [
     {
         "key": "herramientas",
         "title": "Estado de Herramientas (Kit de Fibra Optica)",
-        "weight": 35,
+        "weight": 20,
         "items": [
             {"key": "fusionadora", "label": "Fusionadora operativa", "critical": True},
             {"key": "cortadora", "label": "Cortadora de precision en buen estado", "critical": True},
@@ -40,7 +40,7 @@ CHECKLIST_SECTIONS = [
     {
         "key": "herramientas_mano",
         "title": "Herramientas de mano",
-        "weight": 0,
+        "weight": 15,
         "items": [
             {
                 "key": "mano_alicate_chico_aislado",
