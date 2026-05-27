@@ -454,6 +454,16 @@ small {
     grid-column: 1 / -1;
 }
 
+#supply_requests_card {
+    display: grid;
+    gap: 1rem;
+    align-items: stretch;
+}
+
+#supply_requests_card .section-heading {
+    width: 100%;
+}
+
 .supply-request-row {
     display: grid;
     gap: 0.85rem;
