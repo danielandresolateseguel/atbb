@@ -1327,6 +1327,11 @@ td {
         align-items: start;
     }
 
+    #supply_requests_list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+    }
+
     .request-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         align-items: end;
