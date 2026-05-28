@@ -147,30 +147,44 @@
     </section>
 
     {% for section in checklist_sections %}
-        <section class="card checklist-section">
+        <section class="card checklist-section" id="section__{{ section['key'] }}" data-checklist-section="1">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Checklist</p>
                     <h3>{{ section["title"] }}</h3>
                 </div>
-                <span class="weight-chip">{{ section["weight"] }}%</span>
+                <div class="section-actions">
+                    <span class="badge section-progress section-progress-pending" data-section-progress="1">0/0</span>
+                    <span class="weight-chip">{{ section["weight"] }}%</span>
+                    <button
+                        class="button button-secondary section-toggle"
+                        type="button"
+                        data-section-toggle="1"
+                        data-section-key="{{ section['key'] }}"
+                        aria-expanded="false"
+                        aria-controls="section_body__{{ section['key'] }}"
+                    >
+                        Abrir
+                    </button>
+                </div>
             </div>
 
-            {% if section["key"] == "herramientas_mano" and hand_tools %}
-                <article class="checklist-item hand-tools-card" id="hand_tools_card">
-                    <div class="checklist-header">
-                        <div>
-                            <strong>Herramientas de mano</strong>
+            <div class="checklist-body" id="section_body__{{ section['key'] }}" data-section-body="1" hidden>
+                {% if section["key"] == "herramientas_mano" and hand_tools %}
+                    <article class="checklist-item hand-tools-card" id="hand_tools_card">
+                        <div class="checklist-header">
+                            <div>
+                                <strong>Herramientas de mano</strong>
+                            </div>
+                            <span class="badge" id="hand_tools_badge">Pendiente</span>
                         </div>
-                        <span class="badge" id="hand_tools_badge">Pendiente</span>
-                    </div>
-                    <p class="signature-copy">Responde en esta misma seccion si el tecnico cuenta con cada herramienta.</p>
-                    <small id="hand_tools_summary">Pendiente de completar.</small>
-                </article>
-            {% endif %}
+                        <p class="signature-copy">Responde en esta misma seccion si el tecnico cuenta con cada herramienta.</p>
+                        <small id="hand_tools_summary">Pendiente de completar.</small>
+                    </article>
+                {% endif %}
 
-            <div class="checklist-items">
-                {% for item in section["items"] %}
+                <div class="checklist-items">
+                    {% for item in section["items"] %}
                     {% if section["key"] == "herramientas_mano" and item.get("hand_tool") %}
                     <article
                         class="checklist-item hand-tool-item"
@@ -301,7 +315,12 @@
                         </label>
                     </article>
                     {% endif %}
-                {% endfor %}
+                    {% endfor %}
+                </div>
+
+                <div class="button-row section-nav">
+                    <button class="button button-secondary" type="button" data-section-next="1">Siguiente seccion</button>
+                </div>
             </div>
         </section>
     {% endfor %}
@@ -1394,6 +1413,9 @@
             ) {
                 evaluateClosure();
             }
+            if (target.name && target.name.startsWith("status__")) {
+                updateAllChecklistSectionProgress();
+            }
             scheduleDraftSave();
         });
 
@@ -1499,6 +1521,165 @@
             return { valid: true, targetId: null, message: null };
         }
 
+        const checklistSections = Array.from(document.querySelectorAll("[data-checklist-section]"));
+
+        function computeChecklistSectionProgress(sectionCard) {
+            const body = sectionCard ? sectionCard.querySelector("[data-section-body]") : null;
+            if (!body) {
+                return { total: 0, answered: 0, pending: 0 };
+            }
+
+            const radios = Array.from(body.querySelectorAll('input[type="radio"][name^="status__"]'));
+            const groupNames = Array.from(new Set(radios.map((radio) => radio.name)));
+            const total = groupNames.length;
+            const answered = groupNames.reduce((count, name) => {
+                return radios.some((radio) => radio.name === name && radio.checked) ? count + 1 : count;
+            }, 0);
+            const pending = Math.max(0, total - answered);
+            return { total, answered, pending };
+        }
+
+        function updateChecklistSectionProgress(sectionCard) {
+            const progressChip = sectionCard ? sectionCard.querySelector("[data-section-progress]") : null;
+            if (!progressChip) {
+                return;
+            }
+            const progress = computeChecklistSectionProgress(sectionCard);
+            progressChip.title = `Respondidos ${progress.answered}/${progress.total}`;
+            if (progress.total === 0) {
+                progressChip.textContent = "-";
+                progressChip.classList.remove("section-progress-done", "section-progress-pending");
+                progressChip.classList.add("section-progress-pending");
+                return;
+            }
+            if (progress.pending === 0) {
+                progressChip.textContent = "Listo";
+                progressChip.classList.remove("section-progress-pending");
+                progressChip.classList.add("section-progress-done");
+                return;
+            }
+            progressChip.textContent = `${progress.answered}/${progress.total}`;
+            progressChip.classList.remove("section-progress-done");
+            progressChip.classList.add("section-progress-pending");
+        }
+
+        function updateAllChecklistSectionProgress() {
+            checklistSections.forEach((section) => updateChecklistSectionProgress(section));
+        }
+
+        function setChecklistSectionOpen(sectionCard, open) {
+            if (!sectionCard) {
+                return;
+            }
+            const toggle = sectionCard.querySelector("[data-section-toggle]");
+            const body = sectionCard.querySelector("[data-section-body]");
+            if (!toggle || !body) {
+                return;
+            }
+            body.hidden = !open;
+            toggle.setAttribute("aria-expanded", open ? "true" : "false");
+            toggle.textContent = open ? "Cerrar" : "Abrir";
+        }
+
+        function closeOtherChecklistSections(currentSection) {
+            checklistSections.forEach((section) => {
+                if (section !== currentSection) {
+                    setChecklistSectionOpen(section, false);
+                }
+            });
+        }
+
+        function getFirstTouchedChecklistSection() {
+            for (const section of checklistSections) {
+                const body = section.querySelector("[data-section-body]");
+                if (!body) {
+                    continue;
+                }
+                const controls = Array.from(body.querySelectorAll("input, select, textarea"));
+                const hasValue = controls.some((control) => {
+                    if (control.type === "radio" || control.type === "checkbox") {
+                        return control.checked;
+                    }
+                    if (control.type === "file") {
+                        return control.files && control.files.length > 0;
+                    }
+                    return String(control.value || "").trim().length > 0;
+                });
+                if (hasValue) {
+                    return section;
+                }
+            }
+            return null;
+        }
+
+        function openChecklistSectionForElement(element) {
+            const section = element ? element.closest("[data-checklist-section]") : null;
+            if (!section) {
+                return false;
+            }
+            setChecklistSectionOpen(section, true);
+            closeOtherChecklistSections(section);
+            return true;
+        }
+
+        function initChecklistAccordion() {
+            if (checklistSections.length === 0) {
+                return;
+            }
+
+            updateAllChecklistSectionProgress();
+
+            checklistSections.forEach((section, index) => {
+                const toggle = section.querySelector("[data-section-toggle]");
+                const nextButton = section.querySelector("[data-section-next]");
+                if (toggle) {
+                    toggle.addEventListener("click", function () {
+                        const isOpen = toggle.getAttribute("aria-expanded") === "true";
+                        setChecklistSectionOpen(section, !isOpen);
+                        if (!isOpen) {
+                            closeOtherChecklistSections(section);
+                            section.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                    });
+                }
+
+                if (nextButton) {
+                    nextButton.addEventListener("click", function () {
+                        const body = section.querySelector("[data-section-body]");
+                        if (body) {
+                            const invalid = body.querySelector(":invalid");
+                            if (invalid) {
+                                setChecklistSectionOpen(section, true);
+                                closeOtherChecklistSections(section);
+                                invalid.scrollIntoView({ behavior: "smooth", block: "center" });
+                                if (typeof invalid.reportValidity === "function") {
+                                    invalid.reportValidity();
+                                }
+                                return;
+                            }
+                        }
+                        const next = checklistSections[index + 1];
+                        if (next) {
+                            setChecklistSectionOpen(section, false);
+                            setChecklistSectionOpen(next, true);
+                            closeOtherChecklistSections(next);
+                            next.scrollIntoView({ behavior: "smooth", block: "start" });
+                            return;
+                        }
+                        const closureCard = document.getElementById("closure_check_card");
+                        if (closureCard) {
+                            closureCard.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                    });
+                }
+            });
+
+            checklistSections.forEach((section) => setChecklistSectionOpen(section, false));
+            const touched = getFirstTouchedChecklistSection();
+            setChecklistSectionOpen(touched || checklistSections[0], true);
+            closeOtherChecklistSections(touched || checklistSections[0]);
+        }
+
         if (addSupplyRequestButton) {
             addSupplyRequestButton.addEventListener("click", function () {
                 addSupplyRequestRow(nextSupplyRequestIndex);
@@ -1523,6 +1704,20 @@
         }
         window.addEventListener("resize", resizeSignatureCanvas);
         form.addEventListener("submit", function (event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                const invalid = form.querySelector(":invalid");
+                if (invalid) {
+                    openChecklistSectionForElement(invalid);
+                    requestAnimationFrame(() => {
+                        invalid.scrollIntoView({ behavior: "smooth", block: "center" });
+                        if (typeof invalid.reportValidity === "function") {
+                            invalid.reportValidity();
+                        }
+                    });
+                }
+                return;
+            }
             const closure = evaluateClosure();
             const requestValidation = validateSupplyRequests();
             const missingAuditorSignature = !pads[0].hasSignature();
@@ -1557,6 +1752,7 @@
         }
 
         restoreDraftIfAny();
+        initChecklistAccordion();
         handTools.forEach((tool) => {
             const checked = document.querySelector(`input[name="status__${tool.key}"]:checked`);
             if (checked) {

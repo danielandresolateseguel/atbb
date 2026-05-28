@@ -19,6 +19,13 @@
                 </div>
                 <div class="report-actions no-print">
                     <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=audit['id']) }}">Volver al detalle</a>
+                    <a class="button button-secondary" href="{{ url_for('main.tnps', audit_id=audit['id']) }}">
+                        {% if tnps_response %}
+                            Editar tNPS
+                        {% else %}
+                            Registrar tNPS
+                        {% endif %}
+                    </a>
                     <a class="button button-primary" href="{{ url_for('main.audit_report', audit_id=audit['id'], print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
                 </div>
             </header>
@@ -181,6 +188,46 @@
                         <p><strong>Tipo de trabajo:</strong> {{ audit["installation_type"] }}</p>
                         <p><strong>Registro:</strong> {{ audit["created_at"] }}</p>
                         <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "Sin observacion general registrada." }}</p>
+                        <p>
+                            <strong>tNPS:</strong>
+                            {% if tnps_response %}
+                                {{ tnps_response["score"] }}/10 -
+                                {% if tnps_response["score"] >= 9 %}
+                                    Excelente
+                                {% elif tnps_response["score"] >= 7 %}
+                                    Buena
+                                {% elif tnps_response["score"] >= 5 %}
+                                    Regular
+                                {% elif tnps_response["score"] >= 3 %}
+                                    Mala
+                                {% else %}
+                                    Muy mala
+                                {% endif %}
+                                ({% if tnps_response["score"] >= 9 %}Promotor{% elif tnps_response["score"] >= 7 %}Pasivo{% else %}Detractor{% endif %})
+                                | {{ tnps_response["response_date"] }}
+                            {% else %}
+                                Sin respuesta asociada
+                            {% endif %}
+                        </p>
+                        <p><strong>Comentario tNPS:</strong> {{ tnps_response["comment"] if tnps_response and tnps_response["comment"] else "-" }}</p>
+                        <p>
+                            <strong>Detalle tNPS:</strong>
+                            {% if tnps_response %}
+                                Coord. {{ tnps_response["booking_ease_score"] or "-" }}/10
+                                | Punt. {{ tnps_response["punctuality_score"] or "-" }}/10
+                                | Claridad {{ tnps_response["communication_clarity_score"] or "-" }}/10
+                                | Resuelto
+                                {% if tnps_response["issue_resolved_first_visit"] is none %}
+                                    -
+                                {% elif tnps_response["issue_resolved_first_visit"] %}
+                                    Si
+                                {% else %}
+                                    No
+                                {% endif %}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </p>
                         <p><strong>Vehiculo:</strong>
                             {% if audit["vehicle_plate"] %}
                                 {% if audit["vehicle_unit_number"] %}Nro {{ audit["vehicle_unit_number"] }} | {% endif %}{{ audit["vehicle_plate"] }}

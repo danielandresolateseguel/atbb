@@ -15,6 +15,7 @@
         <button class="nav-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="main_nav"></button>
         <nav class="nav" id="main_nav">
             <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('main.tnps') }}">tNPS</a>
             <a href="{{ url_for('main.new_audit') }}">Nueva auditoria</a>
             <a href="{{ url_for('main.audit_list') }}">Historial</a>
             <a href="{{ url_for('main.imports') }}">Importar datos</a>
@@ -24,7 +25,7 @@
         </nav>
     </header>
 
-    <main class="page">
+    <main class="page{% if page_class %} {{ page_class }}{% endif %}">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <section class="flash-stack">

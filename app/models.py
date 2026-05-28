@@ -161,6 +161,23 @@ def init_db():
             notes TEXT,
             FOREIGN KEY (audit_id) REFERENCES audits (id)
         );
+
+        CREATE TABLE IF NOT EXISTS tnps_responses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            response_date TEXT NOT NULL,
+            score INTEGER NOT NULL CHECK(score >= 0 AND score <= 10),
+            booking_ease_score INTEGER,
+            punctuality_score INTEGER,
+            communication_clarity_score INTEGER,
+            issue_resolved_first_visit INTEGER,
+            comment TEXT,
+            customer_name TEXT,
+            technician_id INTEGER,
+            audit_id INTEGER,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (audit_id) REFERENCES audits (id)
+        );
         """
     )
     ensure_legacy_columns(connection)
@@ -202,7 +219,40 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "technician_employee_code", "TEXT")
     add_column_if_missing(connection, "audit_items", "non_compliance_reason", "TEXT")
     add_column_if_missing(connection, "audit_items", "photo_path", "TEXT")
+    add_column_if_missing(connection, "tnps_responses", "booking_ease_score", "INTEGER")
+    add_column_if_missing(connection, "tnps_responses", "punctuality_score", "INTEGER")
+    add_column_if_missing(connection, "tnps_responses", "communication_clarity_score", "INTEGER")
+    add_column_if_missing(connection, "tnps_responses", "issue_resolved_first_visit", "INTEGER")
+    migrate_tnps_experience_scores_to_ten_scale(connection)
     ensure_audits_nullable_technician(connection)
+
+
+def migrate_tnps_experience_scores_to_ten_scale(connection):
+    def migrate_column(column_name):
+        usage = connection.execute(
+            f"""
+            SELECT
+                SUM(CASE WHEN {column_name} BETWEEN 1 AND 5 THEN 1 ELSE 0 END) AS low_count,
+                SUM(CASE WHEN {column_name} BETWEEN 6 AND 10 THEN 1 ELSE 0 END) AS high_count
+            FROM tnps_responses
+            """
+        ).fetchone()
+        if not usage:
+            return
+        low_count = usage[0] or 0
+        high_count = usage[1] or 0
+        if low_count and not high_count:
+            connection.execute(
+                f"""
+                UPDATE tnps_responses
+                SET {column_name} = ({column_name} * 2)
+                WHERE {column_name} BETWEEN 1 AND 5
+                """
+            )
+
+    migrate_column("booking_ease_score")
+    migrate_column("punctuality_score")
+    migrate_column("communication_clarity_score")
 
 
 def ensure_audits_nullable_technician(connection):
@@ -1085,6 +1135,224 @@ def fetch_dashboard_stats():
     }
 
 
+def create_tnps_response(
+    response_date,
+    score,
+    booking_ease_score=None,
+    punctuality_score=None,
+    communication_clarity_score=None,
+    issue_resolved_first_visit=None,
+    comment=None,
+    customer_name=None,
+    technician_id=None,
+    audit_id=None,
+):
+    connection = get_db()
+    if audit_id is not None:
+        existing = connection.execute(
+            "SELECT id FROM tnps_responses WHERE audit_id = ? ORDER BY id DESC LIMIT 1",
+            (audit_id,),
+        ).fetchone()
+        if existing:
+            connection.execute(
+                """
+                UPDATE tnps_responses
+                SET
+                    response_date = ?,
+                    score = ?,
+                    booking_ease_score = ?,
+                    punctuality_score = ?,
+                    communication_clarity_score = ?,
+                    issue_resolved_first_visit = ?,
+                    comment = ?,
+                    customer_name = ?,
+                    technician_id = ?
+                WHERE id = ?
+                """,
+                (
+                    response_date,
+                    score,
+                    booking_ease_score,
+                    punctuality_score,
+                    communication_clarity_score,
+                    issue_resolved_first_visit,
+                    (comment or "").strip() or None,
+                    (customer_name or "").strip() or None,
+                    technician_id,
+                    existing["id"],
+                ),
+            )
+            connection.commit()
+            return existing["id"]
+
+    cursor = connection.execute(
+        """
+        INSERT INTO tnps_responses (
+            response_date,
+            score,
+            booking_ease_score,
+            punctuality_score,
+            communication_clarity_score,
+            issue_resolved_first_visit,
+            comment,
+            customer_name,
+            technician_id,
+            audit_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            response_date,
+            score,
+            booking_ease_score,
+            punctuality_score,
+            communication_clarity_score,
+            issue_resolved_first_visit,
+            (comment or "").strip() or None,
+            (customer_name or "").strip() or None,
+            technician_id,
+            audit_id,
+        ),
+    )
+    connection.commit()
+    return cursor.lastrowid
+
+
+def fetch_tnps_stats(filters=None):
+    filters = filters or {}
+    where_clauses = []
+    params = []
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    technician_id = filters.get("technician_id")
+
+    if from_date:
+        where_clauses.append("tnps_responses.response_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where_clauses.append("tnps_responses.response_date <= ?")
+        params.append(to_date)
+    if technician_id:
+        where_clauses.append("tnps_responses.technician_id = ?")
+        params.append(technician_id)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    row = get_db().execute(
+        f"""
+        SELECT
+            COUNT(*) AS total_responses,
+            SUM(CASE WHEN score BETWEEN 9 AND 10 THEN 1 ELSE 0 END) AS promoters_count,
+            SUM(CASE WHEN score BETWEEN 7 AND 8 THEN 1 ELSE 0 END) AS passives_count,
+            SUM(CASE WHEN score BETWEEN 0 AND 6 THEN 1 ELSE 0 END) AS detractors_count,
+            AVG(score) AS average_score
+        FROM tnps_responses
+        {where_sql}
+        """,
+        tuple(params),
+    ).fetchone()
+
+    total = row["total_responses"] or 0
+    promoters = row["promoters_count"] or 0
+    passives = row["passives_count"] or 0
+    detractors = row["detractors_count"] or 0
+    average_score = 0 if total == 0 else round((row["average_score"] or 0), 2)
+
+    tnps_score = 0
+    if total:
+        tnps_score = round(((promoters / total) - (detractors / total)) * 100)
+
+    return {
+        "total_responses": total,
+        "promoters_count": promoters,
+        "passives_count": passives,
+        "detractors_count": detractors,
+        "average_score": average_score,
+        "tnps_score": tnps_score,
+    }
+
+
+def fetch_tnps_responses(filters=None, limit=200):
+    filters = filters or {}
+    where_clauses = []
+    params = []
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    technician_id = filters.get("technician_id")
+
+    if from_date:
+        where_clauses.append("tnps_responses.response_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where_clauses.append("tnps_responses.response_date <= ?")
+        params.append(to_date)
+    if technician_id:
+        where_clauses.append("tnps_responses.technician_id = ?")
+        params.append(technician_id)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            tnps_responses.id,
+            tnps_responses.response_date,
+            tnps_responses.score,
+            tnps_responses.booking_ease_score,
+            tnps_responses.punctuality_score,
+            tnps_responses.communication_clarity_score,
+            tnps_responses.issue_resolved_first_visit,
+            tnps_responses.comment,
+            tnps_responses.customer_name,
+            tnps_responses.audit_id,
+            datetime(tnps_responses.created_at, 'localtime') AS created_at,
+            technicians.name AS technician_name,
+            technicians.employee_code AS technician_employee_code
+        FROM tnps_responses
+        LEFT JOIN technicians ON technicians.id = tnps_responses.technician_id
+        {where_sql}
+        ORDER BY tnps_responses.response_date DESC, tnps_responses.id DESC
+        LIMIT ?
+        """,
+        tuple(params + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_tnps_response_for_audit(audit_id):
+    row = get_db().execute(
+        """
+        SELECT
+            tnps_responses.id,
+            tnps_responses.response_date,
+            tnps_responses.score,
+            tnps_responses.booking_ease_score,
+            tnps_responses.punctuality_score,
+            tnps_responses.communication_clarity_score,
+            tnps_responses.issue_resolved_first_visit,
+            tnps_responses.comment,
+            tnps_responses.customer_name,
+            tnps_responses.audit_id,
+            tnps_responses.technician_id,
+            datetime(tnps_responses.created_at, 'localtime') AS created_at,
+            technicians.name AS technician_name,
+            technicians.employee_code AS technician_employee_code
+        FROM tnps_responses
+        LEFT JOIN technicians ON technicians.id = tnps_responses.technician_id
+        WHERE tnps_responses.audit_id = ?
+        ORDER BY tnps_responses.id DESC
+        LIMIT 1
+        """,
+        (audit_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def fetch_recent_audits(limit=5):
     rows = get_db().execute(
         """
@@ -1149,6 +1417,7 @@ def fetch_audit_detail(audit_id):
             audits.total_score,
             audits.result_status,
             audits.general_notes,
+            audits.technician_id,
             datetime(audits.created_at, 'localtime') AS created_at,
             mobile_units.mobile_code,
             COALESCE(technicians.name, audits.technician_display_name) AS technician_name,

@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}tNPS{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Experiencia de servicio</p>
+        <h2>tNPS (Net Promoter Score transaccional)</h2>
+        <p class="hero-copy">
+            Registra respuestas post-visita y revisa el indicador tNPS en base a promotores (9-10), pasivos (7-8) y detractores (0-6).
+        </p>
+    </div>
+</section>
+
+{% if audit_context %}
+    <section class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Vinculo</p>
+                <h3>Auditoria {{ audit_context["id"] }}</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Fecha auditoria:</strong> {{ audit_context["audit_date"] }}</p>
+            <p><strong>Tecnico:</strong> {{ audit_context["technician_name"] }}</p>
+            <p><strong>Ubicacion:</strong> {{ audit_context["location"] }}</p>
+            <p><a class="table-link" href="{{ url_for('main.audit_report', audit_id=audit_context['id']) }}">Ver informe ejecutivo</a></p>
+        </div>
+    </section>
+{% endif %}
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">tNPS</span>
+        <strong class="stat-value">{{ stats["tnps_score"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Respuestas</span>
+        <strong class="stat-value">{{ stats["total_responses"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Promotores</span>
+        <strong class="stat-value">{{ stats["promoters_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Pasivos</span>
+        <strong class="stat-value">{{ stats["passives_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Detractores</span>
+        <strong class="stat-value">{{ stats["detractors_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Promedio</span>
+        <strong class="stat-value">{{ stats["average_score"] }}</strong>
+    </article>
+</section>
+
+<section class="card tnps-record-card">
+    <form method="post" class="import-form tnps-record-form">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Registro</p>
+                <h3>Nueva respuesta</h3>
+            </div>
+        </div>
+
+        <label>
+            <span>Fecha</span>
+            <input type="date" name="response_date" value="{{ today }}" required>
+        </label>
+
+        <fieldset class="score-scale-field">
+            <legend>Puntaje tNPS (0 a 10)</legend>
+            <div class="score-scale-scroll">
+                <div class="score-scale-grid score-scale-grid-11">
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-0" value="0" required>
+                        <label class="score-scale-option" for="tnps-score-0">0</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-1" value="1">
+                        <label class="score-scale-option" for="tnps-score-1">1</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-2" value="2">
+                        <label class="score-scale-option" for="tnps-score-2">2</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-3" value="3">
+                        <label class="score-scale-option" for="tnps-score-3">3</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-4" value="4">
+                        <label class="score-scale-option" for="tnps-score-4">4</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-5" value="5">
+                        <label class="score-scale-option" for="tnps-score-5">5</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-6" value="6">
+                        <label class="score-scale-option" for="tnps-score-6">6</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-7" value="7">
+                        <label class="score-scale-option" for="tnps-score-7">7</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-8" value="8">
+                        <label class="score-scale-option" for="tnps-score-8">8</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-9" value="9">
+                        <label class="score-scale-option" for="tnps-score-9">9</label>
+                    </div>
+                    <div class="score-scale-item">
+                        <input type="radio" name="score" id="tnps-score-10" value="10">
+                        <label class="score-scale-option" for="tnps-score-10">10</label>
+                    </div>
+                </div>
+            </div>
+            <div class="score-scale-meta">
+                <span>Muy mala</span>
+                <span>Excelente</span>
+            </div>
+        </fieldset>
+
+        <label class="tnps-half">
+            <span>Cliente (opcional)</span>
+            <input type="text" name="customer_name" placeholder="Nombre o referencia">
+        </label>
+
+        {% if audit_context %}
+            <input type="hidden" name="technician_id" value="{{ audit_context.get('technician_id') or '' }}">
+            <label>
+                <span>Tecnico (desde auditoria)</span>
+                <input type="text" value="{{ audit_context['technician_name'] if audit_context.get('technician_name') else 'Sin tecnico asociado' }}" disabled>
+            </label>
+        {% else %}
+            <label class="tnps-half">
+                <span>Tecnico (opcional)</span>
+                <select name="technician_id">
+                    <option value="">Sin asignar</option>
+                    {% for technician in technicians %}
+                        <option value="{{ technician['id'] }}">{{ technician["name"] }} ({{ technician["employee_code"] }})</option>
+                    {% endfor %}
+                </select>
+            </label>
+        {% endif %}
+
+        {% if audit_context %}
+            <input type="hidden" name="audit_id" value="{{ audit_context['id'] }}">
+        {% else %}
+            <label>
+                <span>ID auditoria (opcional)</span>
+                <input type="number" name="audit_id" min="1" step="1" placeholder="Ej: 123">
+            </label>
+        {% endif %}
+
+        <fieldset class="score-scale-field">
+            <legend>Facilidad para coordinar (opcional)</legend>
+            <div class="score-scale-scroll">
+                <div class="score-scale-grid score-scale-grid-10">
+                    {% for value in range(1, 11) %}
+                        <div class="score-scale-item">
+                            <input type="radio" name="booking_ease_score" id="booking-ease-{{ value }}" value="{{ value }}">
+                            <label class="score-scale-option" for="booking-ease-{{ value }}">{{ value }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="score-scale-meta">
+                <span>Muy mala</span>
+                <span>Excelente</span>
+            </div>
+        </fieldset>
+
+        <fieldset class="score-scale-field">
+            <legend>Puntualidad del tecnico (opcional)</legend>
+            <div class="score-scale-scroll">
+                <div class="score-scale-grid score-scale-grid-10">
+                    {% for value in range(1, 11) %}
+                        <div class="score-scale-item">
+                            <input type="radio" name="punctuality_score" id="punctuality-{{ value }}" value="{{ value }}">
+                            <label class="score-scale-option" for="punctuality-{{ value }}">{{ value }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="score-scale-meta">
+                <span>Muy mala</span>
+                <span>Excelente</span>
+            </div>
+        </fieldset>
+
+        <fieldset class="score-scale-field">
+            <legend>Claridad de la explicacion (opcional)</legend>
+            <div class="score-scale-scroll">
+                <div class="score-scale-grid score-scale-grid-10">
+                    {% for value in range(1, 11) %}
+                        <div class="score-scale-item">
+                            <input type="radio" name="communication_clarity_score" id="clarity-{{ value }}" value="{{ value }}">
+                            <label class="score-scale-option" for="clarity-{{ value }}">{{ value }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="score-scale-meta">
+                <span>Muy mala</span>
+                <span>Excelente</span>
+            </div>
+        </fieldset>
+
+        <fieldset class="score-scale-field">
+            <legend>Resolucion en primera visita (opcional)</legend>
+            <div class="score-scale-yn">
+                <div class="score-scale-item">
+                    <input type="radio" name="issue_resolved_first_visit" id="issue-resolved-yes" value="1">
+                    <label class="score-scale-option" for="issue-resolved-yes">Si</label>
+                </div>
+                <div class="score-scale-item">
+                    <input type="radio" name="issue_resolved_first_visit" id="issue-resolved-no" value="0">
+                    <label class="score-scale-option" for="issue-resolved-no">No</label>
+                </div>
+            </div>
+        </fieldset>
+
+        <label>
+            <span>Comentario (opcional)</span>
+            <textarea name="comment" rows="3" placeholder="Detalle, motivo, mejora sugerida"></textarea>
+        </label>
+
+        <button class="button button-primary" type="submit">Guardar respuesta</button>
+    </form>
+</section>
+
+<section class="card table-card">
+    <form method="get" class="import-form">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Filtros</p>
+                <h3>Ver resultados</h3>
+            </div>
+        </div>
+
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters['from_date'] }}">
+        </label>
+
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters['to_date'] }}">
+        </label>
+
+        <label>
+            <span>Tecnico</span>
+            <select name="technician_id">
+                <option value="">Todos</option>
+                {% for technician in technicians %}
+                    <option value="{{ technician['id'] }}" {% if filters['technician_id'] == (technician['id']|string) %}selected{% endif %}>
+                        {{ technician["name"] }} ({{ technician["employee_code"] }})
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.tnps') }}">Limpiar</a>
+        </div>
+    </form>
+
+    {% if responses %}
+        <div class="table-wrap">
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Tecnico</th>
+                        <th>Puntaje</th>
+                        <th>Nivel</th>
+                        <th>Cliente</th>
+                        <th>Coord.</th>
+                        <th>Punt.</th>
+                        <th>Claridad</th>
+                        <th>Resuelto</th>
+                        <th>Comentario</th>
+                        <th>Auditoria</th>
+                        <th>Cargado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in responses %}
+                        <tr>
+                            <td>{{ row["response_date"] }}</td>
+                            <td>{{ row["technician_name"] or "-" }}</td>
+                            <td>{{ row["score"] }}</td>
+                            <td>
+                                {% if row["score"] >= 9 %}
+                                    Excelente
+                                {% elif row["score"] >= 7 %}
+                                    Buena
+                                {% elif row["score"] >= 5 %}
+                                    Regular
+                                {% elif row["score"] >= 3 %}
+                                    Mala
+                                {% else %}
+                                    Muy mala
+                                {% endif %}
+                                {% if row["score"] >= 9 %}
+                                    (Promotor)
+                                {% elif row["score"] >= 7 %}
+                                    (Pasivo)
+                                {% else %}
+                                    (Detractor)
+                                {% endif %}
+                            </td>
+                            <td>{{ row["customer_name"] or "-" }}</td>
+                            <td>{{ row["booking_ease_score"] or "-" }}</td>
+                            <td>{{ row["punctuality_score"] or "-" }}</td>
+                            <td>{{ row["communication_clarity_score"] or "-" }}</td>
+                            <td>
+                                {% if row["issue_resolved_first_visit"] is none %}
+                                    -
+                                {% elif row["issue_resolved_first_visit"] %}
+                                    Si
+                                {% else %}
+                                    No
+                                {% endif %}
+                            </td>
+                            <td>{{ row["comment"] or "-" }}</td>
+                            <td>
+                                {% if row["audit_id"] %}
+                                    <a class="table-link" href="{{ url_for('main.audit_detail', audit_id=row['audit_id']) }}">{{ row["audit_id"] }}</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>{{ row["created_at"] }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">No hay respuestas tNPS para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+{% endblock %}

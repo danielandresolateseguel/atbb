@@ -14,6 +14,13 @@
     <div class="hero-actions">
         <span class="badge badge-{{ audit['result_status']|lower|replace(' ', '-') }}">{{ audit["result_status"] }}</span>
         <a class="button button-secondary" href="{{ url_for('main.audit_report', audit_id=audit['id']) }}">Ver informe ejecutivo</a>
+        <a class="button button-secondary" href="{{ url_for('main.tnps', audit_id=audit['id']) }}">
+            {% if tnps_response %}
+                Editar tNPS
+            {% else %}
+                Registrar tNPS
+            {% endif %}
+        </a>
     </div>
 </section>
 
@@ -47,6 +54,54 @@
             <p><strong>Botiquin vence:</strong> {{ audit["vehicle_botiquin_expiry"] or "-" }}</p>
             <p><strong>Ubicacion:</strong> {{ audit["location"] }}</p>
             <p><strong>Tipo:</strong> {{ audit["installation_type"] }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Experiencia</p>
+                <h3>tNPS</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            {% if tnps_response %}
+                <p>
+                    <strong>Puntaje:</strong>
+                    {{ tnps_response["score"] }}/10 -
+                    {% if tnps_response["score"] >= 9 %}
+                        Excelente
+                    {% elif tnps_response["score"] >= 7 %}
+                        Buena
+                    {% elif tnps_response["score"] >= 5 %}
+                        Regular
+                    {% elif tnps_response["score"] >= 3 %}
+                        Mala
+                    {% else %}
+                        Muy mala
+                    {% endif %}
+                    ({% if tnps_response["score"] >= 9 %}Promotor{% elif tnps_response["score"] >= 7 %}Pasivo{% else %}Detractor{% endif %})
+                </p>
+                <p><strong>Fecha respuesta:</strong> {{ tnps_response["response_date"] }}</p>
+                <p><strong>Cliente:</strong> {{ tnps_response["customer_name"] or "-" }}</p>
+                <p><strong>Comentario:</strong> {{ tnps_response["comment"] or "-" }}</p>
+                <p>
+                    <strong>Detalle:</strong>
+                    Coord. {{ tnps_response["booking_ease_score"] or "-" }}/10
+                    | Punt. {{ tnps_response["punctuality_score"] or "-" }}/10
+                    | Claridad {{ tnps_response["communication_clarity_score"] or "-" }}/10
+                    | Resuelto
+                    {% if tnps_response["issue_resolved_first_visit"] is none %}
+                        -
+                    {% elif tnps_response["issue_resolved_first_visit"] %}
+                        Si
+                    {% else %}
+                        No
+                    {% endif %}
+                </p>
+            {% else %}
+                <p class="empty-state">Sin respuesta tNPS asociada.</p>
+            {% endif %}
         </div>
     </article>
 

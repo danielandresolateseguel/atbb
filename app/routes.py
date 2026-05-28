@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from app.checklist import CHECKLIST_SECTIONS
 from app.models import (
     create_audit,
+    create_tnps_response,
     fetch_audit_detail,
     fetch_audit_items,
     fetch_audit_supply_requests,
@@ -30,6 +31,9 @@ from app.models import (
     fetch_mobile_unit_by_id,
     fetch_mobile_unit_detail,
     fetch_vehicles_by_employee_code,
+    fetch_tnps_responses,
+    fetch_tnps_response_for_audit,
+    fetch_tnps_stats,
     fetch_material_by_code,
     fetch_material_catalog,
     fetch_materials_summary,
@@ -424,6 +428,131 @@ def dashboard():
     )
 
 
+@main.route("/tnps", methods=["GET", "POST"])
+def tnps():
+    audit_context = None
+    audit_id_context_raw = request.args.get("audit_id", "").strip()
+    if audit_id_context_raw:
+        try:
+            audit_id_context = int(audit_id_context_raw)
+        except ValueError:
+            flash("El ID de auditoria no es valido.", "error")
+            audit_id_context = None
+        if audit_id_context is not None:
+            audit_context = fetch_audit_detail(audit_id_context)
+            if not audit_context:
+                flash("No se encontro la auditoria indicada para vincular el tNPS.", "error")
+
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "technician_id": request.args.get("technician_id", "").strip(),
+    }
+
+    technician_id = None
+    if filters["technician_id"]:
+        try:
+            technician_id = int(filters["technician_id"])
+        except ValueError:
+            flash("El tecnico seleccionado no es valido.", "error")
+            filters["technician_id"] = ""
+
+    query_filters = {
+        "from_date": filters["from_date"],
+        "to_date": filters["to_date"],
+        "technician_id": technician_id,
+    }
+
+    if request.method == "POST":
+        try:
+            def parse_optional_scale(field_name, label, min_value=1, max_value=10):
+                raw = (request.form.get(field_name) or "").strip()
+                if raw == "":
+                    return None
+                try:
+                    value = int(raw)
+                except ValueError as exc:
+                    raise ValueError(f"{label} debe ser un numero entre {min_value} y {max_value}.") from exc
+                if value < min_value or value > max_value:
+                    raise ValueError(f"{label} debe estar entre {min_value} y {max_value}.")
+                return value
+
+            def parse_optional_yes_no(field_name, label):
+                raw = (request.form.get(field_name) or "").strip()
+                if raw == "":
+                    return None
+                if raw not in {"0", "1"}:
+                    raise ValueError(f"{label} debe ser 'Si' o 'No'.")
+                return int(raw)
+
+            response_date = datetime.strptime(request.form["response_date"], "%Y-%m-%d").date().isoformat()
+            score_raw = (request.form.get("score") or "").strip()
+            if score_raw == "":
+                raise ValueError("Debes ingresar un puntaje entre 0 y 10.")
+            score = int(score_raw)
+            if score < 0 or score > 10:
+                raise ValueError("El puntaje debe estar entre 0 y 10.")
+
+            audit_id_raw = (request.form.get("audit_id") or "").strip()
+            audit_id = None
+            if audit_id_raw:
+                try:
+                    audit_id = int(audit_id_raw)
+                except ValueError as exc:
+                    raise ValueError("El ID de auditoria no es valido.") from exc
+
+            locked_technician_id = None
+            if audit_id is not None:
+                locked_audit = fetch_audit_detail(audit_id)
+                if not locked_audit:
+                    raise ValueError("No se encontro la auditoria indicada para vincular el tNPS.")
+                locked_technician_id = locked_audit.get("technician_id")
+            else:
+                form_technician_id_raw = (request.form.get("technician_id") or "").strip()
+                if form_technician_id_raw:
+                    try:
+                        locked_technician_id = int(form_technician_id_raw)
+                    except ValueError as exc:
+                        raise ValueError("El tecnico seleccionado no es valido.") from exc
+
+            create_tnps_response(
+                response_date=response_date,
+                score=score,
+                booking_ease_score=parse_optional_scale("booking_ease_score", "Facilidad para coordinar"),
+                punctuality_score=parse_optional_scale("punctuality_score", "Puntualidad del tecnico"),
+                communication_clarity_score=parse_optional_scale("communication_clarity_score", "Claridad de la explicacion"),
+                issue_resolved_first_visit=parse_optional_yes_no(
+                    "issue_resolved_first_visit",
+                    "Resolucion en primera visita",
+                ),
+                comment=(request.form.get("comment") or "").strip(),
+                customer_name=(request.form.get("customer_name") or "").strip(),
+                technician_id=locked_technician_id,
+                audit_id=audit_id,
+            )
+            flash("Respuesta tNPS registrada.", "success")
+            if audit_id is not None:
+                return redirect(url_for("main.audit_report", audit_id=audit_id))
+            return redirect(url_for("main.tnps"))
+        except (KeyError, ValueError) as exc:
+            flash(str(exc), "error")
+
+    technicians = fetch_technicians()
+    stats = fetch_tnps_stats(query_filters)
+    responses = fetch_tnps_responses(query_filters)
+
+    return render_template(
+        "tnps.html",
+        filters=filters,
+        technicians=technicians,
+        stats=stats,
+        responses=responses,
+        audit_context=audit_context,
+        today=datetime.now().date().isoformat(),
+        page_class="page-wide",
+    )
+
+
 @main.route("/audits")
 def audit_list():
     audits = fetch_all_audits()
@@ -439,12 +568,14 @@ def audit_detail(audit_id):
     items = fetch_audit_items(audit_id)
     grouped_items = build_grouped_audit_items(items)
     supply_requests = fetch_audit_supply_requests(audit_id)
+    tnps_response = fetch_tnps_response_for_audit(audit_id)
 
     return render_template(
         "audit_detail.html",
         audit=audit,
         grouped_items=grouped_items,
         supply_requests=supply_requests,
+        tnps_response=tnps_response,
     )
 
 
@@ -456,12 +587,14 @@ def audit_report(audit_id):
 
     items = fetch_audit_items(audit_id)
     report = build_audit_report_metrics(audit, items)
+    tnps_response = fetch_tnps_response_for_audit(audit_id)
     supply_requests = fetch_audit_supply_requests(audit_id)
     return render_template(
         "audit_report.html",
         audit=audit,
         grouped_items=build_grouped_audit_items(items),
         report=report,
+        tnps_response=tnps_response,
         supply_requests=supply_requests,
         print_mode=request.args.get("print") == "1",
     )
