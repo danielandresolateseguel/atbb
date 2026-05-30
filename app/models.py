@@ -1479,7 +1479,9 @@ def create_tnps_response(
         cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
         new_id_row = cursor.fetchone()
         connection.commit()
-        return new_id_row[0] if new_id_row else None
+        if not new_id_row:
+            return None
+        return new_id_row["id"] if isinstance(new_id_row, dict) else new_id_row[0]
 
     cursor = connection.execute(insert_sql, insert_params)
     connection.commit()
@@ -1823,7 +1825,10 @@ def create_audit(audit_data, items, supply_requests=None):
     if is_postgres():
         cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
         new_id_row = cursor.fetchone()
-        audit_id = new_id_row[0] if new_id_row else None
+        if not new_id_row:
+            audit_id = None
+        else:
+            audit_id = new_id_row["id"] if isinstance(new_id_row, dict) else new_id_row[0]
     else:
         cursor = connection.execute(insert_sql, insert_params)
         audit_id = cursor.lastrowid
@@ -2999,7 +3004,9 @@ def ensure_mobile_unit(
     if is_postgres():
         cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
         row = cursor.fetchone()
-        return row[0] if row else None
+        if not row:
+            return None
+        return row["id"] if isinstance(row, dict) else row[0]
     cursor = connection.execute(insert_sql, insert_params)
     return cursor.lastrowid
 
@@ -3037,7 +3044,9 @@ def ensure_storage_location(connection, mobile_unit_id, center_name, warehouse_c
     if is_postgres():
         cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
         row = cursor.fetchone()
-        return row[0] if row else None
+        if not row:
+            return None
+        return row["id"] if isinstance(row, dict) else row[0]
     cursor = connection.execute(insert_sql, insert_params)
     return cursor.lastrowid
 
@@ -3059,7 +3068,9 @@ def ensure_material(connection, material_code, material_name):
     if is_postgres():
         cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
         row = cursor.fetchone()
-        return (row[0] if row else None), True
+        if not row:
+            return None, True
+        return (row["id"] if isinstance(row, dict) else row[0]), True
     cursor = connection.execute(insert_sql, insert_params)
     return cursor.lastrowid, True
 
