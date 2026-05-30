@@ -2731,6 +2731,21 @@ def import_equipment_inventory(rows):
     updated_count = 0
     skipped_rows = []
 
+    if not rows:
+        raise ValueError("El archivo no contiene filas para importar equipos serializados.")
+
+    warehouse_codes = {
+        (row.get("codigo_almacen") or "").strip()
+        for row in rows
+        if (row.get("codigo_almacen") or "").strip() and (row.get("almacen") or "").strip()
+    }
+    if warehouse_codes:
+        connection.executemany(
+            "DELETE FROM equipment_inventory WHERE warehouse_code = ?",
+            [(warehouse_code,) for warehouse_code in sorted(warehouse_codes)],
+        )
+
+    seen_serials = set()
     for index, row in enumerate(rows, start=2):
         center_name = (row.get("centro") or "").strip()
         warehouse_code = (row.get("codigo_almacen") or "").strip()
@@ -2744,6 +2759,10 @@ def import_equipment_inventory(rows):
                 f"Fila {index}: faltan datos clave de almacen, material o serial."
             )
             continue
+        if serial_number in seen_serials:
+            skipped_rows.append(f"Fila {index}: serial duplicado {serial_number}.")
+            continue
+        seen_serials.add(serial_number)
 
         mobile_unit_id = ensure_mobile_unit(
             connection,
