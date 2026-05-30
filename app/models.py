@@ -5,11 +5,50 @@ from flask import current_app, g
 from app.checklist import TOOL_MATCH_RULES
 
 
+def is_postgres():
+    return bool(current_app.config.get("DATABASE_URL"))
+
+
+def _postgres_sql(sql):
+    return sql.replace("?", "%s")
+
+
+class PostgresConnection:
+    def __init__(self, connection):
+        self._connection = connection
+
+    def execute(self, sql, params=None):
+        cursor = self._connection.cursor()
+        cursor.execute(_postgres_sql(sql), params or None)
+        return cursor
+
+    def executemany(self, sql, seq_of_params):
+        cursor = self._connection.cursor()
+        cursor.executemany(_postgres_sql(sql), seq_of_params)
+        return cursor
+
+    def commit(self):
+        self._connection.commit()
+
+    def close(self):
+        self._connection.close()
+
+
 def get_db():
     if "db_conn" not in g:
-        connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
-        connection.row_factory = sqlite3.Row
-        g.db_conn = connection
+        if is_postgres():
+            import psycopg2
+            from psycopg2.extras import DictCursor
+
+            connection = psycopg2.connect(
+                current_app.config["DATABASE_URL"],
+                cursor_factory=DictCursor,
+            )
+            g.db_conn = PostgresConnection(connection)
+        else:
+            connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
+            connection.row_factory = sqlite3.Row
+            g.db_conn = connection
     return g.db_conn
 
 
@@ -20,6 +59,10 @@ def close_db(_error=None):
 
 
 def init_db():
+    if is_postgres():
+        init_db_postgres()
+        return
+
     connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
     connection.executescript(
         """
@@ -186,6 +229,211 @@ def init_db():
     )
     ensure_legacy_columns(connection)
     seed_demo_data(connection)
+    connection.commit()
+    connection.close()
+
+
+def init_db_postgres():
+    import psycopg2
+    from psycopg2.extras import DictCursor
+
+    connection = psycopg2.connect(
+        current_app.config["DATABASE_URL"],
+        cursor_factory=DictCursor,
+    )
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS technicians (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            employee_code TEXT NOT NULL UNIQUE,
+            region TEXT NOT NULL,
+            phone TEXT,
+            commune TEXT,
+            team TEXT,
+            company_name TEXT,
+            supervisor_name TEXT,
+            center_name TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vehicles (
+            id SERIAL PRIMARY KEY,
+            plate TEXT NOT NULL UNIQUE,
+            brand TEXT NOT NULL,
+            model TEXT NOT NULL,
+            year INTEGER,
+            status TEXT NOT NULL DEFAULT 'activo',
+            unit_number TEXT,
+            odometer_km INTEGER,
+            assigned_employee_code TEXT,
+            review_date TEXT,
+            insurance_expiry TEXT,
+            extinguisher_expiry TEXT,
+            gnc_expiry TEXT,
+            rto_expiry TEXT,
+            botiquin_expiry TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mobile_units (
+            id SERIAL PRIMARY KEY,
+            mobile_code TEXT NOT NULL UNIQUE,
+            technician_id INTEGER REFERENCES technicians (id),
+            user_name TEXT,
+            warehouse_description TEXT,
+            warehouse_type TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            notes TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS storage_locations (
+            id SERIAL PRIMARY KEY,
+            mobile_unit_id INTEGER NOT NULL REFERENCES mobile_units (id),
+            center_name TEXT NOT NULL,
+            warehouse_code TEXT NOT NULL,
+            warehouse_name TEXT NOT NULL,
+            warehouse_type TEXT,
+            user_name TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(center_name, warehouse_code)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS materials (
+            id SERIAL PRIMARY KEY,
+            material_code TEXT,
+            material_name TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS material_stock (
+            id SERIAL PRIMARY KEY,
+            material_id INTEGER NOT NULL REFERENCES materials (id),
+            mobile_unit_id INTEGER NOT NULL REFERENCES mobile_units (id),
+            quantity DOUBLE PRECISION NOT NULL DEFAULT 0,
+            UNIQUE(material_id, mobile_unit_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS equipment_inventory (
+            id SERIAL PRIMARY KEY,
+            storage_location_id INTEGER REFERENCES storage_locations (id),
+            mobile_unit_id INTEGER REFERENCES mobile_units (id),
+            center_name TEXT NOT NULL,
+            warehouse_code TEXT NOT NULL,
+            warehouse_name TEXT NOT NULL,
+            material_code TEXT NOT NULL,
+            material_name TEXT NOT NULL,
+            serial_number TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audits (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            audit_date TEXT NOT NULL,
+            auditor_name TEXT NOT NULL,
+            auditor_signature_path TEXT,
+            technician_signature_path TEXT,
+            technician_display_name TEXT,
+            technician_employee_code TEXT,
+            location TEXT NOT NULL,
+            installation_type TEXT NOT NULL,
+            total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+            result_status TEXT NOT NULL,
+            general_notes TEXT,
+            serialized_stock_status TEXT,
+            serialized_stock_notes TEXT,
+            material_stock_status TEXT,
+            material_stock_notes TEXT,
+            mobile_unit_id INTEGER REFERENCES mobile_units (id),
+            technician_id INTEGER REFERENCES technicians (id),
+            vehicle_id INTEGER NOT NULL REFERENCES vehicles (id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_items (
+            id SERIAL PRIMARY KEY,
+            audit_id INTEGER NOT NULL REFERENCES audits (id),
+            section_key TEXT NOT NULL,
+            section_title TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            is_critical INTEGER NOT NULL DEFAULT 0,
+            non_compliance_reason TEXT,
+            notes TEXT,
+            photo_path TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_supply_requests (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            audit_id INTEGER NOT NULL REFERENCES audits (id),
+            section_key TEXT NOT NULL,
+            section_title TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            request_type TEXT NOT NULL,
+            material_code TEXT NOT NULL,
+            quantity INTEGER,
+            notes TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tnps_responses (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            response_date TEXT NOT NULL,
+            score INTEGER NOT NULL CHECK(score >= 0 AND score <= 10),
+            booking_ease_score INTEGER,
+            punctuality_score INTEGER,
+            communication_clarity_score INTEGER,
+            issue_resolved_first_visit INTEGER,
+            comment TEXT,
+            customer_name TEXT,
+            technician_id INTEGER REFERENCES technicians (id),
+            audit_id INTEGER REFERENCES audits (id)
+        )
+        """
+    )
+
     connection.commit()
     connection.close()
 
@@ -1206,8 +1454,7 @@ def create_tnps_response(
             connection.commit()
             return existing["id"]
 
-    cursor = connection.execute(
-        """
+    insert_sql = """
         INSERT INTO tnps_responses (
             response_date,
             score,
@@ -1220,20 +1467,27 @@ def create_tnps_response(
             technician_id,
             audit_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            response_date,
-            score,
-            booking_ease_score,
-            punctuality_score,
-            communication_clarity_score,
-            issue_resolved_first_visit,
-            (comment or "").strip() or None,
-            (customer_name or "").strip() or None,
-            technician_id,
-            audit_id,
-        ),
+        """
+    insert_params = (
+        response_date,
+        score,
+        booking_ease_score,
+        punctuality_score,
+        communication_clarity_score,
+        issue_resolved_first_visit,
+        (comment or "").strip() or None,
+        (customer_name or "").strip() or None,
+        technician_id,
+        audit_id,
     )
+
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+        new_id_row = cursor.fetchone()
+        connection.commit()
+        return new_id_row[0] if new_id_row else None
+
+    cursor = connection.execute(insert_sql, insert_params)
     connection.commit()
     return cursor.lastrowid
 
@@ -1318,6 +1572,11 @@ def fetch_tnps_responses(filters=None, limit=200):
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
+    created_at_expr = (
+        "tnps_responses.created_at"
+        if is_postgres()
+        else "datetime(tnps_responses.created_at, 'localtime')"
+    )
     rows = get_db().execute(
         f"""
         SELECT
@@ -1331,7 +1590,7 @@ def fetch_tnps_responses(filters=None, limit=200):
             tnps_responses.comment,
             tnps_responses.customer_name,
             tnps_responses.audit_id,
-            datetime(tnps_responses.created_at, 'localtime') AS created_at,
+            {created_at_expr} AS created_at,
             technicians.name AS technician_name,
             technicians.employee_code AS technician_employee_code
         FROM tnps_responses
@@ -1346,8 +1605,13 @@ def fetch_tnps_responses(filters=None, limit=200):
 
 
 def fetch_tnps_response_for_audit(audit_id):
+    created_at_expr = (
+        "tnps_responses.created_at"
+        if is_postgres()
+        else "datetime(tnps_responses.created_at, 'localtime')"
+    )
     row = get_db().execute(
-        """
+        f"""
         SELECT
             tnps_responses.id,
             tnps_responses.response_date,
@@ -1360,7 +1624,7 @@ def fetch_tnps_response_for_audit(audit_id):
             tnps_responses.customer_name,
             tnps_responses.audit_id,
             tnps_responses.technician_id,
-            datetime(tnps_responses.created_at, 'localtime') AS created_at,
+            {created_at_expr} AS created_at,
             technicians.name AS technician_name,
             technicians.employee_code AS technician_employee_code
         FROM tnps_responses
@@ -1423,8 +1687,9 @@ def fetch_all_audits():
 
 
 def fetch_audit_detail(audit_id):
+    created_at_expr = "audits.created_at" if is_postgres() else "datetime(audits.created_at, 'localtime')"
     row = get_db().execute(
-        """
+        f"""
         SELECT
             audits.id,
             audits.audit_date,
@@ -1443,7 +1708,7 @@ def fetch_audit_detail(audit_id):
             audits.material_stock_status,
             audits.material_stock_notes,
             audits.technician_id,
-            datetime(audits.created_at, 'localtime') AS created_at,
+            {created_at_expr} AS created_at,
             mobile_units.mobile_code,
             COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
             COALESCE(technicians.employee_code, audits.technician_employee_code) AS employee_code,
@@ -1495,11 +1760,12 @@ def fetch_audit_items(audit_id):
 
 
 def fetch_audit_supply_requests(audit_id):
+    created_at_expr = "created_at" if is_postgres() else "datetime(created_at, 'localtime')"
     rows = get_db().execute(
-        """
+        f"""
         SELECT
             id,
-            datetime(created_at, 'localtime') AS created_at,
+            {created_at_expr} AS created_at,
             section_title,
             item_label,
             request_type,
@@ -1517,8 +1783,7 @@ def fetch_audit_supply_requests(audit_id):
 
 def create_audit(audit_data, items, supply_requests=None):
     connection = get_db()
-    cursor = connection.execute(
-        """
+    insert_sql = """
         INSERT INTO audits (
             audit_date,
             auditor_name,
@@ -1539,29 +1804,35 @@ def create_audit(audit_data, items, supply_requests=None):
             technician_id,
             vehicle_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            audit_data["audit_date"],
-            audit_data["auditor_name"],
-            audit_data.get("auditor_signature_path"),
-            audit_data.get("technician_signature_path"),
-            audit_data.get("technician_display_name"),
-            audit_data.get("technician_employee_code"),
-            audit_data["location"],
-            audit_data["installation_type"],
-            audit_data["total_score"],
-            audit_data["result_status"],
-            audit_data["general_notes"],
-            audit_data.get("serialized_stock_status"),
-            audit_data.get("serialized_stock_notes"),
-            audit_data.get("material_stock_status"),
-            audit_data.get("material_stock_notes"),
-            audit_data["mobile_unit_id"],
-            audit_data.get("technician_id"),
-            audit_data["vehicle_id"],
-        ),
+        """
+    insert_params = (
+        audit_data["audit_date"],
+        audit_data["auditor_name"],
+        audit_data.get("auditor_signature_path"),
+        audit_data.get("technician_signature_path"),
+        audit_data.get("technician_display_name"),
+        audit_data.get("technician_employee_code"),
+        audit_data["location"],
+        audit_data["installation_type"],
+        audit_data["total_score"],
+        audit_data["result_status"],
+        audit_data["general_notes"],
+        audit_data.get("serialized_stock_status"),
+        audit_data.get("serialized_stock_notes"),
+        audit_data.get("material_stock_status"),
+        audit_data.get("material_stock_notes"),
+        audit_data["mobile_unit_id"],
+        audit_data.get("technician_id"),
+        audit_data["vehicle_id"],
     )
-    audit_id = cursor.lastrowid
+
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+        new_id_row = cursor.fetchone()
+        audit_id = new_id_row[0] if new_id_row else None
+    else:
+        cursor = connection.execute(insert_sql, insert_params)
+        audit_id = cursor.lastrowid
 
     connection.executemany(
         """
@@ -2711,8 +2982,7 @@ def ensure_mobile_unit(
         )
         return existing_row[0]
 
-    cursor = connection.execute(
-        """
+    insert_sql = """
         INSERT INTO mobile_units (
             mobile_code,
             user_name,
@@ -2721,16 +2991,20 @@ def ensure_mobile_unit(
             is_enabled,
             notes
         ) VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            mobile_code,
-            empty_as_none(user_name),
-            empty_as_none(warehouse_description),
-            empty_as_none(warehouse_type),
-            1 if is_enabled is None else is_enabled,
-            empty_as_none(notes) or "Codigo de movil tecnico importado",
-        ),
+        """
+    insert_params = (
+        mobile_code,
+        empty_as_none(user_name),
+        empty_as_none(warehouse_description),
+        empty_as_none(warehouse_type),
+        1 if is_enabled is None else is_enabled,
+        empty_as_none(notes) or "Codigo de movil tecnico importado",
     )
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+        row = cursor.fetchone()
+        return row[0] if row else None
+    cursor = connection.execute(insert_sql, insert_params)
     return cursor.lastrowid
 
 
@@ -2754,8 +3028,7 @@ def ensure_storage_location(connection, mobile_unit_id, center_name, warehouse_c
         )
         return existing_row[0]
 
-    cursor = connection.execute(
-        """
+    insert_sql = """
         INSERT INTO storage_locations (
             mobile_unit_id,
             center_name,
@@ -2763,9 +3036,13 @@ def ensure_storage_location(connection, mobile_unit_id, center_name, warehouse_c
             warehouse_name,
             is_enabled
         ) VALUES (?, ?, ?, ?, 1)
-        """,
-        (mobile_unit_id, center_name or "Sin centro", warehouse_code, warehouse_name or warehouse_code),
-    )
+        """
+    insert_params = (mobile_unit_id, center_name or "Sin centro", warehouse_code, warehouse_name or warehouse_code)
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+        row = cursor.fetchone()
+        return row[0] if row else None
+    cursor = connection.execute(insert_sql, insert_params)
     return cursor.lastrowid
 
 
@@ -2781,10 +3058,13 @@ def ensure_material(connection, material_code, material_name):
         )
         return existing_row[0], False
 
-    cursor = connection.execute(
-        "INSERT INTO materials (material_code, material_name) VALUES (?, ?)",
-        (material_code, material_name),
-    )
+    insert_sql = "INSERT INTO materials (material_code, material_name) VALUES (?, ?)"
+    insert_params = (material_code, material_name)
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+        row = cursor.fetchone()
+        return (row[0] if row else None), True
+    cursor = connection.execute(insert_sql, insert_params)
     return cursor.lastrowid, True
 
 

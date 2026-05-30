@@ -285,10 +285,44 @@ def validate_photo_file(photo_file, item_label):
     return filename, extension
 
 
+def cloudinary_enabled():
+    return bool(current_app.config.get("CLOUDINARY_URL"))
+
+
+def upload_image_to_cloudinary(data_uri, folder, public_id):
+    import cloudinary
+    import cloudinary.uploader
+
+    cloudinary.config(cloudinary_url=current_app.config["CLOUDINARY_URL"], secure=True)
+    result = cloudinary.uploader.upload(
+        data_uri,
+        folder=folder,
+        public_id=public_id,
+        resource_type="image",
+    )
+    return result.get("secure_url") or result.get("url")
+
+
+def image_bytes_to_data_uri(content_bytes, extension):
+    normalized = (extension or "").lower().lstrip(".")
+    mime_map = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+    }
+    mime = mime_map.get(normalized)
+    if not mime:
+        raise ValueError("Formato de imagen no soportado.")
+    encoded = base64.b64encode(content_bytes).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
 def persist_item_evidence(items, audit_date):
     date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
-    target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / date_folder
-    target_dir.mkdir(parents=True, exist_ok=True)
+    if not cloudinary_enabled():
+        target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / date_folder
+        target_dir.mkdir(parents=True, exist_ok=True)
 
     for item in items:
         photo_file = item.pop("photo_file", None)
@@ -298,10 +332,21 @@ def persist_item_evidence(items, audit_date):
 
         filename, extension = validate_photo_file(photo_file, item["item_label"])
         safe_stem = secure_filename(item["item_key"]) or "evidencia"
-        generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{uuid4().hex[:8]}.{extension}"
-        saved_path = target_dir / generated_name
-        photo_file.save(saved_path)
-        item["photo_path"] = f"uploads/audits/{date_folder}/{generated_name}".replace("\\", "/")
+        generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{uuid4().hex[:8]}"
+        if cloudinary_enabled():
+            raw_bytes = photo_file.stream.read()
+            if not raw_bytes:
+                raise ValueError(f"La evidencia de {item['item_label']} no contiene datos validos.")
+            data_uri = image_bytes_to_data_uri(raw_bytes, extension)
+            base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+            folder = f"{base_folder}/audits/{date_folder}"
+            uploaded_url = upload_image_to_cloudinary(data_uri, folder=folder, public_id=generated_name)
+            item["photo_path"] = uploaded_url
+        else:
+            generated_filename = f"{generated_name}.{extension}"
+            saved_path = target_dir / generated_filename
+            photo_file.save(saved_path)
+            item["photo_path"] = f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
 
 
 def persist_auditor_signature(signature_data, audit_date):
@@ -323,13 +368,20 @@ def persist_auditor_signature(signature_data, audit_date):
         raise ValueError("La firma del auditor no contiene datos validos.")
 
     date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
+    generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_firma_auditor_{uuid4().hex[:8]}"
+    if cloudinary_enabled():
+        data_uri = image_bytes_to_data_uri(decoded_signature, "png")
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        folder = f"{base_folder}/audits/signatures/{date_folder}"
+        return upload_image_to_cloudinary(data_uri, folder=folder, public_id=generated_name)
+
     target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "signatures" / date_folder
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_firma_auditor_{uuid4().hex[:8]}.png"
-    saved_path = target_dir / generated_name
+    generated_filename = f"{generated_name}.png"
+    saved_path = target_dir / generated_filename
     saved_path.write_bytes(decoded_signature)
-    return f"uploads/audits/signatures/{date_folder}/{generated_name}".replace("\\", "/")
+    return f"uploads/audits/signatures/{date_folder}/{generated_filename}".replace("\\", "/")
 
 
 def persist_technician_signature(signature_data, audit_date):
@@ -351,13 +403,20 @@ def persist_technician_signature(signature_data, audit_date):
         raise ValueError("La firma del tecnico no contiene datos validos.")
 
     date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
+    generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_firma_tecnico_{uuid4().hex[:8]}"
+    if cloudinary_enabled():
+        data_uri = image_bytes_to_data_uri(decoded_signature, "png")
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        folder = f"{base_folder}/audits/signatures/{date_folder}"
+        return upload_image_to_cloudinary(data_uri, folder=folder, public_id=generated_name)
+
     target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "signatures" / date_folder
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_firma_tecnico_{uuid4().hex[:8]}.png"
-    saved_path = target_dir / generated_name
+    generated_filename = f"{generated_name}.png"
+    saved_path = target_dir / generated_filename
     saved_path.write_bytes(decoded_signature)
-    return f"uploads/audits/signatures/{date_folder}/{generated_name}".replace("\\", "/")
+    return f"uploads/audits/signatures/{date_folder}/{generated_filename}".replace("\\", "/")
 
 
 def build_grouped_audit_items(items):

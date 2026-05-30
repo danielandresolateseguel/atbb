@@ -224,8 +224,14 @@
                     {% if item["photo_path"] %}
                         <div class="evidence-block">
                             <strong>Evidencia</strong>
-                            <a class="table-link" href="{{ url_for('static', filename=item['photo_path']) }}" target="_blank">Abrir foto</a>
-                            <img src="{{ url_for('static', filename=item['photo_path']) }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
+                            {% set photo_src = item["photo_path"] %}
+                            {% if photo_src.startswith("http") %}
+                                <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto</a>
+                                <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
+                            {% else %}
+                                <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto</a>
+                                <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
+                            {% endif %}
                         </div>
                     {% else %}
                         <p class="empty-state">Sin evidencia fotográfica.</p>
@@ -245,7 +251,12 @@
     </div>
     {% if audit["auditor_signature_path"] %}
         <div class="signature-display">
-            <img src="{{ url_for('static', filename=audit['auditor_signature_path']) }}" alt="Firma del auditor {{ audit['auditor_name'] }}" class="signature-image">
+            {% set sig_src = audit["auditor_signature_path"] %}
+            {% if sig_src.startswith("http") %}
+                <img src="{{ sig_src }}" alt="Firma del auditor {{ audit['auditor_name'] }}" class="signature-image">
+            {% else %}
+                <img src="{{ url_for('static', filename=sig_src) }}" alt="Firma del auditor {{ audit['auditor_name'] }}" class="signature-image">
+            {% endif %}
         </div>
     {% else %}
         <p class="empty-state">Esta auditoría no tiene firma registrada.</p>
@@ -261,7 +272,12 @@
     </div>
     {% if audit["technician_signature_path"] %}
         <div class="signature-display">
-            <img src="{{ url_for('static', filename=audit['technician_signature_path']) }}" alt="Firma del técnico" class="signature-image">
+            {% set sig_src = audit["technician_signature_path"] %}
+            {% if sig_src.startswith("http") %}
+                <img src="{{ sig_src }}" alt="Firma del técnico" class="signature-image">
+            {% else %}
+                <img src="{{ url_for('static', filename=sig_src) }}" alt="Firma del técnico" class="signature-image">
+            {% endif %}
         </div>
     {% else %}
         <p class="empty-state">Esta auditoría no tiene firma de técnico registrada.</p>
