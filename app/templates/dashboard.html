@@ -6,25 +6,25 @@
 <section class="hero">
     <div>
         <p class="eyebrow">Control operativo</p>
-        <h2>Panel de auditoria para tecnicos de fibra optica</h2>
+        <h2>Panel de auditoría para técnicos de fibra óptica</h2>
         <p class="hero-copy">
-            Registra inspecciones de seguridad, herramientas y vehiculo desde una interfaz pensada para uso en terreno.
+            Registra inspecciones de seguridad, herramientas y vehículo desde una interfaz pensada para uso en terreno.
         </p>
     </div>
-    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Crear auditoria</a>
+    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Crear auditoría</a>
 </section>
 
 <section class="stats-grid">
     <article class="card stat-card">
-        <span class="stat-label">Auditorias</span>
+        <span class="stat-label">Auditorías</span>
         <strong class="stat-value">{{ total_audits }}</strong>
     </article>
     <article class="card stat-card">
-        <span class="stat-label">Tasa aprobacion</span>
+        <span class="stat-label">Tasa aprobación</span>
         <strong class="stat-value">{{ approval_rate }}%</strong>
     </article>
     <article class="card stat-card">
-        <span class="stat-label">Casos criticos</span>
+        <span class="stat-label">Casos críticos</span>
         <strong class="stat-value">{{ critical_count }}</strong>
     </article>
 </section>
@@ -33,7 +33,7 @@
     <div class="section-heading">
         <div>
             <p class="eyebrow">Actividad reciente</p>
-            <h3>Ultimas auditorias</h3>
+            <h3>Últimas auditorías</h3>
         </div>
         <a class="button button-secondary" href="{{ url_for('main.audit_list') }}">Ver historial</a>
     </div>
@@ -44,7 +44,7 @@
                 <article class="audit-item">
                     <div>
                         <strong>
-                            {% if audit.mobile_code %}Movil {{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}
+                            {% if audit.mobile_code %}Móvil {{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}
                         </strong>
                         <p>{{ audit.location }} | {{ audit.installation_type }}</p>
                     </div>
@@ -56,7 +56,7 @@
             {% endfor %}
         </div>
     {% else %}
-        <p class="empty-state">Aun no existen auditorias registradas.</p>
+        <p class="empty-state">Aún no existen auditorías registradas.</p>
     {% endif %}
 </section>
 {% endblock %}

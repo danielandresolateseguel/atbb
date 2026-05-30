@@ -6,7 +6,7 @@
 <section class="section-heading">
     <div>
         <p class="eyebrow">Consulta operativa</p>
-        <h2>Stock de materiales por movil</h2>
+        <h2>Stock de materiales por móvil</h2>
     </div>
 </section>
 
@@ -14,10 +14,10 @@
     <form method="get" class="filter-grid">
         <label>
             <span>Buscar</span>
-            <input type="text" name="q" value="{{ filters['q'] }}" placeholder="Material, codigo o movil">
+            <input type="text" name="q" value="{{ filters['q'] }}" placeholder="Material, código o móvil">
         </label>
         <label>
-            <span>Movil</span>
+            <span>Móvil</span>
             <select name="mobile_code">
                 <option value="">Todos</option>
                 {% for mobile_code in mobile_codes %}
@@ -38,11 +38,11 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Codigo material</th>
+                        <th>Código material</th>
                         <th>Material</th>
-                        <th>Movil</th>
+                        <th>Móvil</th>
                         <th>Responsable</th>
-                        <th>Descripcion</th>
+                        <th>Descripción</th>
                         <th>Cantidad</th>
                     </tr>
                 </thead>

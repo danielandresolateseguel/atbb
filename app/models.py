@@ -124,6 +124,10 @@ def init_db():
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
             general_notes TEXT,
+            serialized_stock_status TEXT,
+            serialized_stock_notes TEXT,
+            material_stock_status TEXT,
+            material_stock_notes TEXT,
             mobile_unit_id INTEGER,
             technician_id INTEGER,
             vehicle_id INTEGER NOT NULL,
@@ -217,6 +221,10 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_display_name", "TEXT")
     add_column_if_missing(connection, "audits", "technician_employee_code", "TEXT")
+    add_column_if_missing(connection, "audits", "serialized_stock_status", "TEXT")
+    add_column_if_missing(connection, "audits", "serialized_stock_notes", "TEXT")
+    add_column_if_missing(connection, "audits", "material_stock_status", "TEXT")
+    add_column_if_missing(connection, "audits", "material_stock_notes", "TEXT")
     add_column_if_missing(connection, "audit_items", "non_compliance_reason", "TEXT")
     add_column_if_missing(connection, "audit_items", "photo_path", "TEXT")
     add_column_if_missing(connection, "tnps_responses", "booking_ease_score", "INTEGER")
@@ -283,6 +291,10 @@ def ensure_audits_nullable_technician(connection):
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
             general_notes TEXT,
+            serialized_stock_status TEXT,
+            serialized_stock_notes TEXT,
+            material_stock_status TEXT,
+            material_stock_notes TEXT,
             mobile_unit_id INTEGER,
             technician_id INTEGER,
             vehicle_id INTEGER NOT NULL,
@@ -309,6 +321,10 @@ def ensure_audits_nullable_technician(connection):
             total_score,
             result_status,
             general_notes,
+            serialized_stock_status,
+            serialized_stock_notes,
+            material_stock_status,
+            material_stock_notes,
             mobile_unit_id,
             technician_id,
             vehicle_id
@@ -327,6 +343,10 @@ def ensure_audits_nullable_technician(connection):
             total_score,
             result_status,
             general_notes,
+            serialized_stock_status,
+            serialized_stock_notes,
+            material_stock_status,
+            material_stock_notes,
             mobile_unit_id,
             technician_id,
             vehicle_id
@@ -809,6 +829,7 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=8, stock_limit=12
         "mobile": mobile,
         "summary": summary,
         "equipment_rows": [dict(row) for row in equipment_rows],
+        "_debug_equipment_rows": [dict(row) for row in equipment_rows], # DEBUG: Para inspeccionar los datos de seriales
         "stock_rows": [dict(row) for row in stock_rows],
         "tool_matches": tool_matches,
         "alerts": build_mobile_audit_alerts(mobile, summary, tool_matches),
@@ -1417,6 +1438,10 @@ def fetch_audit_detail(audit_id):
             audits.total_score,
             audits.result_status,
             audits.general_notes,
+            audits.serialized_stock_status,
+            audits.serialized_stock_notes,
+            audits.material_stock_status,
+            audits.material_stock_notes,
             audits.technician_id,
             datetime(audits.created_at, 'localtime') AS created_at,
             mobile_units.mobile_code,
@@ -1506,10 +1531,14 @@ def create_audit(audit_data, items, supply_requests=None):
             total_score,
             result_status,
             general_notes,
+            serialized_stock_status,
+            serialized_stock_notes,
+            material_stock_status,
+            material_stock_notes,
             mobile_unit_id,
             technician_id,
             vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             audit_data["audit_date"],
@@ -1523,6 +1552,10 @@ def create_audit(audit_data, items, supply_requests=None):
             audit_data["total_score"],
             audit_data["result_status"],
             audit_data["general_notes"],
+            audit_data.get("serialized_stock_status"),
+            audit_data.get("serialized_stock_notes"),
+            audit_data.get("material_stock_status"),
+            audit_data.get("material_stock_notes"),
             audit_data["mobile_unit_id"],
             audit_data.get("technician_id"),
             audit_data["vehicle_id"],

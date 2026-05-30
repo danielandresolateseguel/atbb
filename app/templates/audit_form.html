@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Nueva auditoria{% endblock %}
+{% block title %}Nueva auditoría{% endblock %}
 
 {% block content %}
 <section class="section-heading">
     <div>
         <p class="eyebrow">Registro</p>
-        <h2>Nueva auditoria en terreno</h2>
+        <h2>Nueva auditoría en terreno</h2>
     </div>
 </section>
 
@@ -23,7 +23,7 @@
         </label>
 
         <label>
-            <span>Movil tecnico</span>
+            <span>Móvil técnico</span>
             <select name="mobile_unit_id" id="mobile_unit_id" required>
                 <option value="">Selecciona</option>
                 {% for mobile in mobile_units %}
@@ -43,7 +43,7 @@
         </label>
 
         <label>
-            <span>Vehiculo</span>
+            <span>Vehículo</span>
             <select name="vehicle_id" id="vehicle_id" required>
                 <option value="">Selecciona</option>
                 {% for vehicle in vehicles %}
@@ -63,12 +63,12 @@
         </label>
 
         <label>
-            <span>Ubicacion</span>
+            <span>Ubicación</span>
             <input type="text" name="location" value="{{ request.form.get('location', '') }}" placeholder="Distrito / Provincia" required>
         </label>
 
         <label>
-            <span>Tipo de instalacion</span>
+            <span>Tipo de instalación</span>
             <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '') }}" placeholder="Alta / Service" required>
         </label>
     </section>
@@ -77,23 +77,23 @@
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Contexto operativo</p>
-                <h3>Resumen del movil seleccionado</h3>
+                <h3>Resumen del móvil seleccionado</h3>
             </div>
         </div>
         <div class="info-list">
-            <p><strong>Movil:</strong> <span id="selected_mobile_code">Sin seleccionar</span></p>
-            <p><strong>Tecnico (segun movil):</strong> <span id="selected_mobile_technician">Sin dato</span></p>
+            <p><strong>Móvil:</strong> <span id="selected_mobile_code">Sin seleccionar</span></p>
+            <p><strong>Técnico (según móvil):</strong> <span id="selected_mobile_technician">Sin dato</span></p>
             <p><strong>Responsable operativo:</strong> <span id="selected_mobile_user">-</span></p>
-            <p><strong>Descripcion:</strong> <span id="selected_mobile_description">-</span></p>
+            <p><strong>Descripción:</strong> <span id="selected_mobile_description">-</span></p>
         </div>
-        <small>El nombre del tecnico se toma desde el movil seleccionado.</small>
+        <small>El nombre del técnico se toma desde el móvil seleccionado.</small>
     </section>
 
     <section class="card mobile-snapshot-card" id="mobile_snapshot_card">
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Herramientas y stock</p>
-                <h3>Referencia rapida para auditar</h3>
+                <h3>Referencia rápida para auditar</h3>
             </div>
             <span class="weight-chip" id="snapshot_status_chip">Sin datos</span>
         </div>
@@ -101,7 +101,7 @@
         <div class="alert-grid" id="snapshot_alert_grid">
             <article class="alert-card alert-info">
                 <strong>Sin alertas cargadas</strong>
-                <p>Selecciona un movil para revisar riesgos operativos antes de auditar.</p>
+                <p>Selecciona un móvil para revisar riesgos operativos antes de auditar.</p>
             </article>
         </div>
 
@@ -123,25 +123,106 @@
         <div class="detail-grid">
             <article class="guide-card">
                 <strong>Equipos / herramientas detectadas</strong>
-                <p>Usa este bloque para contrastar lo que deberia tener el movil con lo que ves en terreno.</p>
+                <p>Usa este bloque para contrastar lo que debería tener el móvil con lo que ves en terreno.</p>
                 <ul class="snapshot-list" id="snapshot_equipment_list">
-                    <li>Selecciona un movil para ver sus equipos.</li>
+                    <li>Selecciona un móvil para ver sus equipos.</li>
                 </ul>
+                <p><strong>Constancia:</strong> indica si el móvil cuenta con los serializados esperados o si faltan.</p>
+                <div class="status-group">
+                    <label>
+                        <input
+                            type="radio"
+                            name="serialized_stock_status"
+                            value="ok"
+                            {% if request.form.get('serialized_stock_status') == 'ok' %}checked{% endif %}
+                            required
+                        >
+                        Completo
+                    </label>
+                    <label>
+                        <input
+                            type="radio"
+                            name="serialized_stock_status"
+                            value="missing"
+                            {% if request.form.get('serialized_stock_status') == 'missing' %}checked{% endif %}
+                        >
+                        Faltan
+                    </label>
+                    <label>
+                        <input
+                            type="radio"
+                            name="serialized_stock_status"
+                            value="not_checked"
+                            {% if request.form.get('serialized_stock_status') == 'not_checked' %}checked{% endif %}
+                        >
+                        No revisado
+                    </label>
+                </div>
+                <label id="serialized_stock_notes_wrap">
+                    <span>Detalle de faltantes</span>
+                    <textarea
+                        name="serialized_stock_notes"
+                        rows="3"
+                        placeholder="Ej: faltan 2 ONT / seriales X e Y"
+                    >{{ request.form.get('serialized_stock_notes', '') }}</textarea>
+                    <small>Obligatorio si seleccionas `Faltan`.</small>
+                </label>
             </article>
+            
             <article class="guide-card">
-                <strong>Stock relevante del movil</strong>
-                <p>Muestra los materiales con mayor cantidad cargada para tener contexto durante la auditoria.</p>
+                <strong>Stock relevante del móvil</strong>
+                <p>Muestra los materiales con mayor cantidad cargada para tener contexto durante la auditoría.</p>
                 <ul class="snapshot-list" id="snapshot_stock_list">
-                    <li>Selecciona un movil para ver su stock.</li>
+                    <li>Selecciona un móvil para ver su stock.</li>
                 </ul>
+                <p><strong>Constancia:</strong> indica si el móvil cuenta con el stock esperado o si faltan materiales.</p>
+                <div class="status-group">
+                    <label>
+                        <input
+                            type="radio"
+                            name="material_stock_status"
+                            value="ok"
+                            {% if request.form.get('material_stock_status') == 'ok' %}checked{% endif %}
+                            required
+                        >
+                        Completo
+                    </label>
+                    <label>
+                        <input
+                            type="radio"
+                            name="material_stock_status"
+                            value="missing"
+                            {% if request.form.get('material_stock_status') == 'missing' %}checked{% endif %}
+                        >
+                        Faltan
+                    </label>
+                    <label>
+                        <input
+                            type="radio"
+                            name="material_stock_status"
+                            value="not_checked"
+                            {% if request.form.get('material_stock_status') == 'not_checked' %}checked{% endif %}
+                        >
+                        No revisado
+                    </label>
+                </div>
+                <label id="material_stock_notes_wrap">
+                    <span>Detalle de faltantes</span>
+                    <textarea
+                        name="material_stock_notes"
+                        rows="3"
+                        placeholder="Ej: faltan conectores / cinta / etc."
+                    >{{ request.form.get('material_stock_notes', '') }}</textarea>
+                    <small>Obligatorio si seleccionas `Faltan`.</small>
+                </label>
             </article>
         </div>
 
         <article class="guide-card">
-            <strong>Sugerencia automatica para checklist de herramientas</strong>
-            <p>Estas coincidencias se basan en nombres cargados en equipos y stock del movil. Son apoyo visual, no reemplazan la revision del auditor.</p>
+            <strong>Sugerencia automática para checklist de herramientas</strong>
+            <p>Estas coincidencias se basan en nombres cargados en equipos y stock del móvil. Son apoyo visual, no reemplazan la revisión del auditor.</p>
             <div class="tool-match-grid" id="tool_match_grid">
-                <div class="tool-match-item tool-match-neutral">Selecciona un movil para evaluar herramientas clave.</div>
+                <div class="tool-match-item tool-match-neutral">Selecciona un móvil para evaluar herramientas clave.</div>
             </div>
         </article>
     </section>
@@ -178,7 +259,7 @@
                             </div>
                             <span class="badge" id="hand_tools_badge">Pendiente</span>
                         </div>
-                        <p class="signature-copy">Responde en esta misma seccion si el tecnico cuenta con cada herramienta.</p>
+                        <p class="signature-copy">Responde en esta misma sección si el técnico cuenta con cada herramienta.</p>
                         <small id="hand_tools_summary">Pendiente de completar.</small>
                     </article>
                 {% endif %}
@@ -204,7 +285,7 @@
                         <div class="status-group hand-tool-status-group">
                             <label class="hand-tool-choice">
                                 <input class="hand-tool-status-input" type="radio" name="status__{{ item['key'] }}" value="cumple" {% if request.form.get('status__' + item['key']) == 'cumple' %}checked{% endif %} required>
-                                <span>Si</span>
+                                <span>Sí</span>
                             </label>
                             <label class="hand-tool-choice">
                                 <input class="hand-tool-status-input" type="radio" name="status__{{ item['key'] }}" value="no_cumple" {% if request.form.get('status__' + item['key']) == 'no_cumple' %}checked{% endif %}>
@@ -214,7 +295,7 @@
 
                         <input type="hidden" name="reason__{{ item['key'] }}" value="{{ request.form.get('reason__' + item['key'], '') }}">
                         <input type="hidden" name="notes__{{ item['key'] }}" value="{{ request.form.get('notes__' + item['key'], '') }}">
-                        <small class="auto-hint tool-match-neutral" data-hand-tool-state="{{ item['key'] }}">Sin responder aun.</small>
+                        <small class="auto-hint tool-match-neutral" data-hand-tool-state="{{ item['key'] }}">Sin responder aún.</small>
                     </article>
                     {% else %}
                     <article
@@ -230,19 +311,26 @@
                             <div>
                                 <strong>{{ item["label"] }}</strong>
                                 {% if item["critical"] %}
-                                    <span class="critical-chip">Critico</span>
+                                    <span class="critical-chip">Crítico</span>
                                 {% endif %}
                             </div>
                         </div>
 
                         {% if section["key"] == "herramientas" %}
-                            <p class="auto-hint" data-tool-hint="{{ item['key'] }}">Sugerencia automatica: sin evaluar aun.</p>
+                            <p class="auto-hint" data-tool-hint="{{ item['key'] }}">Sugerencia automática: sin evaluar aún.</p>
                         {% endif %}
 
                         <div class="status-group">
-                            <label><input type="radio" name="status__{{ item['key'] }}" value="cumple" {% if request.form.get('status__' + item['key']) == 'cumple' %}checked{% endif %} required> Cumple</label>
-                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_cumple" {% if request.form.get('status__' + item['key']) == 'no_cumple' %}checked{% endif %}> No cumple</label>
-                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                            {% if section["key"] == "calidad_instalaciones" %}
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="conforme" {% if request.form.get('status__' + item['key']) == 'conforme' %}checked{% endif %} required> Conforme</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="nc_menor" {% if request.form.get('status__' + item['key']) == 'nc_menor' %}checked{% endif %}> No conformidad menor</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="nc_mayor" {% if request.form.get('status__' + item['key']) == 'nc_mayor' %}checked{% endif %}> No conformidad Mayor</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                            {% else %}
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="cumple" {% if request.form.get('status__' + item['key']) == 'cumple' %}checked{% endif %} required> Cumple</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_cumple" {% if request.form.get('status__' + item['key']) == 'no_cumple' %}checked{% endif %}> No cumple</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                            {% endif %}
                         </div>
 
                         {% if item["key"] == "extintor" %}
@@ -250,7 +338,7 @@
                                 <span>Fecha de caducidad del extintor</span>
                                 <input type="date" name="expiry__extintor" id="expiry__extintor" value="{{ request.form.get('expiry__extintor', '') }}">
                                 <small>Obligatoria si el item queda en `Cumple`.</small>
-                                <small id="record_extintor_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                                <small id="record_extintor_expiry">Registro del vehículo: sin fecha registrada.</small>
                             </label>
                         {% endif %}
 
@@ -259,7 +347,7 @@
                                 <span>Fecha de vencimiento del seguro</span>
                                 <input type="date" name="expiry__insurance" id="expiry__insurance" value="{{ request.form.get('expiry__insurance', '') }}">
                                 <small>Obligatoria si el item queda en `Cumple`.</small>
-                                <small id="record_insurance_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                                <small id="record_insurance_expiry">Registro del vehículo: sin fecha registrada.</small>
                             </label>
                         {% endif %}
 
@@ -268,7 +356,7 @@
                                 <span>Fecha de caducidad de la oblea de GNC</span>
                                 <input type="date" name="expiry__gnc" id="expiry__gnc" value="{{ request.form.get('expiry__gnc', '') }}">
                                 <small>Obligatoria si el item queda en `Cumple`.</small>
-                                <small id="record_gnc_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                                <small id="record_gnc_expiry">Registro del vehículo: sin fecha registrada.</small>
                             </label>
                         {% endif %}
 
@@ -277,49 +365,56 @@
                                 <span>Fecha de vencimiento de la RTO</span>
                                 <input type="date" name="expiry__rto" id="expiry__rto" value="{{ request.form.get('expiry__rto', '') }}">
                                 <small>Obligatoria si el item queda en `Cumple`.</small>
-                                <small id="record_rto_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                                <small id="record_rto_expiry">Registro del vehículo: sin fecha registrada.</small>
                             </label>
                         {% endif %}
 
                         {% if item["key"] == "botiquin" %}
                             <label>
-                                <span>Fecha de vencimiento del botiquin</span>
+                                <span>Fecha de vencimiento del botiquín</span>
                                 <input type="date" name="expiry__botiquin" id="expiry__botiquin" value="{{ request.form.get('expiry__botiquin', '') }}">
                                 <small>Obligatoria si el item queda en `Cumple`.</small>
-                                <small id="record_botiquin_expiry">Registro del vehiculo: sin fecha registrada.</small>
+                                <small id="record_botiquin_expiry">Registro del vehículo: sin fecha registrada.</small>
                             </label>
                         {% endif %}
 
-                        <label>
-                            <span>Motivo (si no cumple)</span>
-                            <select name="reason__{{ item['key'] }}">
-                                <option value="" {% if not request.form.get('reason__' + item['key']) %}selected{% endif %}>Selecciona</option>
-                                <option value="olvido" {% if request.form.get('reason__' + item['key']) == 'olvido' %}selected{% endif %}>Olvido / En otro cliente</option>
-                                <option value="danio" {% if request.form.get('reason__' + item['key']) == 'danio' %}selected{% endif %}>Daño</option>
-                                <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida / Robo</option>
-                                <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
-                                <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
-                                <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
-                            </select>
-                        </label>
+                        {% if section["key"] == "calidad_instalaciones" %}
+                            <label>
+                                <span>Detalle</span>
+                                <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si hay no conformidad (menor o mayor)">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
+                            </label>
+                        {% else %}
+                            <label>
+                                <span>Motivo (si no cumple)</span>
+                                <select name="reason__{{ item['key'] }}">
+                                    <option value="" {% if not request.form.get('reason__' + item['key']) %}selected{% endif %}>Selecciona</option>
+                                    <option value="olvido" {% if request.form.get('reason__' + item['key']) == 'olvido' %}selected{% endif %}>Olvido / En otro cliente</option>
+                                    <option value="danio" {% if request.form.get('reason__' + item['key']) == 'danio' %}selected{% endif %}>Daño</option>
+                                    <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida / Robo</option>
+                                    <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                    <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                    <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
+                                </select>
+                            </label>
 
-                        <label>
-                            <span>Observacion</span>
-                            <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si no cumple">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
-                        </label>
+                            <label>
+                                <span>Observación</span>
+                                <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si no cumple">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
+                            </label>
 
-                        <label>
-                            <span>Evidencia fotografica</span>
-                            <input type="file" name="photo__{{ item['key'] }}" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" capture="environment">
-                            <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
-                        </label>
+                            <label>
+                                <span>Evidencia fotográfica</span>
+                                <input type="file" name="photo__{{ item['key'] }}" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" capture="environment">
+                                <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
+                            </label>
+                        {% endif %}
                     </article>
                     {% endif %}
                     {% endfor %}
                 </div>
 
                 <div class="button-row section-nav">
-                    <button class="button button-secondary" type="button" data-section-next="1">Siguiente seccion</button>
+                    <button class="button button-secondary" type="button" data-section-next="1">Siguiente sección</button>
                 </div>
             </div>
         </section>
@@ -328,21 +423,21 @@
     <section class="card">
         <label>
             <span>Comentario general</span>
-            <textarea name="general_notes" rows="4" placeholder="Resumen general de la auditoria">{{ request.form.get('general_notes', '') }}</textarea>
+            <textarea name="general_notes" rows="4" placeholder="Resumen general de la auditoría">{{ request.form.get('general_notes', '') }}</textarea>
         </label>
     </section>
 
     <section class="card" id="supply_requests_card">
         <div class="section-heading">
             <div>
-                <p class="eyebrow">Accion</p>
-                <h3>Solicitudes de reposicion / cambio</h3>
+                <p class="eyebrow">Acción</p>
+                <h3>Solicitudes de reposición / cambio</h3>
             </div>
             <button class="button button-secondary" type="button" id="add_supply_request_button">Agregar</button>
         </div>
 
         {% if not material_index %}
-            <p class="empty-state">Importa Stock de materiales para habilitar la seleccion de codigos.</p>
+            <p class="empty-state">Importa Stock de materiales para habilitar la selección de códigos.</p>
         {% endif %}
 
         <div id="supply_requests_list"></div>
@@ -378,7 +473,7 @@
                 <strong class="stat-value compact-value" id="closure_pending_count">0</strong>
             </article>
             <article class="card stat-card compact-stat">
-                <span class="stat-label">Sin observacion</span>
+                <span class="stat-label">Sin observación</span>
                 <strong class="stat-value compact-value" id="closure_missing_notes_count">0</strong>
             </article>
             <article class="card stat-card compact-stat">
@@ -406,7 +501,7 @@
                 <strong class="stat-value compact-value" id="closure_missing_rto_count">0</strong>
             </article>
             <article class="card stat-card compact-stat">
-                <span class="stat-label">Sin botiquin</span>
+                <span class="stat-label">Sin botiquín</span>
                 <strong class="stat-value compact-value" id="closure_missing_botiquin_count">0</strong>
             </article>
         </div>
@@ -414,7 +509,7 @@
         <ul class="closure-issue-list" id="closure_issue_list">
             <li>Completa el checklist para ver el resumen de cierre.</li>
         </ul>
-        <small>Los items en `No cumple` deben tener observacion y motivo. La evidencia fotografica es obligatoria salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
+        <small>Los items en `No cumple` deben tener observación y motivo. La evidencia fotográfica es obligatoria salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
     </section>
 
     <div class="signature-grid">
@@ -425,7 +520,7 @@
                     <h3>Firma del auditor</h3>
                 </div>
             </div>
-            <p class="signature-copy">Dibuja la firma para cerrar la auditoria. La misma se incorporara al detalle y al informe ejecutivo.</p>
+            <p class="signature-copy">Dibuja la firma para cerrar la auditoría. La misma se incorporará al detalle y al informe ejecutivo.</p>
             <input type="hidden" name="auditor_signature" id="auditor_signature" value="{{ request.form.get('auditor_signature', '') }}">
             <div class="signature-pad-shell">
                 <canvas id="auditor_signature_canvas" class="signature-pad" aria-label="Firma del auditor"></canvas>
@@ -433,31 +528,31 @@
             <div class="button-row">
                 <button type="button" class="button button-secondary" id="clear_signature_button">Limpiar firma</button>
             </div>
-            <small>Campo obligatorio para cerrar la auditoria.</small>
+            <small>Campo obligatorio para cerrar la auditoría.</small>
         </section>
 
         <section class="card signature-card">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Cierre</p>
-                    <h3>Firma del tecnico</h3>
+                    <h3>Firma del técnico</h3>
                 </div>
             </div>
-            <p class="signature-copy">Dibuja la firma del tecnico para dejar evidencia del cierre en terreno.</p>
-            <p class="signature-copy"><strong>Tecnico:</strong> <span id="signature_technician_name">-</span></p>
+            <p class="signature-copy">Dibuja la firma del técnico para dejar evidencia del cierre en terreno.</p>
+            <p class="signature-copy"><strong>Técnico:</strong> <span id="signature_technician_name">-</span></p>
             <input type="hidden" name="technician_signature" id="technician_signature" value="{{ request.form.get('technician_signature', '') }}">
             <div class="signature-pad-shell">
-                <canvas id="technician_signature_canvas" class="signature-pad" aria-label="Firma del tecnico"></canvas>
+                <canvas id="technician_signature_canvas" class="signature-pad" aria-label="Firma del técnico"></canvas>
             </div>
             <div class="button-row">
                 <button type="button" class="button button-secondary" id="clear_technician_signature_button">Limpiar firma</button>
             </div>
-            <small>Campo obligatorio para cerrar la auditoria.</small>
+            <small>Campo obligatorio para cerrar la auditoría.</small>
         </section>
     </div>
 
     <div class="sticky-actions">
-        <button class="button button-primary" type="submit">Guardar auditoria</button>
+        <button class="button button-primary" type="submit">Guardar auditoría</button>
         <a class="button button-secondary" href="{{ url_for('main.dashboard') }}">Cancelar</a>
     </div>
 </form>
@@ -487,6 +582,16 @@
         const technicianSignatureCanvas = document.getElementById("technician_signature_canvas");
         const clearTechnicianSignatureButton = document.getElementById("clear_technician_signature_button");
         const form = document.querySelector(".audit-form");
+        const serializedStockNotesWrap = document.getElementById("serialized_stock_notes_wrap");
+        const serializedStockNotesInput = serializedStockNotesWrap
+            ? serializedStockNotesWrap.querySelector("textarea")
+            : null;
+        const serializedStockInputs = document.querySelectorAll('input[name="serialized_stock_status"]');
+        const materialStockNotesWrap = document.getElementById("material_stock_notes_wrap");
+        const materialStockNotesInput = materialStockNotesWrap
+            ? materialStockNotesWrap.querySelector("textarea")
+            : null;
+        const materialStockInputs = document.querySelectorAll('input[name="material_stock_status"]');
         const closureStatusChip = document.getElementById("closure_status_chip");
         const closurePendingCount = document.getElementById("closure_pending_count");
         const closureMissingNotesCount = document.getElementById("closure_missing_notes_count");
@@ -520,6 +625,30 @@
         const materialIndex = {{ (material_index or {})|tojson }};
         const handTools = {{ (hand_tools or [])|tojson }};
         let nextSupplyRequestIndex = 0;
+
+        function syncSerializedStockUI() {
+            if (!serializedStockNotesWrap || !serializedStockNotesInput) {
+                return;
+            }
+
+            const selected = document.querySelector('input[name="serialized_stock_status"]:checked');
+            const selectedValue = selected ? selected.value : "";
+            const showNotes = selectedValue === "missing";
+            serializedStockNotesWrap.hidden = !showNotes;
+            serializedStockNotesInput.required = showNotes;
+        }
+
+        function syncMaterialStockUI() {
+            if (!materialStockNotesWrap || !materialStockNotesInput) {
+                return;
+            }
+
+            const selected = document.querySelector('input[name="material_stock_status"]:checked');
+            const selectedValue = selected ? selected.value : "";
+            const showNotes = selectedValue === "missing";
+            materialStockNotesWrap.hidden = !showNotes;
+            materialStockNotesInput.required = showNotes;
+        }
 
         function parseMaterialCode(rawValue) {
             return String(rawValue || "").split(" - ", 1)[0].trim();
@@ -584,7 +713,7 @@
 
             const codeLabel = document.createElement("label");
             const codeSpan = document.createElement("span");
-            codeSpan.textContent = "Codigo";
+            codeSpan.textContent = "Código";
             const codeInput = document.createElement("input");
             codeInput.type = "text";
             codeInput.name = `supply_request_code__${index}`;
@@ -817,7 +946,7 @@
                 const stateHint = document.querySelector(`[data-hand-tool-state="${tool.key}"]`);
                 if (!status) {
                     if (stateHint) {
-                        stateHint.textContent = "Sin responder aun.";
+                        stateHint.textContent = "Sin responder aún.";
                         stateHint.className = "auto-hint tool-match-neutral";
                     }
                     return;
@@ -1034,7 +1163,7 @@
                         hasItemIssue = true;
                         issues.push({
                             kind: "missing_notes",
-                            message: `${sectionTitle}: falta observacion en "${itemLabel}" (No cumple).`,
+                            message: `${sectionTitle}: falta observación en "${itemLabel}" (No cumple).`,
                             targetId: item.id,
                             isCritical: isCritical,
                         });
@@ -1057,12 +1186,29 @@
                         hasItemIssue = true;
                         issues.push({
                             kind: "missing_photo",
-                            message: `${sectionTitle}: falta evidencia fotografica en "${itemLabel}" (No cumple).`,
+                            message: `${sectionTitle}: falta evidencia fotográfica en "${itemLabel}" (No cumple).`,
                             targetId: item.id,
                             isCritical: isCritical,
                         });
                     }
 
+                    if (hasItemIssue) {
+                        item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
+                    }
+                }
+
+                if (statusValue === "nc_menor" || statusValue === "nc_mayor") {
+                    let hasItemIssue = false;
+                    if (!notesValue) {
+                        missingNotesCount += 1;
+                        hasItemIssue = true;
+                        issues.push({
+                            kind: "missing_notes",
+                            message: `${sectionTitle}: falta detalle en "${itemLabel}" (${statusValue === "nc_menor" ? "No conformidad menor" : "No conformidad mayor"}).`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
                     if (hasItemIssue) {
                         item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
                     }
@@ -1141,7 +1287,7 @@
                         item.classList.add(isCritical ? "closure-issue-critical" : "closure-issue");
                         issues.push({
                             kind: "missing_botiquin_expiry",
-                            message: `${sectionTitle}: falta vencimiento del botiquin en "${itemLabel}".`,
+                            message: `${sectionTitle}: falta vencimiento del botiquín en "${itemLabel}".`,
                             targetId: item.id,
                             isCritical: isCritical,
                         });
@@ -1231,30 +1377,30 @@
             equipmentCountTarget.textContent = "0";
             stockItemsTarget.textContent = "0";
             stockUnitsTarget.textContent = "0";
-            alertGridTarget.innerHTML = '<article class="alert-card alert-info"><strong>Sin alertas cargadas</strong><p>Selecciona un movil para revisar riesgos operativos antes de auditar.</p></article>';
-            toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">Selecciona un movil para evaluar herramientas clave.</div>';
+            alertGridTarget.innerHTML = '<article class="alert-card alert-info"><strong>Sin alertas cargadas</strong><p>Selecciona un móvil para revisar riesgos operativos antes de auditar.</p></article>';
+            toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">Selecciona un móvil para evaluar herramientas clave.</div>';
             toolHintTargets.forEach((element) => {
-                element.textContent = "Sugerencia automatica: sin evaluar aun.";
+                element.textContent = "Sugerencia automática: sin evaluar aún.";
                 element.className = "auto-hint";
             });
             renderList(
                 equipmentListTarget,
                 [],
                 () => "",
-                "Selecciona un movil para ver sus equipos."
+                "Selecciona un móvil para ver sus equipos."
             );
             renderList(
                 stockListTarget,
                 [],
                 () => "",
-                "Selecciona un movil para ver su stock."
+                "Selecciona un móvil para ver su stock."
             );
         }
 
         function renderAlerts(alerts) {
             alertGridTarget.innerHTML = "";
             if (!alerts || alerts.length === 0) {
-                alertGridTarget.innerHTML = '<article class="alert-card alert-info"><strong>Sin alertas activas</strong><p>No se detectaron riesgos automaticos para este movil.</p></article>';
+                alertGridTarget.innerHTML = '<article class="alert-card alert-info"><strong>Sin alertas activas</strong><p>No se detectaron riesgos automáticos para este móvil.</p></article>';
                 return;
             }
 
@@ -1268,15 +1414,15 @@
 
         function getToolMatchText(match) {
             if (!match) {
-                return "Sin sugerencia automatica.";
+                return "Sin sugerencia automática.";
             }
             if (match.status === "detected") {
                 return `Detectada en inventario: ${match.matched_name}`;
             }
             if (match.status === "missing") {
-                return "Sin evidencia automatica en stock o equipos.";
+                return "Sin evidencia automática en stock o equipos.";
             }
-            return "Requiere revision manual del auditor.";
+            return "Requiere revisión manual del auditor.";
         }
 
         function getToolMatchClass(match) {
@@ -1308,7 +1454,7 @@
 
                 const hintTarget = document.querySelector(`[data-tool-hint="${itemKey}"]`);
                 if (hintTarget) {
-                    hintTarget.textContent = `Sugerencia automatica: ${getToolMatchText(match)}`;
+                    hintTarget.textContent = `Sugerencia automática: ${getToolMatchText(match)}`;
                     hintTarget.className = `auto-hint ${getToolMatchClass(match)}`;
                 }
             });
@@ -1325,13 +1471,13 @@
             try {
                 const response = await fetch(`/api/mobiles/${mobileUnitId}/audit-context`);
                 if (!response.ok) {
-                    throw new Error("No se pudo cargar el contexto del movil.");
+                    throw new Error("No se pudo cargar el contexto del móvil.");
                 }
 
                 const data = await response.json();
                 const severities = (data.alerts || []).map((alert) => alert.severity);
                 statusChip.textContent = severities.includes("critical")
-                    ? "Riesgo critico"
+                    ? "Riesgo crítico"
                     : severities.includes("warning")
                         ? "Revisar"
                         : "Contexto listo";
@@ -1343,36 +1489,41 @@
                 renderList(
                     equipmentListTarget,
                     data.equipment_rows,
-                    (item) => `${item.material_name}${item.serial_number ? " | Serial: " + item.serial_number : ""}`,
-                    "No hay equipos serializados cargados para este movil."
+                    (item) => {
+                        const materialName = String(item.material_name || item.material_code || "").trim();
+                        const serial = String(item.serial_number || item.serial || item.serialNumber || "").trim();
+                        const label = materialName ? materialName : "Equipo";
+                        return `${label} | Serial: ${serial ? serial : "-"}`;
+                    },
+                    "No hay equipos serializados cargados para este móvil."
                 );
 
                 renderList(
                     stockListTarget,
                     data.stock_rows,
                     (item) => `${item.material_name} | Cantidad: ${Math.round(item.quantity || 0)}`,
-                    "No hay stock cargado para este movil."
+                    "No hay stock cargado para este móvil."
                 );
                 renderToolMatches(data.tool_matches);
             } catch (_error) {
                 statusChip.textContent = "Sin datos";
-                alertGridTarget.innerHTML = '<article class="alert-card alert-warning"><strong>No se pudo cargar el contexto</strong><p>Intenta nuevamente o revisa la informacion del movil.</p></article>';
-                toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">No fue posible evaluar las herramientas del movil.</div>';
+                alertGridTarget.innerHTML = '<article class="alert-card alert-warning"><strong>No se pudo cargar el contexto</strong><p>Intenta nuevamente o revisa la información del móvil.</p></article>';
+                toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">No fue posible evaluar las herramientas del móvil.</div>';
                 toolHintTargets.forEach((element) => {
-                    element.textContent = "Sugerencia automatica: no fue posible cargar datos del movil.";
+                    element.textContent = "Sugerencia automática: no fue posible cargar datos del móvil.";
                     element.className = "auto-hint tool-match-neutral";
                 });
                 renderList(
                     equipmentListTarget,
                     [],
                     () => "",
-                    "No fue posible cargar los equipos del movil."
+                    "No fue posible cargar los equipos del móvil."
                 );
                 renderList(
                     stockListTarget,
                     [],
                     () => "",
-                    "No fue posible cargar el stock del movil."
+                    "No fue posible cargar el stock del móvil."
                 );
             }
         }
@@ -1433,22 +1584,22 @@
         function formatVehicleExpiryText(label, expiry, baseDate) {
             const cleanExpiry = String(expiry || "").trim();
             if (!cleanExpiry) {
-                return `Registro del vehiculo: sin fecha registrada.`;
+                return `Registro del vehículo: sin fecha registrada.`;
             }
 
             const expiryDate = new Date(`${cleanExpiry}T00:00:00`);
             if (Number.isNaN(expiryDate.getTime())) {
-                return `Registro del vehiculo: ${label} con fecha invalida (${cleanExpiry}).`;
+                return `Registro del vehículo: ${label} con fecha inválida (${cleanExpiry}).`;
             }
 
             const diffDays = Math.ceil((expiryDate.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
             if (diffDays < 0) {
-                return `Registro del vehiculo: vencido (venció el ${cleanExpiry}).`;
+                return `Registro del vehículo: vencido (venció el ${cleanExpiry}).`;
             }
             if (diffDays <= 30) {
-                return `Registro del vehiculo: por vencer (vence el ${cleanExpiry}).`;
+                return `Registro del vehículo: por vencer (vence el ${cleanExpiry}).`;
             }
-            return `Registro del vehiculo: vence el ${cleanExpiry}.`;
+            return `Registro del vehículo: vence el ${cleanExpiry}.`;
         }
 
         function syncVehicleContext() {
@@ -1494,7 +1645,7 @@
                 recordRtoTarget.textContent = formatVehicleExpiryText("RTO", rtoExpiry, baseDate);
             }
             if (recordBotiquinTarget) {
-                recordBotiquinTarget.textContent = formatVehicleExpiryText("Botiquin", botiquinExpiry, baseDate);
+                recordBotiquinTarget.textContent = formatVehicleExpiryText("Botiquín", botiquinExpiry, baseDate);
             }
         }
 
@@ -1698,6 +1849,22 @@
             });
         });
 
+        serializedStockInputs.forEach((radio) => {
+            radio.addEventListener("change", function () {
+                syncSerializedStockUI();
+                scheduleDraftSave();
+            });
+        });
+        syncSerializedStockUI();
+
+        materialStockInputs.forEach((radio) => {
+            radio.addEventListener("change", function () {
+                syncMaterialStockUI();
+                scheduleDraftSave();
+            });
+        });
+        syncMaterialStockUI();
+
         mobileSelect.addEventListener("change", syncMobileContext);
         if (vehicleSelect) {
             vehicleSelect.addEventListener("change", syncVehicleContext);
@@ -1738,7 +1905,7 @@
             }
             if (missingAuditorSignature || missingTechnicianSignature) {
                 event.preventDefault();
-                window.alert("Debes registrar la firma del auditor y del tecnico antes de guardar la auditoria.");
+                window.alert("Debes registrar la firma del auditor y del técnico antes de guardar la auditoría.");
                 return;
             }
             clearDraft();

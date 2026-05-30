@@ -63,16 +63,16 @@
 
         <div class="guide-list">
             <article class="guide-card">
-                <strong>Tecnicos</strong>
-                <p>Columnas minimas: <code>employee_code</code>, <code>name</code>, <code>region</code>.</p>
+                <strong>Técnicos</strong>
+                <p>Columnas mínimas: <code>employee_code</code>, <code>name</code>, <code>region</code>.</p>
             </article>
             <article class="guide-card">
-                <strong>Vehiculos</strong>
-                <p>Columnas minimas: <code>plate</code>, <code>brand</code>, <code>model</code>.</p>
+                <strong>Vehículos</strong>
+                <p>Columnas mínimas: <code>plate</code>, <code>brand</code>, <code>model</code>.</p>
             </article>
             <article class="guide-card">
                 <strong>Stock materiales</strong>
-                <p>Formato matriz: primera columna <code>Material</code>, luego una columna por movil tecnico como <code>600</code>, <code>606</code> y opcional <code>Total</code>.</p>
+                <p>Formato matriz: primera columna <code>Material</code>, luego una columna por móvil técnico como <code>600</code>, <code>606</code> y opcional <code>Total</code>.</p>
             </article>
             <article class="guide-card">
                 <strong>Almacenes</strong>
@@ -80,11 +80,11 @@
             </article>
             <article class="guide-card">
                 <strong>Equipos</strong>
-                <p>Archivo serializado con <code>Centro</code>, <code>Codigo Almacen</code>, <code>Almacen</code>, <code>Codigo Material</code>, <code>Material</code> y <code>Serial</code>.</p>
+                <p>Archivo serializado con <code>Centro</code>, <code>Código Almacén</code>, <code>Almacén</code>, <code>Código Material</code>, <code>Material</code> y <code>Serial</code>.</p>
             </article>
             <article class="guide-card">
-                <strong>Actualizacion</strong>
-                <p>Si el codigo del tecnico, el movil, el almacen o el serial ya existen, la app reutiliza ese registro y actualiza la informacion importada.</p>
+                <strong>Actualización</strong>
+                <p>Si el código del técnico, el móvil, el almacén o el serial ya existen, la app reutiliza ese registro y actualiza la información importada.</p>
             </article>
         </div>
 
@@ -93,7 +93,7 @@
                 {% for material in materials_summary %}
                     <article class="guide-card">
                         <strong>{{ material["material_name"] }}</strong>
-                        <p>Codigo: {{ material["material_code"] or "sin codigo" }} | Stock total: {{ material["total_quantity"]|round(0)|int }} | Moviles: {{ material["mobile_count"] }}</p>
+                        <p>Código: {{ material["material_code"] or "sin código" }} | Stock total: {{ material["total_quantity"]|round(0)|int }} | Móviles: {{ material["mobile_count"] }}</p>
                     </article>
                 {% endfor %}
             </div>
@@ -115,7 +115,7 @@
                 {% for equipment in equipment_summary %}
                     <article class="guide-card">
                         <strong>{{ equipment["material_name"] }}</strong>
-                        <p>Centro: {{ equipment["center_name"] }} | Almacen: {{ equipment["warehouse_code"] }} | Seriales: {{ equipment["serial_count"] }}</p>
+                        <p>Centro: {{ equipment["center_name"] }} | Almacén: {{ equipment["warehouse_code"] }} | Seriales: {{ equipment["serial_count"] }}</p>
                     </article>
                 {% endfor %}
             </div>

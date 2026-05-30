@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Historial de auditorias{% endblock %}
+{% block title %}Historial de auditorías{% endblock %}
 
 {% block content %}
 <section class="section-heading">
     <div>
         <p class="eyebrow">Seguimiento</p>
-        <h2>Historial de auditorias</h2>
+        <h2>Historial de auditorías</h2>
     </div>
-    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Nueva auditoria</a>
+    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
 </section>
 
 <section class="card table-card">
@@ -18,9 +18,9 @@
                 <thead>
                     <tr>
                         <th>Fecha</th>
-                        <th>Movil tecnico</th>
-                        <th>Vehiculo</th>
-                        <th>Ubicacion</th>
+                        <th>Móvil técnico</th>
+                        <th>Vehículo</th>
+                        <th>Ubicación</th>
                         <th>Resultado</th>
                         <th>Puntaje</th>
                         <th>Detalle</th>
@@ -42,7 +42,7 @@
             </table>
         </div>
     {% else %}
-        <p class="empty-state">Todavia no hay registros para mostrar.</p>
+        <p class="empty-state">Todavía no hay registros para mostrar.</p>
     {% endif %}
 </section>
 {% endblock %}

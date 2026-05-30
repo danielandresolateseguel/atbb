@@ -4,3 +4,4 @@ __pycache__/
 venv/
 audit_app.db
 .vscode/
+app/static/uploads/

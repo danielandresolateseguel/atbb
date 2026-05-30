@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Detalle de movil {{ mobile["mobile_code"] }}{% endblock %}
+{% block title %}Detalle de móvil {{ mobile["mobile_code"] }}{% endblock %}
 
 {% block content %}
 <section class="hero">
     <div>
         <p class="eyebrow">Ficha operativa</p>
-        <h2>Movil {{ mobile["mobile_code"] }}</h2>
+        <h2>Móvil {{ mobile["mobile_code"] }}</h2>
         <p class="hero-copy">
-            {{ mobile["warehouse_description"] or "Sin descripcion cargada" }}
+            {{ mobile["warehouse_description"] or "Sin descripción cargada" }}
             {% if mobile["user_name"] %}| Responsable: {{ mobile["user_name"] }}{% endif %}
         </p>
     </div>
@@ -41,14 +41,14 @@
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Resumen</p>
-                <h3>Datos del movil</h3>
+                <h3>Datos del móvil</h3>
             </div>
         </div>
         <div class="info-list">
-            <p><strong>Codigo:</strong> {{ mobile["mobile_code"] }}</p>
+            <p><strong>Código:</strong> {{ mobile["mobile_code"] }}</p>
             <p><strong>Usuario:</strong> {{ mobile["user_name"] or "-" }}</p>
-            <p><strong>Tipo almacen:</strong> {{ mobile["warehouse_type"] or "-" }}</p>
-            <p><strong>Descripcion:</strong> {{ mobile["warehouse_description"] or "-" }}</p>
+            <p><strong>Tipo almacén:</strong> {{ mobile["warehouse_type"] or "-" }}</p>
+            <p><strong>Descripción:</strong> {{ mobile["warehouse_description"] or "-" }}</p>
             <p><strong>Notas:</strong> {{ mobile["notes"] or "-" }}</p>
         </div>
     </article>
@@ -56,15 +56,15 @@
     <article class="card info-card">
         <div class="section-heading">
             <div>
-                <p class="eyebrow">Tecnico vinculado</p>
-                <h3>Relacion operativa</h3>
+                <p class="eyebrow">Técnico vinculado</p>
+                <h3>Relación operativa</h3>
             </div>
         </div>
         <form method="post" action="{{ url_for('main.assign_mobile_technician', mobile_code=mobile['mobile_code']) }}" class="link-form">
             <label>
-                <span>Seleccionar tecnico</span>
+                <span>Seleccionar técnico</span>
                 <select name="technician_id">
-                    <option value="">Sin vinculo</option>
+                    <option value="">Sin vínculo</option>
                     {% for technician in technicians %}
                         <option value="{{ technician['id'] }}" {% if mobile['technician_id'] == technician['id'] %}selected{% endif %}>
                             {{ technician["name"] }} | {{ technician["employee_code"] }}{% if technician["team"] %} | {{ technician["team"] }}{% endif %}
@@ -73,14 +73,14 @@
                 </select>
             </label>
             <div class="filter-actions">
-                <button class="button button-primary" type="submit">Guardar vinculo</button>
+                <button class="button button-primary" type="submit">Guardar vínculo</button>
             </div>
         </form>
         <div class="info-list">
-            <p><strong>Tecnico:</strong> {{ mobile["technician_name"] or "Sin vinculo aun" }}</p>
-            <p><strong>Codigo interno:</strong> {{ mobile["employee_code"] or "-" }}</p>
-            <p><strong>Telefono:</strong> {{ mobile["phone"] or "-" }}</p>
-            <p><strong>Region:</strong> {{ mobile["region"] or "-" }}</p>
+            <p><strong>Técnico:</strong> {{ mobile["technician_name"] or "Sin vínculo aún" }}</p>
+            <p><strong>Código interno:</strong> {{ mobile["employee_code"] or "-" }}</p>
+            <p><strong>Teléfono:</strong> {{ mobile["phone"] or "-" }}</p>
+            <p><strong>Región:</strong> {{ mobile["region"] or "-" }}</p>
             <p><strong>Comuna:</strong> {{ mobile["commune"] or "-" }}</p>
             <p><strong>Cuadrilla:</strong> {{ mobile["team"] or "-" }}</p>
         </div>
@@ -90,8 +90,8 @@
 <section class="card table-card">
     <div class="section-heading">
         <div>
-            <p class="eyebrow">Vehiculos relacionados</p>
-            <h3>Asignados al tecnico vinculado</h3>
+            <p class="eyebrow">Vehículos relacionados</p>
+            <h3>Asignados al técnico vinculado</h3>
         </div>
     </div>
     {% if related_vehicles %}
@@ -102,9 +102,9 @@
                         <th>Patente</th>
                         <th>Marca</th>
                         <th>Modelo</th>
-                        <th>Ano</th>
+                        <th>Año</th>
                         <th>Estado</th>
-                        <th>Revision</th>
+                        <th>Revisión</th>
                         <th>Seguro</th>
                     </tr>
                 </thead>
@@ -124,9 +124,9 @@
             </table>
         </div>
     {% elif mobile["technician_id"] %}
-        <p class="empty-state">No hay vehiculos asignados al tecnico vinculado segun la base actual.</p>
+        <p class="empty-state">No hay vehículos asignados al técnico vinculado según la base actual.</p>
     {% else %}
-        <p class="empty-state">Vincula un tecnico para empezar a cruzar tambien la informacion de vehiculos.</p>
+        <p class="empty-state">Vincula un técnico para empezar a cruzar también la información de vehículos.</p>
     {% endif %}
 </section>
 
@@ -163,7 +163,7 @@
             </table>
         </div>
     {% else %}
-        <p class="empty-state">No hay almacenes asociados a este movil.</p>
+        <p class="empty-state">No hay almacenes asociados a este móvil.</p>
     {% endif %}
 </section>
 
@@ -197,7 +197,7 @@
                 </table>
             </div>
         {% else %}
-            <p class="empty-state">No hay equipos serializados para este movil.</p>
+            <p class="empty-state">No hay equipos serializados para este móvil.</p>
         {% endif %}
     </article>
 
@@ -213,7 +213,7 @@
                 <table class="inventory-table inventory-materials">
                     <thead>
                         <tr>
-                            <th>Codigo</th>
+                            <th>Código</th>
                             <th>Material</th>
                             <th>Cantidad</th>
                         </tr>
@@ -230,7 +230,7 @@
                 </table>
             </div>
         {% else %}
-            <p class="empty-state">No hay stock cargado para este movil.</p>
+            <p class="empty-state">No hay stock cargado para este móvil.</p>
         {% endif %}
     </article>
 </section>
@@ -239,7 +239,7 @@
     <div class="section-heading">
         <div>
             <p class="eyebrow">Seguimiento</p>
-            <h3>Auditorias relacionadas</h3>
+            <h3>Auditorías relacionadas</h3>
         </div>
     </div>
     {% if related_audits %}
@@ -248,9 +248,9 @@
                 <thead>
                     <tr>
                         <th>Fecha</th>
-                        <th>Tecnico</th>
-                        <th>Vehiculo</th>
-                        <th>Ubicacion</th>
+                        <th>Técnico</th>
+                        <th>Vehículo</th>
+                        <th>Ubicación</th>
                         <th>Resultado</th>
                         <th>Puntaje</th>
                     </tr>
@@ -270,7 +270,7 @@
             </table>
         </div>
     {% else %}
-        <p class="empty-state">Todavia no hay auditorias vinculadas a este movil.</p>
+        <p class="empty-state">Todavía no hay auditorías vinculadas a este móvil.</p>
     {% endif %}
 </section>
 {% endblock %}

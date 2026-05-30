@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Detalle de auditoria{% endblock %}
+{% block title %}Detalle de auditoría{% endblock %}
 
 {% block content %}
 <section class="hero">
     <div>
-        <p class="eyebrow">Revision</p>
-        <h2>Auditoria {{ audit["id"] }}</h2>
+        <p class="eyebrow">Revisión</p>
+        <h2>Auditoría {{ audit["id"] }}</h2>
         <p class="hero-copy">
-            {{ audit["audit_date"] }} | {% if audit["mobile_code"] %}Movil {{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}
+            {{ audit["audit_date"] }} | {% if audit["mobile_code"] %}Móvil {{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}
         </p>
     </div>
     <div class="hero-actions">
@@ -34,11 +34,11 @@
         </div>
         <div class="info-list">
             <p><strong>Auditor:</strong> {{ audit["auditor_name"] }}</p>
-            <p><strong>Movil tecnico:</strong> {% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}{% if audit["employee_code"] %} | {{ audit["employee_code"] }}{% endif %}</p>
+            <p><strong>Móvil técnico:</strong> {% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}{% if audit["employee_code"] %} | {{ audit["employee_code"] }}{% endif %}</p>
             <p><strong>Empresa:</strong> {{ audit["technician_company"] or "-" }}</p>
             <p><strong>Supervisor:</strong> {{ audit["technician_supervisor"] or "-" }}</p>
             <p><strong>Centro:</strong> {{ audit["technician_center"] or "-" }}</p>
-            <p><strong>Vehiculo:</strong>
+            <p><strong>Vehículo:</strong>
                 {% if audit["vehicle_plate"] %}
                     {% if audit["vehicle_unit_number"] %}{{ audit["vehicle_unit_number"] }} - {% endif %}{{ audit["vehicle_plate"] }}
                     | {{ audit["vehicle_brand"] }} {{ audit["vehicle_model"] }}
@@ -51,8 +51,8 @@
             <p><strong>Seguro vence:</strong> {{ audit["vehicle_insurance_expiry"] or "-" }}</p>
             <p><strong>Oblea GNC vence:</strong> {{ audit["vehicle_gnc_expiry"] or "-" }}</p>
             <p><strong>RTO vence:</strong> {{ audit["vehicle_rto_expiry"] or "-" }}</p>
-            <p><strong>Botiquin vence:</strong> {{ audit["vehicle_botiquin_expiry"] or "-" }}</p>
-            <p><strong>Ubicacion:</strong> {{ audit["location"] }}</p>
+            <p><strong>Botiquín vence:</strong> {{ audit["vehicle_botiquin_expiry"] or "-" }}</p>
+            <p><strong>Ubicación:</strong> {{ audit["location"] }}</p>
             <p><strong>Tipo:</strong> {{ audit["installation_type"] }}</p>
         </div>
     </article>
@@ -94,7 +94,7 @@
                     {% if tnps_response["issue_resolved_first_visit"] is none %}
                         -
                     {% elif tnps_response["issue_resolved_first_visit"] %}
-                        Si
+                        Sí
                     {% else %}
                         No
                     {% endif %}
@@ -109,54 +109,52 @@
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Resultado</p>
-                <h3>Cierre de auditoria</h3>
+                <h3>Cierre de auditoría</h3>
             </div>
         </div>
         <div class="info-list">
             <p><strong>Puntaje:</strong> {{ audit["total_score"] }}</p>
             <p><strong>Fecha registro:</strong> {{ audit["created_at"] }}</p>
             <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "-" }}</p>
+            <p>
+                <strong>Serializados:</strong>
+                {% if audit["serialized_stock_status"] == "ok" %}
+                    Completo
+                {% elif audit["serialized_stock_status"] == "missing" %}
+                    Faltan
+                {% elif audit["serialized_stock_status"] == "not_checked" %}
+                    No revisado
+                {% else %}
+                    -
+                {% endif %}
+            </p>
+            {% if audit["serialized_stock_status"] == "missing" %}
+                <p><strong>Detalle faltantes:</strong> {{ audit["serialized_stock_notes"] or "-" }}</p>
+            {% endif %}
+            <p>
+                <strong>Stock:</strong>
+                {% if audit["material_stock_status"] == "ok" %}
+                    Completo
+                {% elif audit["material_stock_status"] == "missing" %}
+                    Faltan
+                {% elif audit["material_stock_status"] == "not_checked" %}
+                    No revisado
+                {% else %}
+                    -
+                {% endif %}
+            </p>
+            {% if audit["material_stock_status"] == "missing" %}
+                <p><strong>Detalle faltantes:</strong> {{ audit["material_stock_notes"] or "-" }}</p>
+            {% endif %}
         </div>
     </article>
-</section>
-
-<section class="card signature-display-card">
-    <div class="section-heading">
-        <div>
-            <p class="eyebrow">Validacion</p>
-            <h3>Firma del auditor</h3>
-        </div>
-    </div>
-    {% if audit["auditor_signature_path"] %}
-        <div class="signature-display">
-            <img src="{{ url_for('static', filename=audit['auditor_signature_path']) }}" alt="Firma del auditor {{ audit['auditor_name'] }}" class="signature-image">
-        </div>
-    {% else %}
-        <p class="empty-state">Esta auditoria no tiene firma registrada.</p>
-    {% endif %}
-</section>
-
-<section class="card signature-display-card">
-    <div class="section-heading">
-        <div>
-            <p class="eyebrow">Validacion</p>
-            <h3>Firma del tecnico</h3>
-        </div>
-    </div>
-    {% if audit["technician_signature_path"] %}
-        <div class="signature-display">
-            <img src="{{ url_for('static', filename=audit['technician_signature_path']) }}" alt="Firma del tecnico" class="signature-image">
-        </div>
-    {% else %}
-        <p class="empty-state">Esta auditoria no tiene firma de tecnico registrada.</p>
-    {% endif %}
 </section>
 
 <section class="card table-card">
     <div class="section-heading">
         <div>
-            <p class="eyebrow">Accion</p>
-            <h3>Solicitudes de reposicion / cambio</h3>
+            <p class="eyebrow">Acción</p>
+            <h3>Solicitudes de reposición / cambio</h3>
         </div>
     </div>
     {% if supply_requests %}
@@ -166,7 +164,7 @@
                     <tr>
                         <th>Tipo</th>
                         <th>Item</th>
-                        <th>Codigo</th>
+                        <th>Código</th>
                         <th>Cantidad</th>
                         <th>Nota</th>
                     </tr>
@@ -204,16 +202,16 @@
                         <div>
                             <strong>{{ item["item_label"] }}</strong>
                             {% if item["is_critical"] %}
-                                <span class="critical-chip">Critico</span>
+                                <span class="critical-chip">Crítico</span>
                             {% endif %}
                         </div>
                         <span class="badge badge-{{ item['status']|replace('_', '-') }}">
-                            {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "no_cumple" %}No cumple{% else %}No aplica{% endif %}
+                            {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "conforme" %}Conforme{% elif item["status"] == "no_cumple" %}No cumple{% elif item["status"] == "nc_menor" %}No conformidad menor{% elif item["status"] == "nc_mayor" %}No conformidad Mayor{% else %}No aplica{% endif %}
                         </span>
                     </div>
 
                     <div class="info-list">
-                        <p><strong>Observacion:</strong> {{ item["notes"] or "-" }}</p>
+                        <p><strong>Observación:</strong> {{ item["notes"] or "-" }}</p>
                         <p><strong>Motivo:</strong>
                             {% if item["status"] == "no_cumple" %}
                                 {{ item["non_compliance_reason"]|replace('_', ' ')|capitalize if item["non_compliance_reason"] else "-" }}
@@ -230,11 +228,43 @@
                             <img src="{{ url_for('static', filename=item['photo_path']) }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
                         </div>
                     {% else %}
-                        <p class="empty-state">Sin evidencia fotografica.</p>
+                        <p class="empty-state">Sin evidencia fotográfica.</p>
                     {% endif %}
                 </article>
             {% endfor %}
         </div>
     </section>
 {% endfor %}
+
+<section class="card signature-display-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Validación</p>
+            <h3>Firma del auditor</h3>
+        </div>
+    </div>
+    {% if audit["auditor_signature_path"] %}
+        <div class="signature-display">
+            <img src="{{ url_for('static', filename=audit['auditor_signature_path']) }}" alt="Firma del auditor {{ audit['auditor_name'] }}" class="signature-image">
+        </div>
+    {% else %}
+        <p class="empty-state">Esta auditoría no tiene firma registrada.</p>
+    {% endif %}
+</section>
+
+<section class="card signature-display-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Validación</p>
+            <h3>Firma del técnico</h3>
+        </div>
+    </div>
+    {% if audit["technician_signature_path"] %}
+        <div class="signature-display">
+            <img src="{{ url_for('static', filename=audit['technician_signature_path']) }}" alt="Firma del técnico" class="signature-image">
+        </div>
+    {% else %}
+        <p class="empty-state">Esta auditoría no tiene firma de técnico registrada.</p>
+    {% endif %}
+</section>
 {% endblock %}

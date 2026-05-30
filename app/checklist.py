@@ -2,21 +2,21 @@ CHECKLIST_SECTIONS = [
     {
         "key": "seguridad",
         "title": "Elementos de Seguridad (EPP y Entorno)",
-        "weight": 40,
+        "weight": 30,
         "items": [
             {"key": "casco", "label": "Uso de casco de seguridad", "critical": True},
             {"key": "guantes", "label": "Uso de guantes adecuados", "critical": True},
             {"key": "lentes", "label": "Uso de lentes de proteccion", "critical": False},
             {"key": "chaleco", "label": "Uso de chaleco reflectante", "critical": True},
             {"key": "botas", "label": "Uso de botas de seguridad", "critical": True},
-            {"key": "senalizacion", "label": "Senalizacion del area de trabajo", "critical": True},
+            {"key": "senalizacion", "label": "Señalizacion del area de trabajo", "critical": True},
             {"key": "orden_entorno", "label": "Orden y limpieza del entorno", "critical": False},
         ],
     },
     {
         "key": "herramientas",
         "title": "Estado de Herramientas (Kit de Fibra Optica)",
-        "weight": 20,
+        "weight": 15,
         "items": [
             {"key": "fusionadora", "label": "Fusionadora operativa", "critical": True},
             {"key": "cortadora", "label": "Cortadora de precision en buen estado", "critical": True},
@@ -40,7 +40,7 @@ CHECKLIST_SECTIONS = [
     {
         "key": "herramientas_mano",
         "title": "Herramientas de mano",
-        "weight": 15,
+        "weight": 10,
         "items": [
             {
                 "key": "mano_alicate_chico_aislado",
@@ -103,7 +103,7 @@ CHECKLIST_SECTIONS = [
     {
         "key": "vehiculo",
         "title": "Estado del Vehiculo",
-        "weight": 25,
+        "weight": 20,
         "items": [
             {"key": "documentacion", "label": "Documentacion vigente", "critical": True},
             {"key": "oblea_gnc", "label": "Oblea de GNC vigente", "critical": True},
@@ -116,14 +116,52 @@ CHECKLIST_SECTIONS = [
             {"key": "carga_segura", "label": "Escalera y herramientas aseguradas", "critical": True},
             {
                 "key": "escalera_aluminio_extensible",
-                "label": "Escalera de aluminio extensible (11/13 peldaños) en buen estado (zapatas)",
+                "label": "Escalera de aluminio extensible (11/13 peldaños)",
                 "critical": True,
             },
             {
                 "key": "escalera_fibra_tijera_doble",
-                "label": "Escalera de fibra de vidrio tipo tijera doble en buen estado (zapatas antideslizantes)",
+                "label": "Escalera de fibra de vidrio tipo tijera doble",
                 "critical": True,
             },
+        ],
+    },
+    {
+        "key": "calidad_instalaciones",
+        "title": "Control de Calidad de Instalaciones",
+        "weight": 15,
+        "items": [
+            {"key": "nomenclado", "label": "Nomenclado", "critical": False},
+            {"key": "rabillado", "label": "Rabillado", "critical": False},
+            {"key": "tensado", "label": "Tensado", "critical": False},
+            {"key": "reten_a_cadena", "label": "Reten a cadena", "critical": False},
+            {"key": "piton_8_retencion", "label": "Pitón del 8 (retención)", "critical": False},
+            {
+                "key": "recorrido_fibra_piton_6",
+                "label": "Recorrido de fibra con pitón del 6",
+                "critical": False,
+            },
+            {
+                "key": "recorrido_fibra_presintada_otro_servicio",
+                "label": "Recorrido de fibra presintada a otro Servicio",
+                "critical": False,
+            },
+            {"key": "ingreso_caneria", "label": "Ingreso por cañeria", "critical": False},
+            {
+                "key": "ingreso_nueva_perforacion",
+                "label": "Ingreso por nueva perforacion",
+                "critical": False,
+            },
+            {
+                "key": "ingreso_perforacion_existente",
+                "label": "Ingreso por perforacion existente",
+                "critical": False,
+            },
+            {"key": "tubo_pasapared", "label": "Tubo pasapared", "critical": False},
+            {"key": "loop", "label": "Loop", "critical": False},
+            {"key": "sellador", "label": "Sellador", "critical": False},
+            {"key": "engrampado_por_vertice", "label": "Engrampado por vertice", "critical": False},
+            {"key": "sticker_autoadhesivo", "label": "Sticker autoadhesivo", "critical": False},
         ],
     },
 ]

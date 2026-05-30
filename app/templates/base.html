@@ -3,20 +3,20 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Auditoria Tecnica{% endblock %}</title>
+    <title>{% block title %}Auditoría Técnica{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
     <header class="topbar">
         <div class="brand">
             <span class="brand-kicker">ATBB</span>
-            <h1>Auditoria Tecnica </h1>
+            <h1>Auditoría Técnica</h1>
         </div>
-        <button class="nav-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="main_nav"></button>
+        <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="main_nav"></button>
         <nav class="nav" id="main_nav">
             <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
             <a href="{{ url_for('main.tnps') }}">tNPS</a>
-            <a href="{{ url_for('main.new_audit') }}">Nueva auditoria</a>
+            <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
             <a href="{{ url_for('main.audit_list') }}">Historial</a>
             <a href="{{ url_for('main.imports') }}">Importar datos</a>
             <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
@@ -50,7 +50,7 @@
 
             function setExpanded(expanded) {
                 button.setAttribute("aria-expanded", expanded ? "true" : "false");
-                button.setAttribute("aria-label", expanded ? "Cerrar menu" : "Abrir menu");
+                button.setAttribute("aria-label", expanded ? "Cerrar menú" : "Abrir menú");
                 topbar.classList.toggle("nav-open", expanded);
             }
 

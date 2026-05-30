@@ -107,11 +107,19 @@ CSV_IMPORT_TYPES = {
 
 def calculate_section_score(section, form_data, files):
     valid_items = 0
-    compliant_items = 0
+    score_sum = 0.0
     has_critical_failure = False
     serialized_items = []
 
     photo_optional_reasons = {"olvido", "perdida"}
+    status_scores = {
+        "cumple": 1.0,
+        "conforme": 1.0,
+        "no_cumple": 0.0,
+        "nc_menor": 0.5,
+        "nc_mayor": 0.0,
+    }
+    critical_failure_statuses = {"no_cumple", "nc_mayor"}
 
     for item in section["items"]:
         status = form_data.get(f"status__{item['key']}", "")
@@ -181,6 +189,9 @@ def calculate_section_score(section, form_data, files):
         if status == "no_cumple" and not notes:
             raise ValueError(f"Debes agregar observacion en: {item['label']}")
 
+        if status in {"nc_menor", "nc_mayor"} and not notes:
+            raise ValueError(f"Debes agregar detalle en: {item['label']}")
+
         if status == "no_cumple" and not non_compliance_reason:
             raise ValueError(f"Debes seleccionar el motivo en: {item['label']}")
 
@@ -194,10 +205,9 @@ def calculate_section_score(section, form_data, files):
 
         if status != "no_aplica":
             valid_items += 1
-            if status == "cumple":
-                compliant_items += 1
+            score_sum += status_scores.get(status, 0.0)
 
-        if status == "no_cumple" and item["critical"]:
+        if status in critical_failure_statuses and item["critical"]:
             has_critical_failure = True
 
         serialized_items.append(
@@ -214,7 +224,7 @@ def calculate_section_score(section, form_data, files):
             }
         )
 
-    compliance_ratio = 1 if valid_items == 0 else compliant_items / valid_items
+    compliance_ratio = 1 if valid_items == 0 else score_sum / valid_items
     section_score = compliance_ratio * section["weight"]
     return section_score, has_critical_failure, serialized_items
 
@@ -229,6 +239,14 @@ def calculate_audit_result(form_data, files):
         total_score += section_score
         has_critical_failure = has_critical_failure or section_failure
         all_items.extend(items)
+
+    snapshot_status_scores = {"ok": 1.0, "missing": 0.0, "not_checked": 0.5}
+    serialized_weight = 5
+    material_weight = 5
+    serialized_stock_status = (form_data.get("serialized_stock_status") or "").strip()
+    material_stock_status = (form_data.get("material_stock_status") or "").strip()
+    total_score += serialized_weight * snapshot_status_scores.get(serialized_stock_status, 0.0)
+    total_score += material_weight * snapshot_status_scores.get(material_stock_status, 0.0)
 
     if has_critical_failure:
         result_status = "Critica"
@@ -351,24 +369,35 @@ def build_grouped_audit_items(items):
 
 def build_audit_report_metrics(audit, items):
     total_items = len(items)
-    compliant_count = sum(1 for item in items if item["status"] == "cumple")
-    non_compliant_count = sum(1 for item in items if item["status"] == "no_cumple")
+    compliant_statuses = {"cumple", "conforme"}
+    non_compliant_statuses = {"no_cumple", "nc_menor", "nc_mayor"}
+
+    compliant_count = sum(1 for item in items if item["status"] in compliant_statuses)
+    non_compliant_count = sum(1 for item in items if item["status"] in non_compliant_statuses)
     not_applicable_count = sum(1 for item in items if item["status"] == "no_aplica")
     applicable_count = compliant_count + non_compliant_count
     evidence_count = sum(1 for item in items if item.get("photo_path"))
     critical_findings = [
-        item for item in items if item["status"] == "no_cumple" and item["is_critical"]
+        item for item in items if item["status"] in non_compliant_statuses and item["is_critical"]
     ]
-    findings = [item for item in items if item["status"] == "no_cumple"]
+    findings = [item for item in items if item["status"] in non_compliant_statuses]
 
     compliance_rate = 0 if applicable_count == 0 else round((compliant_count / applicable_count) * 100)
-    evidence_rate = 0 if non_compliant_count == 0 else round((evidence_count / non_compliant_count) * 100)
+    evidence_required_count = sum(1 for item in items if item["status"] == "no_cumple")
+    evidence_with_photo_count = sum(
+        1 for item in items if item["status"] == "no_cumple" and item.get("photo_path")
+    )
+    evidence_rate = (
+        0
+        if evidence_required_count == 0
+        else round((evidence_with_photo_count / evidence_required_count) * 100)
+    )
 
     sections = []
     grouped_items = build_grouped_audit_items(items)
     for section_title, section_items in grouped_items.items():
-        section_compliant = sum(1 for item in section_items if item["status"] == "cumple")
-        section_non_compliant = sum(1 for item in section_items if item["status"] == "no_cumple")
+        section_compliant = sum(1 for item in section_items if item["status"] in compliant_statuses)
+        section_non_compliant = sum(1 for item in section_items if item["status"] in non_compliant_statuses)
         section_applicable = section_compliant + section_non_compliant
         section_score = 0 if section_applicable == 0 else round((section_compliant / section_applicable) * 100)
         sections.append(
@@ -381,7 +410,7 @@ def build_audit_report_metrics(audit, items):
                 "critical_count": sum(
                     1
                     for item in section_items
-                    if item["status"] == "no_cumple" and item["is_critical"]
+                    if item["status"] in non_compliant_statuses and item["is_critical"]
                 ),
             }
         )
@@ -587,16 +616,68 @@ def audit_report(audit_id):
 
     items = fetch_audit_items(audit_id)
     report = build_audit_report_metrics(audit, items)
+    grouped_items_all = build_grouped_audit_items(items)
+
+    detail_status_raw = (request.args.get("status") or "").strip()
+    detail_section_raw = (request.args.get("section") or "").strip()
+
+    status_to_statuses = {
+        "cumple": {"cumple", "conforme"},
+        "no_cumple": {"no_cumple", "nc_menor", "nc_mayor"},
+        "no_aplica": {"no_aplica"},
+    }
+    status_labels = {
+        "cumple": "Cumple",
+        "no_cumple": "No cumple",
+        "no_aplica": "No aplica",
+    }
+
+    detail_status = detail_status_raw if detail_status_raw in status_to_statuses else ""
+    selected_statuses = status_to_statuses.get(detail_status)
+    detail_section = ""
+    if detail_section_raw:
+        if detail_section_raw in grouped_items_all:
+            detail_section = detail_section_raw
+        else:
+            detail_section_raw_folded = detail_section_raw.casefold()
+            for section_title in grouped_items_all.keys():
+                if section_title.casefold() == detail_section_raw_folded:
+                    detail_section = section_title
+                    break
+
+    grouped_items_detail_source = (
+        {detail_section: grouped_items_all.get(detail_section, [])}
+        if detail_section
+        else grouped_items_all
+    )
+    grouped_items_detail = {}
+    for section_title, section_items in grouped_items_detail_source.items():
+        filtered_items = (
+            [item for item in section_items if item["status"] in selected_statuses]
+            if selected_statuses
+            else list(section_items)
+        )
+        if filtered_items:
+            grouped_items_detail[section_title] = filtered_items
+
+    detail_filter_active = bool(detail_status or detail_section)
+    detail_filter = {
+        "status": detail_status,
+        "status_label": status_labels.get(detail_status, ""),
+        "section": detail_section,
+    }
     tnps_response = fetch_tnps_response_for_audit(audit_id)
     supply_requests = fetch_audit_supply_requests(audit_id)
     return render_template(
         "audit_report.html",
         audit=audit,
-        grouped_items=build_grouped_audit_items(items),
+        grouped_items=grouped_items_detail if detail_filter_active else grouped_items_all,
         report=report,
         tnps_response=tnps_response,
         supply_requests=supply_requests,
         print_mode=request.args.get("print") == "1",
+        detail_filter_active=detail_filter_active,
+        detail_filter=detail_filter,
     )
 
 
@@ -748,6 +829,7 @@ def mobile_audit_context(mobile_unit_id):
 @main.route("/audits/new", methods=["GET", "POST"])
 def new_audit():
     mobile_units = fetch_mobile_units()
+    print(f"DEBUG: Mobile Units: {mobile_units}")
     vehicles = fetch_vehicles()
     material_catalog = fetch_material_catalog()
     material_index = {row["material_code"]: row["material_name"] for row in material_catalog}
@@ -848,6 +930,30 @@ def new_audit():
                     )
                 update_vehicle_botiquin_expiry(int(vehicle_id_raw), botiquin_expiry)
 
+            serialized_stock_status = (request.form.get("serialized_stock_status") or "").strip()
+            if not serialized_stock_status:
+                raise ValueError(
+                    "Debes indicar el estado de serializados (Completo, Faltan o No revisado)."
+                )
+            if serialized_stock_status not in {"ok", "missing", "not_checked"}:
+                raise ValueError("El estado de serializados no es valido.")
+
+            serialized_stock_notes = (request.form.get("serialized_stock_notes") or "").strip() or None
+            if serialized_stock_status == "missing" and not serialized_stock_notes:
+                raise ValueError("Si faltan serializados, debes detallar los faltantes.")
+
+            material_stock_status = (request.form.get("material_stock_status") or "").strip()
+            if not material_stock_status:
+                raise ValueError(
+                    "Debes indicar el estado del stock (Completo, Faltan o No revisado)."
+                )
+            if material_stock_status not in {"ok", "missing", "not_checked"}:
+                raise ValueError("El estado del stock no es valido.")
+
+            material_stock_notes = (request.form.get("material_stock_notes") or "").strip() or None
+            if material_stock_status == "missing" and not material_stock_notes:
+                raise ValueError("Si faltan materiales en stock, debes detallar los faltantes.")
+
             supply_requests = []
             indices = []
             for key in request.form.keys():
@@ -929,6 +1035,10 @@ def new_audit():
                     "total_score": total_score,
                     "result_status": result_status,
                     "general_notes": request.form.get("general_notes", "").strip() or None,
+                    "serialized_stock_status": serialized_stock_status,
+                    "serialized_stock_notes": serialized_stock_notes,
+                    "material_stock_status": material_stock_status,
+                    "material_stock_notes": material_stock_notes,
                 },
                 items,
                 supply_requests,

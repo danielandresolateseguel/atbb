@@ -18,3 +18,6 @@ def create_app():
         init_db()
 
     return app
+
+
+app = create_app()
