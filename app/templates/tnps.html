@@ -17,14 +17,14 @@
     <section class="card info-card">
         <div class="section-heading">
             <div>
-                <p class="eyebrow">Vinculo</p>
-                <h3>Auditoria {{ audit_context["id"] }}</h3>
+                <p class="eyebrow">Vínculo</p>
+                <h3>Auditoría {{ audit_context["id"] }}</h3>
             </div>
         </div>
         <div class="info-list">
-            <p><strong>Fecha auditoria:</strong> {{ audit_context["audit_date"] }}</p>
-            <p><strong>Tecnico:</strong> {{ audit_context["technician_name"] }}</p>
-            <p><strong>Ubicacion:</strong> {{ audit_context["location"] }}</p>
+            <p><strong>Fecha auditoría:</strong> {{ audit_context["audit_date"] }}</p>
+            <p><strong>Técnico:</strong> {{ audit_context["technician_name"] }}</p>
+            <p><strong>Ubicación:</strong> {{ audit_context["location"] }}</p>
             <p><a class="table-link" href="{{ url_for('main.audit_report', audit_id=audit_context['id']) }}">Ver informe ejecutivo</a></p>
         </div>
     </section>
@@ -70,6 +70,38 @@
             <span>Fecha</span>
             <input type="date" name="response_date" value="{{ today }}" required>
         </label>
+
+        <label class="tnps-half">
+            <span>Cliente (opcional)</span>
+            <input type="text" name="customer_name" placeholder="Nombre o referencia">
+        </label>
+
+        {% if audit_context %}
+            <input type="hidden" name="technician_id" value="{{ audit_context.get('technician_id') or '' }}">
+            <label>
+                <span>Técnico (desde auditoría)</span>
+                <input type="text" value="{{ audit_context['technician_name'] if audit_context.get('technician_name') else 'Sin técnico asociado' }}" disabled>
+            </label>
+        {% else %}
+            <label class="tnps-half">
+                <span>Técnico (opcional)</span>
+                <select name="technician_id">
+                    <option value="">Sin asignar</option>
+                    {% for technician in technicians %}
+                        <option value="{{ technician['id'] }}">{{ technician["name"] }} ({{ technician["employee_code"] }})</option>
+                    {% endfor %}
+                </select>
+            </label>
+        {% endif %}
+
+        {% if audit_context %}
+            <input type="hidden" name="audit_id" value="{{ audit_context['id'] }}">
+        {% else %}
+            <label>
+                <span>ID auditoría (opcional)</span>
+                <input type="number" name="audit_id" min="1" step="1" placeholder="Ej: 123">
+            </label>
+        {% endif %}
 
         <fieldset class="score-scale-field">
             <legend>Puntaje tNPS (0 a 10)</legend>
@@ -127,40 +159,8 @@
             </div>
         </fieldset>
 
-        <label class="tnps-half">
-            <span>Cliente (opcional)</span>
-            <input type="text" name="customer_name" placeholder="Nombre o referencia">
-        </label>
-
-        {% if audit_context %}
-            <input type="hidden" name="technician_id" value="{{ audit_context.get('technician_id') or '' }}">
-            <label>
-                <span>Tecnico (desde auditoria)</span>
-                <input type="text" value="{{ audit_context['technician_name'] if audit_context.get('technician_name') else 'Sin tecnico asociado' }}" disabled>
-            </label>
-        {% else %}
-            <label class="tnps-half">
-                <span>Tecnico (opcional)</span>
-                <select name="technician_id">
-                    <option value="">Sin asignar</option>
-                    {% for technician in technicians %}
-                        <option value="{{ technician['id'] }}">{{ technician["name"] }} ({{ technician["employee_code"] }})</option>
-                    {% endfor %}
-                </select>
-            </label>
-        {% endif %}
-
-        {% if audit_context %}
-            <input type="hidden" name="audit_id" value="{{ audit_context['id'] }}">
-        {% else %}
-            <label>
-                <span>ID auditoria (opcional)</span>
-                <input type="number" name="audit_id" min="1" step="1" placeholder="Ej: 123">
-            </label>
-        {% endif %}
-
         <fieldset class="score-scale-field">
-            <legend>Facilidad para coordinar (opcional)</legend>
+            <legend>Facilidad para coordinar </legend>
             <div class="score-scale-scroll">
                 <div class="score-scale-grid score-scale-grid-10">
                     {% for value in range(1, 11) %}
@@ -178,7 +178,7 @@
         </fieldset>
 
         <fieldset class="score-scale-field">
-            <legend>Puntualidad del tecnico (opcional)</legend>
+            <legend>Puntualidad del técnico </legend>
             <div class="score-scale-scroll">
                 <div class="score-scale-grid score-scale-grid-10">
                     {% for value in range(1, 11) %}
@@ -196,7 +196,7 @@
         </fieldset>
 
         <fieldset class="score-scale-field">
-            <legend>Claridad de la explicacion (opcional)</legend>
+            <legend>Claridad de la explicación </legend>
             <div class="score-scale-scroll">
                 <div class="score-scale-grid score-scale-grid-10">
                     {% for value in range(1, 11) %}
@@ -214,11 +214,11 @@
         </fieldset>
 
         <fieldset class="score-scale-field">
-            <legend>Resolucion en primera visita (opcional)</legend>
+            <legend>Resolución en primera visita </legend>
             <div class="score-scale-yn">
                 <div class="score-scale-item">
                     <input type="radio" name="issue_resolved_first_visit" id="issue-resolved-yes" value="1">
-                    <label class="score-scale-option" for="issue-resolved-yes">Si</label>
+                    <label class="score-scale-option" for="issue-resolved-yes">Sí</label>
                 </div>
                 <div class="score-scale-item">
                     <input type="radio" name="issue_resolved_first_visit" id="issue-resolved-no" value="0">
@@ -228,7 +228,7 @@
         </fieldset>
 
         <label>
-            <span>Comentario (opcional)</span>
+            <span>Comentario </span>
             <textarea name="comment" rows="3" placeholder="Detalle, motivo, mejora sugerida"></textarea>
         </label>
 
@@ -256,7 +256,7 @@
         </label>
 
         <label>
-            <span>Tecnico</span>
+            <span>Técnico</span>
             <select name="technician_id">
                 <option value="">Todos</option>
                 {% for technician in technicians %}
@@ -279,17 +279,17 @@
                 <thead>
                     <tr>
                         <th>Fecha</th>
-                        <th>Tecnico</th>
+                        <th>Técnico</th>
+                        <th>Cliente</th>
+                        <th>Auditoría</th>
+                        <th>Cargado</th>
                         <th>Puntaje</th>
                         <th>Nivel</th>
-                        <th>Cliente</th>
                         <th>Coord.</th>
                         <th>Punt.</th>
                         <th>Claridad</th>
                         <th>Resuelto</th>
                         <th>Comentario</th>
-                        <th>Auditoria</th>
-                        <th>Cargado</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -297,6 +297,15 @@
                         <tr>
                             <td>{{ row["response_date"] }}</td>
                             <td>{{ row["technician_name"] or "-" }}</td>
+                            <td>{{ row["customer_name"] or "-" }}</td>
+                            <td>
+                                {% if row["audit_id"] %}
+                                    <a class="table-link" href="{{ url_for('main.audit_detail', audit_id=row['audit_id']) }}">{{ row["audit_id"] }}</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>{{ row["created_at"] }}</td>
                             <td>{{ row["score"] }}</td>
                             <td>
                                 {% if row["score"] >= 9 %}
@@ -318,7 +327,6 @@
                                     (Detractor)
                                 {% endif %}
                             </td>
-                            <td>{{ row["customer_name"] or "-" }}</td>
                             <td>{{ row["booking_ease_score"] or "-" }}</td>
                             <td>{{ row["punctuality_score"] or "-" }}</td>
                             <td>{{ row["communication_clarity_score"] or "-" }}</td>
@@ -326,20 +334,12 @@
                                 {% if row["issue_resolved_first_visit"] is none %}
                                     -
                                 {% elif row["issue_resolved_first_visit"] %}
-                                    Si
+                                    Sí
                                 {% else %}
                                     No
                                 {% endif %}
                             </td>
                             <td>{{ row["comment"] or "-" }}</td>
-                            <td>
-                                {% if row["audit_id"] %}
-                                    <a class="table-link" href="{{ url_for('main.audit_detail', audit_id=row['audit_id']) }}">{{ row["audit_id"] }}</a>
-                                {% else %}
-                                    -
-                                {% endif %}
-                            </td>
-                            <td>{{ row["created_at"] }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

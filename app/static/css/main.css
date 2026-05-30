@@ -157,9 +157,22 @@ small {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
     margin-bottom: 1rem;
+}
+
+@media (max-width: 380px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+    }
 }
 
 .stat-card {
@@ -174,6 +187,20 @@ small {
 
 .stat-value {
     font-size: 2rem;
+}
+
+@media (max-width: 560px) {
+    .stats-grid .stat-card {
+        padding: 0.9rem;
+    }
+
+    .stat-label {
+        font-size: 0.85rem;
+    }
+
+    .stat-value {
+        font-size: 1.55rem;
+    }
 }
 
 .button {
@@ -273,6 +300,21 @@ small {
 .badge-cumple {
     background: var(--success-soft);
     color: var(--success);
+}
+
+.badge-conforme {
+    background: var(--success-soft);
+    color: var(--success);
+}
+
+.badge-nc-menor {
+    background: var(--warning-soft);
+    color: var(--warning);
+}
+
+.badge-nc-mayor {
+    background: var(--danger-soft);
+    color: var(--danger);
 }
 
 .badge-aprobada-con-observaciones {
@@ -1008,7 +1050,7 @@ td {
 .mobile-snapshot-card .detail-grid .guide-card {
     display: flex;
     flex-direction: column;
-    height: clamp(240px, 34vh, 360px);
+    height: clamp(360px, 65vh, 520px);
 }
 
 .mobile-snapshot-card .detail-grid .snapshot-list {
@@ -1017,6 +1059,14 @@ td {
     overflow: auto;
     overscroll-behavior: contain;
     padding-right: 0.5rem;
+}
+
+#snapshot_equipment_list {
+    min-height: 5.5rem;
+}
+
+#snapshot_stock_list {
+    min-height: 5.5rem;
 }
 
 .mobile-inventory-grid .table-card {
@@ -1271,6 +1321,10 @@ td {
     color: var(--muted);
 }
 
+.report-subtitle {
+    margin: 0;
+}
+
 .report-actions {
     display: flex;
     gap: 0.75rem;
@@ -1279,15 +1333,20 @@ td {
 
 .report-score-card {
     display: grid;
-    gap: 1rem;
+    gap: 0.75rem;
     align-items: center;
     background: linear-gradient(135deg, rgba(29, 78, 216, 0.1), rgba(255, 255, 255, 0.95));
 }
 
+.report-score-card,
+.report-kpi {
+    padding: 0.9rem;
+}
+
 .score-ring {
     position: relative;
-    width: 160px;
-    height: 160px;
+    width: 120px;
+    height: 120px;
     margin: 0 auto;
 }
 
@@ -1327,7 +1386,7 @@ td {
 .score-ring-center strong {
     display: block;
     line-height: 1;
-    font-size: 1.7rem;
+    font-size: 1.5rem;
 }
 
 .score-ring-center span {
@@ -1363,11 +1422,11 @@ td {
 
 .report-kpi {
     display: grid;
-    gap: 0.4rem;
+    gap: 0.25rem;
 }
 
 .report-kpi strong {
-    font-size: 2rem;
+    font-size: 1.5rem;
 }
 
 .report-card {
@@ -1380,6 +1439,14 @@ td {
 .status-stack,
 .report-item-list {
     display: grid;
+    gap: 0.75rem;
+}
+
+.report-hero {
+    gap: 0.75rem;
+}
+
+.report-kpis {
     gap: 0.75rem;
 }
 
@@ -1551,11 +1618,38 @@ td {
 
     .report-hero {
         grid-template-columns: 1.15fr 0.85fr;
+        grid-template-rows: 1fr auto;
+        align-items: start;
     }
 
     .report-score-card {
         grid-template-columns: auto 1fr;
+        gap: 0.65rem;
+        align-items: start;
     }
+
+    .report-hero .report-score-card {
+        grid-column: 1;
+        grid-row: 1;
+        height: 100%;
+        align-content: center;
+    }
+
+    .report-hero .report-meta-card {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+    }
+
+    .report-hero .report-kpis {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .report-hero .score-ring {
+        width: 150px;
+        height: 150px;
+    }
+
 
     .report-kpis {
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1575,6 +1669,24 @@ td {
 
     .report-sections {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .report-sections > .report-section-block:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+
+    .report-sections > .report-section-block:last-child:nth-child(odd) .report-item-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.6rem;
+    }
+
+    .report-sections > .report-section-block:last-child:nth-child(odd) .report-item-row {
+        border-bottom: 0;
+        padding-bottom: 0;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
     }
 
     .form-grid {
