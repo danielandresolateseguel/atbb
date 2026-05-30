@@ -37,13 +37,10 @@ class PostgresConnection:
 def get_db():
     if "db_conn" not in g:
         if is_postgres():
-            import psycopg2
-            from psycopg2.extras import DictCursor
+            import psycopg
+            from psycopg.rows import dict_row
 
-            connection = psycopg2.connect(
-                current_app.config["DATABASE_URL"],
-                cursor_factory=DictCursor,
-            )
+            connection = psycopg.connect(current_app.config["DATABASE_URL"], row_factory=dict_row)
             g.db_conn = PostgresConnection(connection)
         else:
             connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
@@ -234,13 +231,10 @@ def init_db():
 
 
 def init_db_postgres():
-    import psycopg2
-    from psycopg2.extras import DictCursor
+    import psycopg
+    from psycopg.rows import dict_row
 
-    connection = psycopg2.connect(
-        current_app.config["DATABASE_URL"],
-        cursor_factory=DictCursor,
-    )
+    connection = psycopg.connect(current_app.config["DATABASE_URL"], row_factory=dict_row)
     cursor = connection.cursor()
 
     cursor.execute(
@@ -2943,7 +2937,9 @@ def get_mobile_unit_id_by_code(mobile_code):
         "SELECT id FROM mobile_units WHERE mobile_code = ?",
         (mobile_code,),
     ).fetchone()
-    return row[0] if row else None
+    if not row:
+        return None
+    return row["id"] if is_postgres() else row[0]
 
 
 def ensure_mobile_unit(
@@ -2977,10 +2973,10 @@ def ensure_mobile_unit(
                 empty_as_none(warehouse_type),
                 is_enabled,
                 empty_as_none(notes),
-                existing_row[0],
+                existing_row["id"] if is_postgres() else existing_row[0],
             ),
         )
-        return existing_row[0]
+        return existing_row["id"] if is_postgres() else existing_row[0]
 
     insert_sql = """
         INSERT INTO mobile_units (
@@ -3024,9 +3020,9 @@ def ensure_storage_location(connection, mobile_unit_id, center_name, warehouse_c
             SET mobile_unit_id = ?, warehouse_name = COALESCE(?, warehouse_name)
             WHERE id = ?
             """,
-            (mobile_unit_id, empty_as_none(warehouse_name), existing_row[0]),
+            (mobile_unit_id, empty_as_none(warehouse_name), existing_row["id"] if is_postgres() else existing_row[0]),
         )
-        return existing_row[0]
+        return existing_row["id"] if is_postgres() else existing_row[0]
 
     insert_sql = """
         INSERT INTO storage_locations (
@@ -3054,9 +3050,9 @@ def ensure_material(connection, material_code, material_name):
     if existing_row:
         connection.execute(
             "UPDATE materials SET material_code = COALESCE(?, material_code) WHERE id = ?",
-            (material_code, existing_row[0]),
+            (material_code, existing_row["id"] if is_postgres() else existing_row[0]),
         )
-        return existing_row[0], False
+        return (existing_row["id"] if is_postgres() else existing_row[0]), False
 
     insert_sql = "INSERT INTO materials (material_code, material_name) VALUES (?, ?)"
     insert_params = (material_code, material_name)
