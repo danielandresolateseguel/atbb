@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Usuarios{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administración</p>
+        <h2>Usuarios</h2>
+        <p class="hero-copy">Crea usuarios auditor o gerente.</p>
+    </div>
+    <div class="hero-actions">
+        {% if can_create_users %}
+            <a class="button button-primary" href="{{ url_for('main.users_new') }}">Nuevo usuario</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card table-card">
+    <div class="table-wrap">
+        <table class="compact-table">
+            <thead>
+                <tr>
+                    <th>Usuario</th>
+                    <th>Rol</th>
+                    <th>Activo</th>
+                    <th>Creado</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in users %}
+                    <tr>
+                        <td>{{ row["username"] }}</td>
+                        <td>{{ row["role"] }}</td>
+                        <td>{{ "Sí" if row["is_active"] else "No" }}</td>
+                        <td>{{ row["created_at"] }}</td>
+                        <td>
+                            {% if can_edit_users %}
+                                <a class="table-link" href="{{ url_for('main.users_edit', user_id=row['id']) }}">Editar</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">No hay usuarios.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

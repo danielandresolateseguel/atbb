@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración inicial{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Primera vez</p>
+        <h2>Crear administrador inicial</h2>
+        <p class="hero-copy">
+            Este usuario podrá ingresar y crear el resto de usuarios desde la app.
+        </p>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-grid">
+        <label>
+            <span>Usuario</span>
+            <input type="text" name="username" autocomplete="username" required>
+        </label>
+        <label>
+            <span>Contraseña (mínimo 8 caracteres)</span>
+            <input type="password" name="password" autocomplete="new-password" required>
+        </label>
+        <label>
+            <span>Confirmar contraseña</span>
+            <input type="password" name="confirm_password" autocomplete="new-password" required>
+        </label>
+        <button class="button button-primary" type="submit">Crear administrador</button>
+    </form>
+</section>
+{% endblock %}

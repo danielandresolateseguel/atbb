@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Nuevo usuario" if mode == "new" else "Editar usuario" }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administración</p>
+        <h2>{{ "Nuevo usuario" if mode == "new" else "Editar usuario" }}</h2>
+        <p class="hero-copy">
+            {% if mode == "new" %}
+                Crea un usuario para acceder a la app.
+            {% else %}
+                Actualiza rol, estado y/o contraseña.
+            {% endif %}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.users_list') }}">Volver</a>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-grid">
+        <label>
+            <span>Usuario</span>
+            <input type="text" name="username" value="{{ user['username'] if user else '' }}" autocomplete="username" required>
+        </label>
+        <label>
+            <span>Rol</span>
+            <select name="role" required>
+                {% set selected_role = (user['role'] if user else 'auditor') %}
+                {% if user and selected_role == 'admin' %}
+                    <option value="admin" selected>Administrador</option>
+                {% endif %}
+                {% if mode == "new" and is_gerente %}
+                    <option value="auditor" selected>Auditor</option>
+                {% else %}
+                    {% if mode == "new" and is_admin %}
+                        <option value="admin" {{ "selected" if selected_role == "admin" else "" }}>Administrador</option>
+                    {% endif %}
+                    <option value="auditor" {{ "selected" if selected_role == "auditor" else "" }}>Auditor</option>
+                    <option value="gerente" {{ "selected" if selected_role == "gerente" else "" }}>Gerente</option>
+                {% endif %}
+            </select>
+        </label>
+        <label>
+            <span>Activo</span>
+            {% set selected_active = (user['is_active'] if user else 1) %}
+            <select name="is_active" required>
+                <option value="1" {{ "selected" if selected_active else "" }}>Sí</option>
+                <option value="0" {{ "selected" if not selected_active else "" }}>No</option>
+            </select>
+        </label>
+        <label>
+            <span>{{ "Contraseña (mínimo 8 caracteres)" if mode == "new" else "Nueva contraseña (opcional)" }}</span>
+            <input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'new' else 'new-password' }}" {{ "required" if mode == "new" else "" }}>
+        </label>
+        <label>
+            <span>Confirmar contraseña</span>
+            <input type="password" name="confirm_password" autocomplete="{{ 'new-password' if mode == 'new' else 'new-password' }}" {{ "required" if mode == "new" else "" }}>
+        </label>
+        <button class="button button-primary" type="submit">{{ "Crear" if mode == "new" else "Guardar" }}</button>
+    </form>
+</section>
+{% endblock %}

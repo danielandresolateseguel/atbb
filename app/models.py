@@ -1,6 +1,7 @@
 import sqlite3
 
 from flask import current_app, g
+from werkzeug.security import generate_password_hash
 
 from app.checklist import TOOL_MATCH_RULES
 
@@ -63,6 +64,15 @@ def init_db():
     connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
     connection.executescript(
         """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'auditor',
+            is_active INTEGER NOT NULL DEFAULT 1
+        );
+
         CREATE TABLE IF NOT EXISTS technicians (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -155,6 +165,7 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             audit_date TEXT NOT NULL,
             auditor_name TEXT NOT NULL,
+            auditor_user_id INTEGER,
             auditor_signature_path TEXT,
             technician_signature_path TEXT,
             technician_display_name TEXT,
@@ -173,7 +184,8 @@ def init_db():
             vehicle_id INTEGER NOT NULL,
             FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id),
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
-            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id)
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id),
+            FOREIGN KEY (auditor_user_id) REFERENCES users (id)
         );
 
         CREATE TABLE IF NOT EXISTS audit_items (
@@ -236,6 +248,19 @@ def init_db_postgres():
 
     connection = psycopg.connect(current_app.config["DATABASE_URL"], row_factory=dict_row)
     cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'auditor',
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
 
     cursor.execute(
         """
@@ -353,6 +378,7 @@ def init_db_postgres():
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             audit_date TEXT NOT NULL,
             auditor_name TEXT NOT NULL,
+            auditor_user_id INTEGER REFERENCES users (id),
             auditor_signature_path TEXT,
             technician_signature_path TEXT,
             technician_display_name TEXT,
@@ -432,6 +458,151 @@ def init_db_postgres():
     connection.close()
 
 
+def count_users():
+    row = get_db().execute("SELECT COUNT(*) AS user_count FROM users").fetchone()
+    if not row:
+        return 0
+    return row["user_count"] if isinstance(row, dict) else row[0]
+
+
+def fetch_user_by_id(user_id):
+    row = get_db().execute(
+        """
+        SELECT id, username, password_hash, role, is_active
+        FROM users
+        WHERE id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_user_by_username(username):
+    normalized = (username or "").strip()
+    if not normalized:
+        return None
+    row = get_db().execute(
+        """
+        SELECT id, username, password_hash, role, is_active
+        FROM users
+        WHERE username = ?
+        """,
+        (normalized,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_users():
+    created_at_expr = "created_at" if is_postgres() else "datetime(created_at, 'localtime')"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            id,
+            username,
+            role,
+            is_active,
+            {created_at_expr} AS created_at
+        FROM users
+        ORDER BY username ASC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def count_active_admins():
+    row = get_db().execute(
+        """
+        SELECT COUNT(*) AS admin_count
+        FROM users
+        WHERE role = 'admin' AND is_active = 1
+        """
+    ).fetchone()
+    if not row:
+        return 0
+    return row["admin_count"] if isinstance(row, dict) else row[0]
+
+
+def create_user(username, password, role="auditor", is_active=1):
+    normalized = (username or "").strip()
+    if not normalized:
+        raise ValueError("El usuario es obligatorio.")
+    raw_password = (password or "").strip()
+    if not raw_password:
+        raise ValueError("La contraseña es obligatoria.")
+
+    safe_role = (role or "auditor").strip().lower()
+    if safe_role == "supervisor":
+        safe_role = "admin"
+    if safe_role not in {"admin", "auditor", "gerente"}:
+        safe_role = "auditor"
+
+    password_hash = generate_password_hash(raw_password)
+    connection = get_db()
+    insert_sql = """
+        INSERT INTO users (username, password_hash, role, is_active)
+        VALUES (?, ?, ?, ?)
+        """
+    insert_params = (normalized, password_hash, safe_role, 1 if is_active else 0)
+
+    try:
+        if is_postgres():
+            cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+            row = cursor.fetchone()
+            connection.commit()
+            return (row["id"] if isinstance(row, dict) else row[0]) if row else None
+
+        cursor = connection.execute(insert_sql, insert_params)
+        connection.commit()
+        return cursor.lastrowid
+    except Exception as exc:
+        message = str(exc).lower()
+        if "unique" in message or "duplicate" in message:
+            raise ValueError("El usuario ya existe.") from exc
+        raise
+
+
+def update_user(user_id, username=None, password=None, role=None, is_active=None):
+    existing = fetch_user_by_id(user_id)
+    if not existing:
+        return False
+
+    normalized_username = (username or "").strip() if username is not None else existing["username"]
+    if not normalized_username:
+        raise ValueError("El usuario es obligatorio.")
+
+    safe_role = (role or existing["role"] or "auditor").strip().lower()
+    if safe_role == "supervisor":
+        safe_role = "admin"
+    if safe_role not in {"admin", "auditor", "gerente"}:
+        safe_role = "auditor"
+
+    active_value = existing["is_active"] if is_active is None else (1 if is_active else 0)
+
+    password_hash = existing["password_hash"]
+    if password is not None:
+        raw_password = (password or "").strip()
+        if not raw_password:
+            raise ValueError("La contraseña no puede estar vacía.")
+        password_hash = generate_password_hash(raw_password)
+
+    connection = get_db()
+    try:
+        connection.execute(
+            """
+            UPDATE users
+            SET username = ?, password_hash = ?, role = ?, is_active = ?
+            WHERE id = ?
+            """,
+            (normalized_username, password_hash, safe_role, active_value, user_id),
+        )
+        connection.commit()
+        return True
+    except Exception as exc:
+        message = str(exc).lower()
+        if "unique" in message or "duplicate" in message:
+            raise ValueError("El usuario ya existe.") from exc
+        raise
+
 def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "technicians", "phone", "TEXT")
     add_column_if_missing(connection, "technicians", "commune", "TEXT")
@@ -459,6 +630,7 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "mobile_units", "notes", "TEXT")
     add_column_if_missing(connection, "materials", "material_code", "TEXT")
     add_column_if_missing(connection, "audits", "mobile_unit_id", "INTEGER")
+    add_column_if_missing(connection, "audits", "auditor_user_id", "INTEGER")
     add_column_if_missing(connection, "audits", "auditor_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_display_name", "TEXT")
@@ -524,6 +696,7 @@ def ensure_audits_nullable_technician(connection):
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             audit_date TEXT NOT NULL,
             auditor_name TEXT NOT NULL,
+            auditor_user_id INTEGER,
             auditor_signature_path TEXT,
             technician_signature_path TEXT,
             technician_display_name TEXT,
@@ -542,7 +715,8 @@ def ensure_audits_nullable_technician(connection):
             vehicle_id INTEGER NOT NULL,
             FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id),
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
-            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id)
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id),
+            FOREIGN KEY (auditor_user_id) REFERENCES users (id)
         )
         """
     )
@@ -554,6 +728,7 @@ def ensure_audits_nullable_technician(connection):
             created_at,
             audit_date,
             auditor_name,
+            auditor_user_id,
             auditor_signature_path,
             technician_signature_path,
             technician_display_name,
@@ -576,6 +751,7 @@ def ensure_audits_nullable_technician(connection):
             created_at,
             audit_date,
             auditor_name,
+            auditor_user_id,
             auditor_signature_path,
             technician_signature_path,
             technician_display_name,
@@ -933,14 +1109,19 @@ def fetch_mobile_material_stock(mobile_code, limit=200):
     return [dict(row) for row in rows]
 
 
-def fetch_mobile_related_audits(mobile_code, limit=20):
+def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
     mobile = fetch_mobile_unit_detail(mobile_code)
     technician_id = mobile["technician_id"] if mobile else None
     mobile_unit_id = mobile["id"] if mobile else None
+    auditor_filter_sql = ""
+    auditor_filter_params = ()
+    if auditor_user_id is not None:
+        auditor_filter_sql = " AND audits.auditor_user_id = ?"
+        auditor_filter_params = (auditor_user_id,)
 
     if technician_id is None:
         rows = get_db().execute(
-            """
+            f"""
             SELECT
                 audits.id,
                 audits.audit_date,
@@ -955,18 +1136,19 @@ def fetch_mobile_related_audits(mobile_code, limit=20):
             LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
             LEFT JOIN technicians ON technicians.id = audits.technician_id
             INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-            WHERE audits.mobile_unit_id = ?
+            WHERE audits.mobile_unit_id = ?{auditor_filter_sql}
             ORDER BY audits.created_at DESC
             LIMIT ?
             """,
             (
                 mobile_unit_id,
+                *auditor_filter_params,
                 limit,
             ),
         ).fetchall()
     else:
         rows = get_db().execute(
-            """
+            f"""
             SELECT
                 audits.id,
                 audits.audit_date,
@@ -981,13 +1163,14 @@ def fetch_mobile_related_audits(mobile_code, limit=20):
             LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
             LEFT JOIN technicians ON technicians.id = audits.technician_id
             INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-            WHERE audits.mobile_unit_id = ? OR audits.technician_id = ?
+            WHERE (audits.mobile_unit_id = ? OR audits.technician_id = ?){auditor_filter_sql}
             ORDER BY audits.created_at DESC
             LIMIT ?
             """,
             (
                 mobile_unit_id,
                 technician_id,
+                *auditor_filter_params,
                 limit,
             ),
         ).fetchall()
@@ -1374,15 +1557,23 @@ def fetch_stock_stats():
     return dict(row)
 
 
-def fetch_dashboard_stats():
+def fetch_dashboard_stats(auditor_user_id=None):
+    where_sql = ""
+    params = ()
+    if auditor_user_id is not None:
+        where_sql = "WHERE audits.auditor_user_id = ?"
+        params = (auditor_user_id,)
+
     row = get_db().execute(
-        """
+        f"""
         SELECT
             COUNT(*) AS total_audits,
             SUM(CASE WHEN result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
             SUM(CASE WHEN result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count
         FROM audits
-        """
+        {where_sql}
+        """,
+        params,
     ).fetchone()
 
     total_audits = row["total_audits"] or 0
@@ -1634,9 +1825,16 @@ def fetch_tnps_response_for_audit(audit_id):
     return dict(row) if row else None
 
 
-def fetch_recent_audits(limit=5):
+def fetch_recent_audits(limit=5, auditor_user_id=None):
+    where_sql = ""
+    params = []
+    if auditor_user_id is not None:
+        where_sql = "WHERE audits.auditor_user_id = ?"
+        params.append(auditor_user_id)
+
+    params.append(limit)
     rows = get_db().execute(
-        """
+        f"""
         SELECT
             audits.id,
             audits.audit_date,
@@ -1651,20 +1849,61 @@ def fetch_recent_audits(limit=5):
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
         ORDER BY audits.created_at DESC
         LIMIT ?
         """,
-        (limit,),
+        tuple(params),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
-def fetch_all_audits():
+def fetch_all_audits(filters=None, auditor_user_id=None):
+    filters = filters or {}
+    where_clauses = []
+    params = []
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    status = (filters.get("status") or "").strip()
+    auditor = (filters.get("auditor") or "").strip()
+
+    if from_date:
+        where_clauses.append("audits.audit_date >= ?")
+        params.append(from_date)
+
+    if to_date:
+        where_clauses.append("audits.audit_date <= ?")
+        params.append(to_date)
+
+    if status:
+        where_clauses.append("audits.result_status = ?")
+        params.append(status)
+
+    if auditor:
+        like_value = f"%{auditor}%"
+        if is_postgres():
+            where_clauses.append("COALESCE(audits.auditor_name, '') ILIKE ?")
+            params.append(like_value)
+        else:
+            where_clauses.append("LOWER(COALESCE(audits.auditor_name, '')) LIKE ?")
+            params.append(like_value.lower())
+
+    if auditor_user_id is not None:
+        where_clauses.append("audits.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
     rows = get_db().execute(
-        """
+        f"""
         SELECT
             audits.id,
             audits.audit_date,
+            audits.auditor_name,
+            audits.auditor_user_id,
             audits.location,
             audits.installation_type,
             audits.total_score,
@@ -1676,8 +1915,10 @@ def fetch_all_audits():
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
         ORDER BY audits.created_at DESC
-        """
+        """,
+        tuple(params),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -1690,6 +1931,7 @@ def fetch_audit_detail(audit_id):
             audits.id,
             audits.audit_date,
             audits.auditor_name,
+            audits.auditor_user_id,
             audits.auditor_signature_path,
             audits.technician_signature_path,
             audits.technician_display_name,
@@ -1783,6 +2025,7 @@ def create_audit(audit_data, items, supply_requests=None):
         INSERT INTO audits (
             audit_date,
             auditor_name,
+            auditor_user_id,
             auditor_signature_path,
             technician_signature_path,
             technician_display_name,
@@ -1799,11 +2042,12 @@ def create_audit(audit_data, items, supply_requests=None):
             mobile_unit_id,
             technician_id,
             vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         audit_data["audit_date"],
         audit_data["auditor_name"],
+        audit_data.get("auditor_user_id"),
         audit_data.get("auditor_signature_path"),
         audit_data.get("technician_signature_path"),
         audit_data.get("technician_display_name"),

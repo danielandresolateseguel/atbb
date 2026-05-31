@@ -11,7 +11,9 @@
             Registra inspecciones de seguridad, herramientas y vehículo desde una interfaz pensada para uso en terreno.
         </p>
     </div>
-    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Crear auditoría</a>
+    {% if can_create_audit %}
+        <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Crear auditoría</a>
+    {% endif %}
 </section>
 
 <section class="stats-grid">
@@ -29,7 +31,7 @@
     </article>
 </section>
 
-<section class="card">
+<section class="card dashboard-recent">
     <div class="section-heading">
         <div>
             <p class="eyebrow">Actividad reciente</p>

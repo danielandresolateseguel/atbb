@@ -4,13 +4,21 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 
-from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, g, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
 from app.checklist import CHECKLIST_SECTIONS
 from app.models import (
+    count_active_admins,
+    count_users,
     create_audit,
+    create_user,
     create_tnps_response,
+    update_user,
+    fetch_user_by_id,
+    fetch_user_by_username,
+    fetch_users,
     fetch_audit_detail,
     fetch_audit_items,
     fetch_audit_supply_requests,
@@ -63,6 +71,273 @@ from app.spreadsheets import parse_tabular_upload
 
 
 main = Blueprint("main", __name__)
+
+
+def current_user():
+    if getattr(g, "_current_user_loaded", False):
+        return getattr(g, "current_user", None)
+
+    user_id = session.get("user_id")
+    if not user_id:
+        g._current_user_loaded = True
+        g.current_user = None
+        return None
+
+    user = fetch_user_by_id(user_id)
+    if not user or not user.get("is_active"):
+        session.pop("user_id", None)
+        g._current_user_loaded = True
+        g.current_user = None
+        return None
+
+    if user.get("role") == "supervisor":
+        update_user(user["id"], role="admin")
+        user["role"] = "admin"
+
+    g._current_user_loaded = True
+    g.current_user = user
+    return user
+
+
+def is_admin():
+    user = current_user()
+    return bool(user and (user.get("role") == "admin"))
+
+
+def is_gerente():
+    user = current_user()
+    return bool(user and (user.get("role") == "gerente"))
+
+
+def is_auditor():
+    user = current_user()
+    return bool(user and (user.get("role") == "auditor"))
+
+
+def can_import():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "auditor"}))
+
+
+def can_create_audit():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "auditor"}))
+
+
+def can_view_all_audits():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "gerente"}))
+
+
+def can_view_users():
+    user = current_user()
+    return bool(user and (user.get("role") == "admin"))
+
+
+def can_create_users():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "gerente"}))
+
+
+def can_edit_users():
+    user = current_user()
+    return bool(user and (user.get("role") == "admin"))
+
+
+def safe_next_url(value):
+    raw = (value or "").strip()
+    if raw.startswith("/"):
+        return raw
+    return None
+
+
+@main.before_app_request
+def require_login():
+    endpoint = request.endpoint or ""
+    if endpoint.startswith("static"):
+        return None
+
+    if endpoint in {"main.login", "main.logout", "main.setup"}:
+        return None
+
+    if count_users() == 0:
+        return redirect(url_for("main.setup"))
+
+    if not current_user():
+        next_url = safe_next_url(request.full_path if request.query_string else request.path)
+        return redirect(url_for("main.login", next=next_url))
+
+    return None
+
+
+@main.app_context_processor
+def inject_auth_context():
+    user = current_user()
+    return {
+        "current_user": user,
+        "is_admin": bool(user and (user.get("role") == "admin")),
+        "is_gerente": bool(user and (user.get("role") == "gerente")),
+        "is_auditor": bool(user and (user.get("role") == "auditor")),
+        "can_import": can_import(),
+        "can_create_audit": can_create_audit(),
+        "can_view_all_audits": can_view_all_audits(),
+        "can_view_users": can_view_users(),
+        "can_create_users": can_create_users(),
+        "can_edit_users": can_edit_users(),
+    }
+
+
+@main.route("/setup", methods=["GET", "POST"])
+def setup():
+    if count_users() > 0:
+        return redirect(url_for("main.login"))
+
+    if request.method == "POST":
+        try:
+            username = (request.form.get("username") or "").strip()
+            password = (request.form.get("password") or "").strip()
+            confirm = (request.form.get("confirm_password") or "").strip()
+
+            if not username:
+                raise ValueError("Debes ingresar un usuario.")
+            if len(password) < 8:
+                raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+            if password != confirm:
+                raise ValueError("Las contraseñas no coinciden.")
+
+            create_user(username=username, password=password, role="admin", is_active=1)
+            flash("Usuario administrador creado. Ya puedes iniciar sesión.", "success")
+            return redirect(url_for("main.login"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+    return render_template("setup.html")
+
+
+@main.route("/login", methods=["GET", "POST"])
+def login():
+    if count_users() == 0:
+        return redirect(url_for("main.setup"))
+
+    if current_user():
+        return redirect(url_for("main.dashboard"))
+
+    next_url = safe_next_url(request.args.get("next"))
+
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        next_url = safe_next_url(request.form.get("next")) or next_url
+
+        user = fetch_user_by_username(username)
+        if not user or not user.get("is_active"):
+            flash("Usuario o contraseña incorrectos.", "error")
+            return render_template("login.html", next=next_url)
+
+        if not check_password_hash(user["password_hash"], password):
+            flash("Usuario o contraseña incorrectos.", "error")
+            return render_template("login.html", next=next_url)
+
+        session.clear()
+        session["user_id"] = user["id"]
+        return redirect(next_url or url_for("main.dashboard"))
+
+    return render_template("login.html", next=next_url)
+
+
+@main.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("main.login"))
+
+
+@main.route("/users")
+def users_list():
+    if not can_view_users():
+        abort(403)
+    return render_template("users.html", users=fetch_users())
+
+
+@main.route("/users/new", methods=["GET", "POST"])
+def users_new():
+    if not can_create_users():
+        abort(403)
+
+    if request.method == "POST":
+        try:
+            actor = current_user()
+            username = (request.form.get("username") or "").strip()
+            password = (request.form.get("password") or "").strip()
+            confirm = (request.form.get("confirm_password") or "").strip()
+            role = (request.form.get("role") or "auditor").strip().lower()
+            is_active = (request.form.get("is_active") or "1").strip() == "1"
+
+            if not username:
+                raise ValueError("Debes ingresar un usuario.")
+            if len(password) < 8:
+                raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+            if password != confirm:
+                raise ValueError("Las contraseñas no coinciden.")
+            if actor and actor.get("role") == "gerente":
+                if role != "auditor":
+                    raise ValueError("El gerente solo puede crear usuarios de tipo auditor.")
+            else:
+                if role not in {"admin", "auditor", "gerente"}:
+                    raise ValueError("El rol seleccionado no es válido.")
+
+            create_user(username=username, password=password, role=role, is_active=1 if is_active else 0)
+            flash("Usuario creado.", "success")
+            if actor and actor.get("role") == "gerente":
+                return redirect(url_for("main.users_new"))
+            return redirect(url_for("main.users_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+    return render_template("user_form.html", mode="new", user=None)
+
+
+@main.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
+def users_edit(user_id):
+    if not can_edit_users():
+        abort(403)
+
+    user = fetch_user_by_id(user_id)
+    if not user:
+        abort(404)
+
+    if request.method == "POST":
+        try:
+            username = (request.form.get("username") or "").strip()
+            role = (request.form.get("role") or user.get("role") or "auditor").strip().lower()
+            is_active = (request.form.get("is_active") or "1").strip() == "1"
+            new_password = (request.form.get("password") or "").strip()
+            confirm = (request.form.get("confirm_password") or "").strip()
+
+            password = None
+            if new_password or confirm:
+                if len(new_password) < 8:
+                    raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+                if new_password != confirm:
+                    raise ValueError("Las contraseñas no coinciden.")
+                password = new_password
+
+            projected_role = (role or "auditor").strip().lower()
+            projected_active = 1 if is_active else 0
+            if user.get("role") == "admin" and user.get("is_active") and (
+                projected_role != "admin" or not projected_active
+            ):
+                if count_active_admins() <= 1:
+                    raise ValueError("Debe existir al menos un administrador activo.")
+            if user.get("role") != "admin" and projected_role not in {"auditor", "gerente"}:
+                raise ValueError("El rol seleccionado no es válido.")
+
+            update_user(user_id, username=username, password=password, role=role, is_active=is_active)
+            flash("Usuario actualizado.", "success")
+            return redirect(url_for("main.users_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+    return render_template("user_form.html", mode="edit", user=user)
 
 
 CSV_IMPORT_TYPES = {
@@ -504,8 +779,10 @@ def build_audit_report_metrics(audit, items):
 
 @main.route("/")
 def dashboard():
-    recent_audits = fetch_recent_audits()
-    stats = fetch_dashboard_stats()
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    recent_audits = fetch_recent_audits(auditor_user_id=auditor_user_id)
+    stats = fetch_dashboard_stats(auditor_user_id=auditor_user_id)
 
     return render_template(
         "dashboard.html",
@@ -518,6 +795,9 @@ def dashboard():
 
 @main.route("/tnps", methods=["GET", "POST"])
 def tnps():
+    if request.method == "POST" and not can_import():
+        abort(403)
+
     audit_context = None
     audit_id_context_raw = request.args.get("audit_id", "").strip()
     if audit_id_context_raw:
@@ -528,6 +808,8 @@ def tnps():
             audit_id_context = None
         if audit_id_context is not None:
             audit_context = fetch_audit_detail(audit_id_context)
+            if audit_context and is_auditor() and audit_context.get("auditor_user_id") != current_user()["id"]:
+                audit_context = None
             if not audit_context:
                 flash("No se encontro la auditoria indicada para vincular el tNPS.", "error")
 
@@ -643,8 +925,33 @@ def tnps():
 
 @main.route("/audits")
 def audit_list():
-    audits = fetch_all_audits()
-    return render_template("audits.html", audits=audits)
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
+        "auditor": request.args.get("auditor", "").strip(),
+    }
+
+    if auditor_user_id is not None:
+        filters["auditor"] = ""
+
+    audits = fetch_all_audits(filters, auditor_user_id=auditor_user_id)
+    filter_active = any(
+        [
+            filters["from_date"],
+            filters["to_date"],
+            filters["status"],
+            filters["auditor"],
+        ]
+    )
+    return render_template(
+        "audits.html",
+        audits=audits,
+        filters=filters,
+        filter_active=filter_active,
+    )
 
 
 @main.route("/audits/<int:audit_id>")
@@ -652,6 +959,10 @@ def audit_detail(audit_id):
     audit = fetch_audit_detail(audit_id)
     if not audit:
         abort(404)
+    if is_auditor():
+        user = current_user()
+        if audit.get("auditor_user_id") != user["id"] and (audit.get("auditor_name") or "") != user["username"]:
+            abort(404)
 
     items = fetch_audit_items(audit_id)
     grouped_items = build_grouped_audit_items(items)
@@ -672,6 +983,10 @@ def audit_report(audit_id):
     audit = fetch_audit_detail(audit_id)
     if not audit:
         abort(404)
+    if is_auditor():
+        user = current_user()
+        if audit.get("auditor_user_id") != user["id"] and (audit.get("auditor_name") or "") != user["username"]:
+            abort(404)
 
     items = fetch_audit_items(audit_id)
     report = build_audit_report_metrics(audit, items)
@@ -742,6 +1057,8 @@ def audit_report(audit_id):
 
 @main.route("/imports", methods=["GET", "POST"])
 def imports():
+    if not can_import():
+        abort(403)
     import_summary = None
 
     if request.method == "POST":
@@ -840,6 +1157,8 @@ def mobile_detail(mobile_code):
     if not mobile:
         abort(404)
 
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
     return render_template(
         "mobile_detail.html",
         mobile=mobile,
@@ -847,7 +1166,7 @@ def mobile_detail(mobile_code):
         storage_locations=fetch_mobile_storage_locations(mobile_code),
         equipment_rows=fetch_mobile_equipment(mobile_code),
         stock_rows=fetch_mobile_material_stock(mobile_code),
-        related_audits=fetch_mobile_related_audits(mobile_code),
+        related_audits=fetch_mobile_related_audits(mobile_code, auditor_user_id=auditor_user_id),
         related_vehicles=fetch_vehicles_by_employee_code(mobile.get("employee_code")),
         technicians=fetch_technicians(),
     )
@@ -855,6 +1174,9 @@ def mobile_detail(mobile_code):
 
 @main.route("/mobiles/<mobile_code>/technician", methods=["POST"])
 def assign_mobile_technician(mobile_code):
+    if not is_admin():
+        abort(403)
+
     mobile = fetch_mobile_unit_detail(mobile_code)
     if not mobile:
         abort(404)
@@ -887,6 +1209,8 @@ def mobile_audit_context(mobile_unit_id):
 
 @main.route("/audits/new", methods=["GET", "POST"])
 def new_audit():
+    if not can_create_audit():
+        abort(403)
     mobile_units = fetch_mobile_units()
     print(f"DEBUG: Mobile Units: {mobile_units}")
     vehicles = fetch_vehicles()
@@ -912,6 +1236,8 @@ def new_audit():
 
     if request.method == "POST":
         try:
+            user = current_user()
+            auditor_user_id = user["id"] if user else None
             mobile_unit_id_raw = request.form.get("mobile_unit_id", "").strip()
             if not mobile_unit_id_raw:
                 raise ValueError("Debes seleccionar un movil tecnico.")
@@ -1078,10 +1404,15 @@ def new_audit():
                     }
                 )
 
+            auditor_name = request.form["auditor_name"].strip()
+            if user and user.get("role") == "auditor":
+                auditor_name = user["username"]
+
             audit_id = create_audit(
                 {
                     "audit_date": audit_date,
-                    "auditor_name": request.form["auditor_name"].strip(),
+                    "auditor_name": auditor_name,
+                    "auditor_user_id": auditor_user_id,
                     "auditor_signature_path": auditor_signature_path,
                     "technician_signature_path": technician_signature_path,
                     "technician_display_name": technician_display_name,

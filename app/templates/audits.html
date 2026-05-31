@@ -8,7 +8,41 @@
         <p class="eyebrow">Seguimiento</p>
         <h2>Historial de auditorías</h2>
     </div>
-    <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
+    {% if can_create_audit %}
+        <a class="button button-primary" href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
+    {% endif %}
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.audit_list') }}">
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="status">
+                <option value="" {% if not filters.status %}selected{% endif %}>Todos</option>
+                <option value="Aprobada" {% if filters.status == "Aprobada" %}selected{% endif %}>Aprobada</option>
+                <option value="Aprobada con observaciones" {% if filters.status == "Aprobada con observaciones" %}selected{% endif %}>Aprobada con observaciones</option>
+                <option value="Critica" {% if filters.status == "Critica" %}selected{% endif %}>Crítica</option>
+            </select>
+        </label>
+        {% if can_view_all_audits %}
+            <label>
+                <span>Auditor</span>
+                <input type="text" name="auditor" value="{{ filters.auditor }}" placeholder="Nombre del auditor">
+            </label>
+        {% endif %}
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.audit_list') }}">Limpiar</a>
+        </div>
+    </form>
 </section>
 
 <section class="card table-card">
@@ -18,6 +52,7 @@
                 <thead>
                     <tr>
                         <th>Fecha</th>
+                        <th>Auditor</th>
                         <th>Móvil técnico</th>
                         <th>Vehículo</th>
                         <th>Ubicación</th>
@@ -30,6 +65,7 @@
                     {% for audit in audits %}
                         <tr>
                             <td>{{ audit.audit_date }}</td>
+                            <td>{{ audit.auditor_name or "-" }}</td>
                             <td>{% if audit.mobile_code %}{{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}</td>
                             <td>{{ audit.vehicle_plate }}</td>
                             <td>{{ audit.location }}</td>
@@ -42,7 +78,11 @@
             </table>
         </div>
     {% else %}
-        <p class="empty-state">Todavía no hay registros para mostrar.</p>
+        {% if filter_active %}
+            <p class="empty-state">No hay resultados para los filtros aplicados.</p>
+        {% else %}
+            <p class="empty-state">Todavía no hay registros para mostrar.</p>
+        {% endif %}
     {% endif %}
 </section>
 {% endblock %}

@@ -2,27 +2,54 @@
 <html lang="es">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Auditoría Técnica{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
     <header class="topbar">
-        <div class="brand">
-            <span class="brand-kicker">ATBB</span>
-            <h1>Auditoría Técnica</h1>
+        <div class="topbar-row">
+            <div class="brand">
+                <span class="brand-kicker">ATBB</span>
+                <h1>Auditoría Técnica</h1>
+            </div>
+            <nav class="nav" id="main_nav">
+                {% if current_user %}
+                    <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+                    <a href="{{ url_for('main.tnps') }}">tNPS</a>
+                    {% if can_create_audit %}
+                        <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
+                    {% endif %}
+                    <a href="{{ url_for('main.audit_list') }}">Historial</a>
+                    {% if can_import %}
+                        <a href="{{ url_for('main.imports') }}">Importar datos</a>
+                    {% endif %}
+                    <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
+                    <a href="{{ url_for('main.equipment') }}">Equipos</a>
+                    <a href="{{ url_for('main.materials_stock') }}">Stock</a>
+                {% else %}
+                    <a href="{{ url_for('main.login') }}">Ingresar</a>
+                {% endif %}
+            </nav>
+            <div class="topbar-actions">
+                <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="main_nav"></button>
+                {% if current_user %}
+                    <details class="user-menu">
+                        <summary class="user-menu-toggle" aria-label="Cuenta"></summary>
+                        <div class="user-menu-panel" role="menu">
+                            <div class="user-menu-meta">{{ current_user["username"] }}</div>
+                            {% if can_view_users %}
+                                <a role="menuitem" href="{{ url_for('main.users_list') }}">Usuarios</a>
+                            {% endif %}
+                            {% if can_create_users %}
+                                <a role="menuitem" href="{{ url_for('main.users_new') }}">Crear usuario</a>
+                            {% endif %}
+                            <a role="menuitem" href="{{ url_for('main.logout') }}">Cerrar sesión</a>
+                        </div>
+                    </details>
+                {% endif %}
+            </div>
         </div>
-        <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="main_nav"></button>
-        <nav class="nav" id="main_nav">
-            <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
-            <a href="{{ url_for('main.tnps') }}">tNPS</a>
-            <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
-            <a href="{{ url_for('main.audit_list') }}">Historial</a>
-            <a href="{{ url_for('main.imports') }}">Importar datos</a>
-            <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
-            <a href="{{ url_for('main.equipment') }}">Equipos</a>
-            <a href="{{ url_for('main.materials_stock') }}">Stock</a>
-        </nav>
     </header>
 
     <main class="page{% if page_class %} {{ page_class }}{% endif %}">
@@ -58,6 +85,29 @@
             button.addEventListener("click", function () {
                 const expanded = button.getAttribute("aria-expanded") === "true";
                 setExpanded(!expanded);
+            });
+        }());
+
+        (function () {
+            const menu = document.querySelector(".user-menu");
+            if (!menu) {
+                return;
+            }
+
+            document.addEventListener("click", function (event) {
+                if (!menu.open) {
+                    return;
+                }
+                if (menu.contains(event.target)) {
+                    return;
+                }
+                menu.open = false;
+            });
+
+            document.addEventListener("keydown", function (event) {
+                if (event.key === "Escape" && menu.open) {
+                    menu.open = false;
+                }
             });
         }());
     </script>

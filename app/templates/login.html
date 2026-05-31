@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Ingresar{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Acceso</p>
+        <h2>Ingresar</h2>
+        <p class="hero-copy">Ingresa con tu usuario para acceder a la app.</p>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-grid">
+        <input type="hidden" name="next" value="{{ next or '' }}">
+        <label>
+            <span>Usuario</span>
+            <input type="text" name="username" autocomplete="username" required>
+        </label>
+        <label>
+            <span>Contraseña</span>
+            <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button class="button button-primary" type="submit">Ingresar</button>
+    </form>
+</section>
+{% endblock %}

@@ -19,7 +19,14 @@
 
         <label>
             <span>Auditor</span>
-            <input type="text" name="auditor_name" value="{{ request.form.get('auditor_name', '') }}" placeholder="Nombre del auditor" required>
+            <input
+                type="text"
+                name="auditor_name"
+                value="{% if is_auditor and current_user %}{{ current_user['username'] }}{% else %}{{ request.form.get('auditor_name', '') }}{% endif %}"
+                placeholder="Nombre del auditor"
+                {% if is_auditor %}readonly{% endif %}
+                required
+            >
         </label>
 
         <label>
