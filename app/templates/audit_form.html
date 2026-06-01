@@ -129,8 +129,8 @@
 
         <div class="detail-grid">
             <article class="guide-card">
-                <strong>Equipos / herramientas detectadas</strong>
-                <p>Usa este bloque para contrastar lo que debería tener el móvil con lo que ves en terreno.</p>
+                <strong>Equipos serializados del móvil</strong>
+                <p>Lista de equipos serializados asociados al móvil, con su información completa.</p>
                 <ul class="snapshot-list" id="snapshot_equipment_list">
                     <li>Selecciona un móvil para ver sus equipos.</li>
                 </ul>
@@ -349,9 +349,9 @@
                             </label>
                         {% endif %}
 
-                        {% if item["key"] == "documentacion" %}
+                        {% if item["key"] == "seguro_vehicular" %}
                             <label>
-                                <span>Fecha de vencimiento del seguro</span>
+                                <span>Fecha de vencimiento del seguro vehicular</span>
                                 <input type="date" name="expiry__insurance" id="expiry__insurance" value="{{ request.form.get('expiry__insurance', '') }}">
                                 <small>Obligatoria si el item queda en `Cumple`.</small>
                                 <small id="record_insurance_expiry">Registro del vehículo: sin fecha registrada.</small>
@@ -1150,7 +1150,7 @@
                 const photoInput = item.querySelector(`input[name="photo__${itemKey}"]`);
                 const reasonSelect = item.querySelector(`[name="reason__${itemKey}"]`);
                 const expiryInput = itemKey === "extintor" ? item.querySelector(`input[name="expiry__extintor"]`) : null;
-                const insuranceInput = itemKey === "documentacion" ? item.querySelector(`input[name="expiry__insurance"]`) : null;
+                const insuranceInput = itemKey === "seguro_vehicular" ? item.querySelector(`input[name="expiry__insurance"]`) : null;
                 const gncInput = itemKey === "oblea_gnc" ? item.querySelector(`input[name="expiry__gnc"]`) : null;
                 const rtoInput = itemKey === "rto" ? item.querySelector(`input[name="expiry__rto"]`) : null;
                 const botiquinInput = itemKey === "botiquin" ? item.querySelector(`input[name="expiry__botiquin"]`) : null;
@@ -1251,7 +1251,7 @@
                     }
                 }
 
-                if (itemKey === "documentacion") {
+                if (itemKey === "seguro_vehicular") {
                     if (insuranceInput) {
                         insuranceInput.required = statusValue === "cumple";
                     }
@@ -1513,8 +1513,14 @@
                     (item) => {
                         const materialName = String(item.material_name || item.material_code || "").trim();
                         const serial = String(item.serial_number || item.serial || item.serialNumber || "").trim();
+                        const materialCode = String(item.material_code || "").trim();
+                        const centerName = String(item.center_name || "").trim();
+                        const warehouseName = String(item.warehouse_name || "").trim();
                         const label = materialName ? materialName : "Equipo";
-                        return `${label} | Serial: ${serial ? serial : "-"}`;
+                        const codePart = materialCode ? ` (${materialCode})` : "";
+                        const centerPart = centerName ? ` | Centro: ${centerName}` : "";
+                        const warehousePart = warehouseName ? ` | Bodega: ${warehouseName}` : "";
+                        return `${label}${codePart} | Serial: ${serial ? serial : "-"}${centerPart}${warehousePart}`;
                     },
                     "No hay equipos serializados cargados para este móvil."
                 );

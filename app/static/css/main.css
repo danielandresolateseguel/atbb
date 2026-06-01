@@ -1183,7 +1183,7 @@ td {
 .mobile-snapshot-card .detail-grid .guide-card {
     display: flex;
     flex-direction: column;
-    height: clamp(360px, 65vh, 520px);
+    height: clamp(420px, 70vh, 640px);
 }
 
 .mobile-snapshot-card .detail-grid .snapshot-list {

@@ -413,7 +413,7 @@ def calculate_section_score(section, form_data, files):
         if item["key"] == "extintor":
             extinguisher_expiry = (form_data.get("expiry__extintor") or "").strip()
         insurance_expiry = ""
-        if item["key"] == "documentacion":
+        if item["key"] == "seguro_vehicular":
             insurance_expiry = (form_data.get("expiry__insurance") or "").strip()
         gnc_expiry = ""
         if item["key"] == "oblea_gnc":
@@ -436,7 +436,7 @@ def calculate_section_score(section, form_data, files):
             except ValueError as exc:
                 raise ValueError("La fecha de caducidad del extintor no es valida.") from exc
 
-        if item["key"] == "documentacion" and status == "cumple":
+        if item["key"] == "seguro_vehicular" and status == "cumple":
             if not insurance_expiry:
                 raise ValueError("Debes indicar la fecha de vencimiento del seguro del vehiculo.")
             try:
@@ -1345,8 +1345,8 @@ def new_audit():
                 update_vehicle_extinguisher_expiry(int(vehicle_id_raw), extinguisher_expiry)
 
             insurance_expiry = (request.form.get("expiry__insurance") or "").strip()
-            documentacion_status = (request.form.get("status__documentacion") or "").strip()
-            if documentacion_status == "cumple" and insurance_expiry:
+            seguro_vehicular_status = (request.form.get("status__seguro_vehicular") or "").strip()
+            if seguro_vehicular_status == "cumple" and insurance_expiry:
                 if insurance_expiry < audit_date:
                     raise ValueError(
                         "La fecha de vencimiento del seguro no puede ser anterior a la fecha de la auditoria."

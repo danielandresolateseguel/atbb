@@ -1177,7 +1177,7 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
     return [dict(row) for row in rows]
 
 
-def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=8, stock_limit=12):
+def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit=12):
     mobile = fetch_mobile_unit_by_id(mobile_unit_id)
     if not mobile:
         return None
@@ -1204,19 +1204,37 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=8, stock_limit=12
         (mobile_unit_id, mobile_unit_id, mobile_unit_id),
     ).fetchone()
 
-    equipment_rows = get_db().execute(
-        """
-        SELECT
-            material_code,
-            material_name,
-            serial_number
-        FROM equipment_inventory
-        WHERE mobile_unit_id = ?
-        ORDER BY material_name ASC, serial_number ASC
-        LIMIT ?
-        """,
-        (mobile_unit_id, equipment_limit),
-    ).fetchall()
+    if equipment_limit is None:
+        equipment_rows = get_db().execute(
+            """
+            SELECT
+                center_name,
+                warehouse_name,
+                material_code,
+                material_name,
+                serial_number
+            FROM equipment_inventory
+            WHERE mobile_unit_id = ?
+            ORDER BY material_name ASC, serial_number ASC
+            """,
+            (mobile_unit_id,),
+        ).fetchall()
+    else:
+        equipment_rows = get_db().execute(
+            """
+            SELECT
+                center_name,
+                warehouse_name,
+                material_code,
+                material_name,
+                serial_number
+            FROM equipment_inventory
+            WHERE mobile_unit_id = ?
+            ORDER BY material_name ASC, serial_number ASC
+            LIMIT ?
+            """,
+            (mobile_unit_id, equipment_limit),
+        ).fetchall()
 
     stock_rows = get_db().execute(
         """
@@ -1239,12 +1257,21 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=8, stock_limit=12
         FROM equipment_inventory
         WHERE mobile_unit_id = ?
         UNION ALL
+        SELECT material_code AS name
+        FROM equipment_inventory
+        WHERE mobile_unit_id = ?
+        UNION ALL
         SELECT materials.material_name AS name
         FROM material_stock
         INNER JOIN materials ON materials.id = material_stock.material_id
         WHERE material_stock.mobile_unit_id = ?
+        UNION ALL
+        SELECT materials.material_code AS name
+        FROM material_stock
+        INNER JOIN materials ON materials.id = material_stock.material_id
+        WHERE material_stock.mobile_unit_id = ?
         """,
-        (mobile_unit_id, mobile_unit_id),
+        (mobile_unit_id, mobile_unit_id, mobile_unit_id, mobile_unit_id),
     ).fetchall()
 
     summary = dict(summary_row)
