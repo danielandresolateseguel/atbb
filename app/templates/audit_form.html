@@ -10,7 +10,7 @@
     </div>
 </section>
 
-<form method="post" class="audit-form" enctype="multipart/form-data">
+<form method="post" class="audit-form" enctype="multipart/form-data" autocomplete="off">
     <section class="card form-grid">
         <label>
             <span>Fecha</span>
@@ -559,7 +559,7 @@
     </div>
 
     <div class="sticky-actions">
-        <button class="button button-primary" type="submit">Guardar auditoría</button>
+        <button class="button button-primary" type="submit" id="save_audit_button" data-label-default="Guardar auditoría" data-label-saving="En proceso..." data-label-saved="Guardado">Guardar auditoría</button>
         <a class="button button-secondary" href="{{ url_for('main.dashboard') }}">Cancelar</a>
     </div>
 </form>
@@ -627,6 +627,13 @@
         const handToolsBadge = document.getElementById("hand_tools_badge");
         const handToolsSummary = document.getElementById("hand_tools_summary");
         const handToolsCard = document.getElementById("hand_tools_card");
+        const saveAuditButton = document.getElementById("save_audit_button");
+        const saveAuditLabels = {
+            default: (saveAuditButton && saveAuditButton.dataset.labelDefault) ? saveAuditButton.dataset.labelDefault : "Guardar auditoría",
+            saving: (saveAuditButton && saveAuditButton.dataset.labelSaving) ? saveAuditButton.dataset.labelSaving : "En proceso...",
+            saved: (saveAuditButton && saveAuditButton.dataset.labelSaved) ? saveAuditButton.dataset.labelSaved : "Guardado",
+        };
+        let isSavingAudit = false;
         const pads = [];
 
         const materialIndex = {{ (material_index or {})|tojson }};
@@ -816,6 +823,10 @@
                 window.localStorage.removeItem(DRAFT_STORAGE_KEY);
             } catch (_error) {
             }
+            if (draftTimer) {
+                window.clearTimeout(draftTimer);
+                draftTimer = null;
+            }
         }
 
         function readDraft() {
@@ -839,6 +850,9 @@
 
         let draftTimer = null;
         function scheduleDraftSave() {
+            if (isSavingAudit) {
+                return;
+            }
             if (draftTimer) {
                 window.clearTimeout(draftTimer);
             }
@@ -1877,7 +1891,7 @@
             vehicleSelect.addEventListener("change", syncVehicleContext);
         }
         window.addEventListener("resize", resizeSignatureCanvas);
-        form.addEventListener("submit", function (event) {
+        form.addEventListener("submit", async function (event) {
             if (!form.checkValidity()) {
                 event.preventDefault();
                 const invalid = form.querySelector(":invalid");
@@ -1915,7 +1929,58 @@
                 window.alert("Debes registrar la firma del auditor y del técnico antes de guardar la auditoría.");
                 return;
             }
-            clearDraft();
+            event.preventDefault();
+            if (isSavingAudit) {
+                return;
+            }
+            isSavingAudit = true;
+            if (draftTimer) {
+                window.clearTimeout(draftTimer);
+                draftTimer = null;
+            }
+            if (saveAuditButton) {
+                saveAuditButton.textContent = saveAuditLabels.saving;
+                saveAuditButton.disabled = true;
+                saveAuditButton.setAttribute("aria-busy", "true");
+            }
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: "POST",
+                    body: new FormData(form),
+                    credentials: "same-origin",
+                });
+
+                if (response.redirected && response.url) {
+                    if (saveAuditButton) {
+                        saveAuditButton.textContent = saveAuditLabels.saved;
+                    }
+                    clearDraft();
+                    window.setTimeout(() => {
+                        window.location.assign(response.url);
+                    }, 250);
+                    return;
+                }
+
+                const html = await response.text();
+                isSavingAudit = false;
+                if (saveAuditButton) {
+                    saveAuditButton.textContent = saveAuditLabels.default;
+                    saveAuditButton.disabled = false;
+                    saveAuditButton.removeAttribute("aria-busy");
+                }
+                document.open();
+                document.write(html);
+                document.close();
+            } catch (err) {
+                isSavingAudit = false;
+                if (saveAuditButton) {
+                    saveAuditButton.textContent = saveAuditLabels.default;
+                    saveAuditButton.disabled = false;
+                    saveAuditButton.removeAttribute("aria-busy");
+                }
+                window.alert("No se pudo guardar la auditoría. Revisa tu conexión e intenta nuevamente.");
+            }
         });
 
         pads.push(setupSignaturePad(auditorSignatureCanvas, auditorSignatureInput, clearAuditorSignatureButton));
@@ -1943,6 +2008,37 @@
         if (cancelLink) {
             cancelLink.addEventListener("click", clearDraft);
         }
+
+        const BF_CACHE_RELOAD_KEY = "audit_form_bf_cache_reload";
+        window.addEventListener("pageshow", function (event) {
+            const navigationEntries = (window.performance && typeof window.performance.getEntriesByType === "function")
+                ? window.performance.getEntriesByType("navigation")
+                : [];
+            const navigationType = (navigationEntries && navigationEntries[0] && navigationEntries[0].type)
+                ? navigationEntries[0].type
+                : "";
+            const isBackForward = Boolean(event && event.persisted) || navigationType === "back_forward";
+
+            if (!isBackForward) {
+                if (window.sessionStorage) {
+                    window.sessionStorage.removeItem(BF_CACHE_RELOAD_KEY);
+                }
+                return;
+            }
+
+            try {
+                clearDraft();
+            } catch (e) {
+            }
+
+            if (window.sessionStorage) {
+                const alreadyReloaded = window.sessionStorage.getItem(BF_CACHE_RELOAD_KEY) === "1";
+                if (!alreadyReloaded) {
+                    window.sessionStorage.setItem(BF_CACHE_RELOAD_KEY, "1");
+                    window.location.reload();
+                }
+            }
+        });
     }());
 </script>
 {% endblock %}

@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 
-from flask import Blueprint, abort, current_app, flash, g, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, g, jsonify, make_response, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -1503,13 +1503,19 @@ def new_audit():
         except ValueError as exc:
             flash(str(exc), "error")
 
-    return render_template(
-        "audit_form.html",
-        checklist_sections=CHECKLIST_SECTIONS,
-        mobile_units=mobile_units,
-        vehicles=vehicles,
-        material_index=material_index,
-        herramientas_section=herramientas_section,
-        hand_tools=hand_tools,
-        today=datetime.today().strftime("%Y-%m-%d"),
+    response = make_response(
+        render_template(
+            "audit_form.html",
+            checklist_sections=CHECKLIST_SECTIONS,
+            mobile_units=mobile_units,
+            vehicles=vehicles,
+            material_index=material_index,
+            herramientas_section=herramientas_section,
+            hand_tools=hand_tools,
+            today=datetime.today().strftime("%Y-%m-%d"),
+        )
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
