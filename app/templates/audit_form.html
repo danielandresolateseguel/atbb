@@ -705,6 +705,20 @@
                     return;
                 }
                 const input = document.getElementById(inputId);
+                const checklistItem = button.closest(".checklist-item");
+                if (checklistItem) {
+                    const fileInput = checklistItem.querySelector('input[name^="photo__"]');
+                    const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"]');
+                    if (fileInput && fileInput.id !== inputId) {
+                        fileInput.value = "";
+                        delete fileInput.dataset.lastEvidenceIdentity;
+                    }
+                    if (cameraInput && cameraInput.id !== inputId) {
+                        cameraInput.value = "";
+                        delete cameraInput.dataset.lastEvidenceIdentity;
+                    }
+                    syncEvidenceFilename(checklistItem);
+                }
                 if (input && input instanceof HTMLInputElement) {
                     input.click();
                 }
@@ -1748,12 +1762,17 @@
             if (!String(file.type || "").toLowerCase().startsWith("image/")) {
                 return;
             }
-            if (file.size <= 900 * 1024) {
+            const isCameraEvidence = Boolean(fileInput.name && fileInput.name.startsWith("photo_camera__"));
+            const thresholdBytes = isCameraEvidence ? (220 * 1024) : (900 * 1024);
+            const compressOptions = isCameraEvidence
+                ? { maxDim: 1280, quality: 0.6 }
+                : { maxDim: 1600, quality: 0.72 };
+            if (file.size <= thresholdBytes) {
                 return;
             }
 
             try {
-                const compressed = await compressImageFile(file, { maxDim: 1600, quality: 0.72 });
+                const compressed = await compressImageFile(file, compressOptions);
                 if (compressed === file) {
                     return;
                 }
@@ -1776,6 +1795,19 @@
                 && (target.name.startsWith("photo__") || target.name.startsWith("photo_camera__"))
                 && target instanceof HTMLInputElement
             ) {
+                const checklistItem = target.closest(".checklist-item");
+                if (checklistItem) {
+                    const fileInput = checklistItem.querySelector('input[name^="photo__"]');
+                    const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"]');
+                    if (target.name.startsWith("photo_camera__") && fileInput && fileInput !== target) {
+                        fileInput.value = "";
+                        delete fileInput.dataset.lastEvidenceIdentity;
+                    }
+                    if (target.name.startsWith("photo__") && cameraInput && cameraInput !== target) {
+                        cameraInput.value = "";
+                        delete cameraInput.dataset.lastEvidenceIdentity;
+                    }
+                }
                 syncEvidenceFilename(target.closest(".checklist-item"));
                 void maybeCompressEvidenceInput(target).then(() => {
                     evaluateClosure();
