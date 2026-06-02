@@ -567,6 +567,7 @@
 <script>
     (function () {
         const DRAFT_STORAGE_KEY = "audit_form_draft_v1";
+        const DRAFT_RESTORE_FLAG_KEY = "audit_form_restore_flag_v1";
         const mobileSelect = document.getElementById("mobile_unit_id");
         const mobileCodeTarget = document.getElementById("selected_mobile_code");
         const mobileTechnicianTarget = document.getElementById("selected_mobile_technician");
@@ -634,6 +635,7 @@
             saved: (saveAuditButton && saveAuditButton.dataset.labelSaved) ? saveAuditButton.dataset.labelSaved : "Guardado",
         };
         let isSavingAudit = false;
+        let hasStartedDraft = false;
         const pads = [];
 
         const materialIndex = {{ (material_index or {})|tojson }};
@@ -823,6 +825,12 @@
                 window.localStorage.removeItem(DRAFT_STORAGE_KEY);
             } catch (_error) {
             }
+            try {
+                if (window.sessionStorage) {
+                    window.sessionStorage.removeItem(DRAFT_RESTORE_FLAG_KEY);
+                }
+            } catch (_error) {
+            }
             if (draftTimer) {
                 window.clearTimeout(draftTimer);
                 draftTimer = null;
@@ -853,6 +861,15 @@
             if (isSavingAudit) {
                 return;
             }
+            if (!hasStartedDraft) {
+                hasStartedDraft = true;
+                try {
+                    if (window.sessionStorage) {
+                        window.sessionStorage.setItem(DRAFT_RESTORE_FLAG_KEY, "1");
+                    }
+                } catch (_error) {
+                }
+            }
             if (draftTimer) {
                 window.clearTimeout(draftTimer);
             }
@@ -861,6 +878,9 @@
 
         function saveDraftNow() {
             if (!form) {
+                return;
+            }
+            if (!hasStartedDraft) {
                 return;
             }
 
@@ -909,6 +929,7 @@
             if (!draft || !draft.values || typeof draft.values !== "object") {
                 return;
             }
+            hasStartedDraft = true;
 
             ensureSupplyRowsForDraft(draft.values);
 
@@ -1996,10 +2017,18 @@
             pads.forEach((pad) => pad.resize());
         }
 
-        if (form) {
-            form.reset();
+        let shouldRestoreDraft = false;
+        try {
+            shouldRestoreDraft = Boolean(window.sessionStorage)
+                && window.sessionStorage.getItem(DRAFT_RESTORE_FLAG_KEY) === "1";
+        } catch (_error) {
+            shouldRestoreDraft = false;
         }
-        clearDraft();
+        if (shouldRestoreDraft) {
+            restoreDraftIfAny();
+        } else {
+            clearDraft();
+        }
         initChecklistAccordion();
         handTools.forEach((tool) => {
             const checked = document.querySelector(`input[name="status__${tool.key}"]:checked`);
@@ -2012,6 +2041,17 @@
         syncVehicleContext();
         syncHandToolsStatus();
         evaluateClosure();
+
+        window.addEventListener("beforeunload", function () {
+            if (isSavingAudit) {
+                return;
+            }
+            if (hasStartedDraft) {
+                saveDraftNow();
+            } else {
+                clearDraft();
+            }
+        });
 
         const cancelLink = document.querySelector('.sticky-actions a.button-secondary');
         if (cancelLink) {
