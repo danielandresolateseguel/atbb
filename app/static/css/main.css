@@ -930,23 +930,15 @@ input[type="file"]:focus-visible {
     display: flex;
     gap: 0.6rem;
     align-items: stretch;
+    justify-content: flex-start;
 }
 
-.evidence-upload-row input[type="file"] {
-    flex: 1 1 auto;
+.evidence-upload-row .button {
+    flex: 1 1 0;
 }
 
-.button.evidence-camera {
-    min-width: 44px;
-    padding: 0.7rem 0.75rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.button.evidence-camera svg {
-    width: 18px;
-    height: 18px;
+.evidence-filename {
+    display: block;
 }
 
 .table-card {

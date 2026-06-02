@@ -412,28 +412,29 @@
                             <label>
                                 <span>Evidencia fotográfica</span>
                                 <div class="evidence-upload-row">
-                                    <input type="file" name="photo__{{ item['key'] }}" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
-                                    <button
-                                        type="button"
-                                        class="button button-secondary evidence-camera"
-                                        data-camera-trigger="photo_camera__{{ item['key'] }}"
-                                        aria-label="Abrir cámara"
+                                    <input
+                                        type="file"
+                                        id="photo__{{ item['key'] }}"
+                                        name="photo__{{ item['key'] }}"
+                                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                        tabindex="-1"
+                                        aria-hidden="true"
                                     >
-                                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                                            <path fill="currentColor" d="M9 4l1.83 2H14l1.83-2H18a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h3zm3 5a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
-                                        </svg>
-                                    </button>
+                                    <input
+                                        type="file"
+                                        id="photo_camera__{{ item['key'] }}"
+                                        name="photo_camera__{{ item['key'] }}"
+                                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                        capture="environment"
+                                        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                        tabindex="-1"
+                                        aria-hidden="true"
+                                    >
+                                    <button type="button" class="button button-primary evidence-action" data-file-trigger="photo__{{ item['key'] }}">Seleccionar archivo</button>
+                                    <button type="button" class="button button-primary evidence-action" data-file-trigger="photo_camera__{{ item['key'] }}">Cámara</button>
                                 </div>
-                                <input
-                                    type="file"
-                                    id="photo_camera__{{ item['key'] }}"
-                                    name="photo_camera__{{ item['key'] }}"
-                                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
-                                    capture="environment"
-                                    style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
-                                    tabindex="-1"
-                                    aria-hidden="true"
-                                >
+                                <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
                                 <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
                             </label>
                         {% endif %}
@@ -651,7 +652,7 @@
         const handToolsSummary = document.getElementById("hand_tools_summary");
         const handToolsCard = document.getElementById("hand_tools_card");
         const saveAuditButton = document.getElementById("save_audit_button");
-        const cameraTriggerButtons = document.querySelectorAll("[data-camera-trigger]");
+        const fileTriggerButtons = document.querySelectorAll("[data-file-trigger]");
         const saveAuditLabels = {
             default: (saveAuditButton && saveAuditButton.dataset.labelDefault) ? saveAuditButton.dataset.labelDefault : "Guardar auditoría",
             saving: (saveAuditButton && saveAuditButton.dataset.labelSaving) ? saveAuditButton.dataset.labelSaving : "En proceso...",
@@ -689,9 +690,9 @@
             materialStockNotesInput.required = showNotes;
         }
 
-        cameraTriggerButtons.forEach((button) => {
+        fileTriggerButtons.forEach((button) => {
             button.addEventListener("click", function () {
-                const inputId = button.dataset.cameraTrigger || "";
+                const inputId = button.dataset.fileTrigger || "";
                 if (!inputId) {
                     return;
                 }
@@ -701,6 +702,22 @@
                 }
             });
         });
+
+        function syncEvidenceFilename(checklistItem) {
+            if (!checklistItem) {
+                return;
+            }
+            const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
+            if (!filenameTarget) {
+                return;
+            }
+            const fileInput = checklistItem.querySelector('input[name^="photo__"]');
+            const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"]');
+            const file = (fileInput && fileInput.files && fileInput.files.length > 0) ? fileInput.files[0] : null;
+            const cameraFile = (cameraInput && cameraInput.files && cameraInput.files.length > 0) ? cameraInput.files[0] : null;
+            const selected = cameraFile || file;
+            filenameTarget.textContent = selected ? selected.name : "Sin archivo seleccionado.";
+        }
 
         function parseMaterialCode(rawValue) {
             return String(rawValue || "").split(" - ", 1)[0].trim();
@@ -1751,6 +1768,7 @@
                 && (target.name.startsWith("photo__") || target.name.startsWith("photo_camera__"))
                 && target instanceof HTMLInputElement
             ) {
+                syncEvidenceFilename(target.closest(".checklist-item"));
                 void maybeCompressEvidenceInput(target).then(() => {
                     evaluateClosure();
                 });
