@@ -1596,10 +1596,120 @@
             loadSnapshot(option.value);
         }
 
+        function readFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ""));
+                reader.onerror = () => reject(new Error("No fue posible leer la imagen."));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function loadImageFromDataUrl(dataUrl) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = () => reject(new Error("No fue posible cargar la imagen."));
+                image.src = dataUrl;
+            });
+        }
+
+        async function compressImageFile(file, options) {
+            const maxDim = options && options.maxDim ? options.maxDim : 1600;
+            const quality = options && typeof options.quality === "number" ? options.quality : 0.72;
+            const inputType = String(file.type || "").toLowerCase();
+            if (!inputType.startsWith("image/")) {
+                return file;
+            }
+
+            const dataUrl = await readFileAsDataUrl(file);
+            const image = await loadImageFromDataUrl(dataUrl);
+
+            const originalWidth = image.naturalWidth || image.width;
+            const originalHeight = image.naturalHeight || image.height;
+            if (!originalWidth || !originalHeight) {
+                return file;
+            }
+
+            const scale = Math.min(1, maxDim / Math.max(originalWidth, originalHeight));
+            const targetWidth = Math.max(1, Math.round(originalWidth * scale));
+            const targetHeight = Math.max(1, Math.round(originalHeight * scale));
+
+            const canvas = document.createElement("canvas");
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const context = canvas.getContext("2d");
+            if (!context) {
+                return file;
+            }
+            context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+            const toBlobAsync = (mime) => {
+                return new Promise((resolve) => {
+                    canvas.toBlob((blob) => resolve(blob), mime, quality);
+                });
+            };
+
+            let blob = await toBlobAsync("image/webp");
+            let outputType = "image/webp";
+            if (!blob) {
+                blob = await toBlobAsync("image/jpeg");
+                outputType = "image/jpeg";
+            }
+            if (!blob) {
+                return file;
+            }
+
+            if (blob.size >= file.size) {
+                return file;
+            }
+
+            const extension = outputType === "image/webp" ? "webp" : "jpg";
+            const safeName = (String(file.name || "evidencia").split(".")[0] || "evidencia").slice(0, 40);
+            return new File([blob], `${safeName}.${extension}`, { type: outputType, lastModified: Date.now() });
+        }
+
+        async function maybeCompressEvidenceInput(fileInput) {
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                return;
+            }
+            const file = fileInput.files[0];
+            const identity = `${file.size}:${file.lastModified}:${file.type}:${file.name}`;
+            if (fileInput.dataset.lastEvidenceIdentity === identity) {
+                return;
+            }
+            fileInput.dataset.lastEvidenceIdentity = identity;
+
+            if (!String(file.type || "").toLowerCase().startsWith("image/")) {
+                return;
+            }
+            if (file.size <= 900 * 1024) {
+                return;
+            }
+
+            try {
+                const compressed = await compressImageFile(file, { maxDim: 1600, quality: 0.72 });
+                if (compressed === file) {
+                    return;
+                }
+                const transfer = new DataTransfer();
+                transfer.items.add(compressed);
+                fileInput.files = transfer.files;
+                fileInput.dataset.lastEvidenceIdentity = `${compressed.size}:${compressed.lastModified}:${compressed.type}:${compressed.name}`;
+            } catch (_error) {
+                return;
+            }
+        }
+
         form.addEventListener("change", function (event) {
             const target = event.target;
             if (!target) {
                 return;
+            }
+            if (target.name && target.name.startsWith("photo__") && target instanceof HTMLInputElement) {
+                void maybeCompressEvidenceInput(target).then(() => {
+                    evaluateClosure();
+                });
             }
             if (
                 target.name
