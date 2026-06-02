@@ -109,8 +109,40 @@ CHECKLIST_SECTIONS = [
                 "evidence_required": False,
             },
             {
-                "key": "cartuchera_herramientas",
-                "label": "Cartuchera porta herramientas",
+                "key": "taladro_rotopercutor_electroneumatico",
+                "label": "280100006 - Taladro rotopercutor electroneumático",
+                "critical": False,
+                "hand_tool": True,
+                "material_code": "280100006",
+                "evidence_required": False,
+            },
+            {
+                "key": "mecha_encastre_8x110_widia",
+                "label": "280600137 - Mecha de encastre 8x110mm widia",
+                "critical": False,
+                "hand_tool": True,
+                "material_code": "280600137",
+                "evidence_required": False,
+            },
+            {
+                "key": "mecha_encastre_12x450_widia",
+                "label": "280600181 - Mecha de encastre 12x450mm widia",
+                "critical": False,
+                "hand_tool": True,
+                "material_code": "280600181",
+                "evidence_required": False,
+            },
+            {
+                "key": "mecha_encastre_6x110_widia",
+                "label": "280600194 - Mecha de encastre 6x110mm widia",
+                "critical": False,
+                "hand_tool": True,
+                "material_code": "280600194",
+                "evidence_required": False,
+            },
+            {
+                "key": "Bolso_herramientas",
+                "label": "Bolso de herramientas",
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "",
@@ -138,7 +170,7 @@ CHECKLIST_SECTIONS = [
             {"key": "neumaticos", "label": "Neumaticos en buen estado", "critical": True},
             {"key": "luces", "label": "Luces operativas", "critical": True},
             {"key": "elementos_emergencia", "label": "Kit Elementos de Emergencia", "critical": True},
-            {"key": "carga_segura", "label": "Escalera y herramientas aseguradas", "critical": True},
+            {"key": "carga_segura", "label": "Escalera Plegable/ telescopica", "critical": False},
             {
                 "key": "escalera_aluminio_extensible",
                 "label": "Escalera de aluminio extensible (11/13 peldaños)",
@@ -232,5 +264,21 @@ TOOL_MATCH_RULES = {
     "cartuchera_destornilladores_mini": {
         "label": "Cartuchera destornilladores mini",
         "keywords": ["cartuchera", "destornillador", "destornilladores", "mini", "precision", "precisión"],
+    },
+    "taladro_rotopercutor_electroneumatico": {
+        "label": "Taladro rotopercutor electroneumático",
+        "keywords": ["280100006", "taladro", "rotopercutor", "electroneumatico", "electroneumático"],
+    },
+    "mecha_encastre_8x110_widia": {
+        "label": "Mecha encastre 8x110mm widia",
+        "keywords": ["280600137", "mecha", "encastre", "8x110", "8x110mm", "8 x 110", "widia"],
+    },
+    "mecha_encastre_12x450_widia": {
+        "label": "Mecha encastre 12x450mm widia",
+        "keywords": ["280600181", "mecha", "encastre", "12x450", "12x450mm", "12 x 450", "widia"],
+    },
+    "mecha_encastre_6x110_widia": {
+        "label": "Mecha encastre 6x110mm widia",
+        "keywords": ["280600194", "mecha", "encastre", "6x110", "6x110mm", "6 x 110", "widia"],
     },
 }
