@@ -926,6 +926,29 @@ input[type="file"]:focus-visible {
     outline-offset: 2px;
 }
 
+.evidence-upload-row {
+    display: flex;
+    gap: 0.6rem;
+    align-items: stretch;
+}
+
+.evidence-upload-row input[type="file"] {
+    flex: 1 1 auto;
+}
+
+.button.evidence-camera {
+    min-width: 44px;
+    padding: 0.7rem 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.button.evidence-camera svg {
+    width: 18px;
+    height: 18px;
+}
+
 .table-card {
     display: block;
 }

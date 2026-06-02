@@ -407,7 +407,7 @@ def calculate_section_score(section, form_data, files):
         status = form_data.get(f"status__{item['key']}", "")
         non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
         notes = form_data.get(f"notes__{item['key']}", "").strip()
-        photo_file = files.get(f"photo__{item['key']}")
+        photo_file = files.get(f"photo__{item['key']}") or files.get(f"photo_camera__{item['key']}")
         evidence_required = item.get("evidence_required", True)
         extinguisher_expiry = ""
         if item["key"] == "extintor":
