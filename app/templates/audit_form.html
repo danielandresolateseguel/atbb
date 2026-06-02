@@ -1996,7 +1996,10 @@
             pads.forEach((pad) => pad.resize());
         }
 
-        restoreDraftIfAny();
+        if (form) {
+            form.reset();
+        }
+        clearDraft();
         initChecklistAccordion();
         handTools.forEach((tool) => {
             const checked = document.querySelector(`input[name="status__${tool.key}"]:checked`);
