@@ -738,7 +738,14 @@
             const file = (fileInput && fileInput.files && fileInput.files.length > 0) ? fileInput.files[0] : null;
             const cameraFile = (cameraInput && cameraInput.files && cameraInput.files.length > 0) ? cameraInput.files[0] : null;
             const selected = cameraFile || file;
-            filenameTarget.textContent = selected ? selected.name : "Sin archivo seleccionado.";
+            if (!selected) {
+                filenameTarget.textContent = "Sin archivo seleccionado.";
+                return;
+            }
+            const type = String(selected.type || "").toLowerCase();
+            const typeLabel = type.includes("webp") ? "WEBP" : (type.includes("jpeg") ? "JPG" : (type.includes("png") ? "PNG" : ""));
+            const sizeKb = Math.max(1, Math.round((selected.size || 0) / 1024));
+            filenameTarget.textContent = `${selected.name}${typeLabel ? ` · ${typeLabel}` : ""} · ${sizeKb} KB`;
         }
 
         function parseMaterialCode(rawValue) {
@@ -1810,6 +1817,7 @@
                 }
                 syncEvidenceFilename(target.closest(".checklist-item"));
                 void maybeCompressEvidenceInput(target).then(() => {
+                    syncEvidenceFilename(target.closest(".checklist-item"));
                     evaluateClosure();
                 });
             }
