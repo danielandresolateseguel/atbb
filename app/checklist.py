@@ -36,7 +36,11 @@ CHECKLIST_SECTIONS = [
             {"key": "peladora_drop_plano", "label": "Peladora de Drop plano", "critical": False},
             {"key": "medidor", "label": "Power Meter", "critical": True},
             {"key": "laser_localizador_fallas", "label": "Laser localizador de fallas FO", "critical": False},
-            {"key": "funda_laser_localizador_fallas", "label": "Funda para laser localizador de fallas FO", "critical": False},
+            {
+                "key": "funda_laser_localizador_fallas",
+                "label": "Funda para laser localizador de fallas FO",
+                "critical": False,
+            },
             {"key": "lapiz_limpiador_conector_fo", "label": "Lápiz limpiador conector FO", "critical": False},
             {"key": "limpieza", "label": "Alcohol Ispopropilico + Paño", "critical": False},
             {"key": "baterias", "label": "Cargador USB", "critical": False},
@@ -123,19 +127,18 @@ CHECKLIST_SECTIONS = [
         ],
     },
     {
-        "key": "vehículo",
+        "key": "vehiculo",
         "title": "Estado del Vehículo",
         "weight": 20,
         "items": [
-        
-            {"key": "documentacion", "label": " Cédula de Identificación del Automotor", "critical": True},
-            {"key": "seguro_vehicular", "label": "Seguro vehicular", "critical": True},
-            {"key": "oblea_gnc", "label": "Oblea de GNC ", "critical": True},
-            {"key": "rto", "label": "RTO", "critical": True},
-            {"key": "neumaticos", "label": "Neumaticos (estado)", "critical": True},
+            {"key": "documentacion", "label": "Cédula de Identificación del Automotor", "critical": True},
+            {"key": "seguro_vehicular", "label": "Seguro vehicular vigente", "critical": True},
+            {"key": "oblea_gnc", "label": "Oblea de GNC vigente", "critical": True},
+            {"key": "rto", "label": "RTO vigente", "critical": True},
+            {"key": "neumaticos", "label": "Neumaticos en buen estado", "critical": True},
             {"key": "luces", "label": "Luces operativas", "critical": True},
             {"key": "elementos_emergencia", "label": "Kit Elementos de Emergencia", "critical": True},
-            {"key": "carga_segura", "label": "Escalera Pegable", "critical": True},
+            {"key": "carga_segura", "label": "Escalera y herramientas aseguradas", "critical": True},
             {
                 "key": "escalera_aluminio_extensible",
                 "label": "Escalera de aluminio extensible (11/13 peldaños)",
@@ -158,25 +161,17 @@ CHECKLIST_SECTIONS = [
             {"key": "tensado", "label": "Tensado", "critical": False},
             {"key": "reten_a_cadena", "label": "Reten a cadena", "critical": False},
             {"key": "piton_8_retencion", "label": "Pitón del 8 (retención)", "critical": False},
-            {
-                "key": "recorrido_fibra_piton_6",
-                "label": "Recorrido de fibra con pitón del 6",
-                "critical": False,
-            },
+            {"key": "recorrido_fibra_piton_6", "label": "Recorrido de fibra con pitón del 6", "critical": False},
             {
                 "key": "recorrido_fibra_presintada_otro_servicio",
                 "label": "Recorrido de fibra presintada a otro Servicio",
                 "critical": False,
             },
-            {"key": "ingreso_cañería", "label": "Ingreso por cañería", "critical": False},
+            {"key": "ingreso_caneria", "label": "Ingreso por cañeria", "critical": False},
+            {"key": "ingreso_nueva_perforacion", "label": "Ingreso por nueva perforacion", "critical": False},
             {
-                "key": "ingreso_nueva_perforación",
-                "label": "Ingreso por nueva perforación",
-                "critical": False,
-            },
-            {
-                "key": "ingreso_perforación_existente",
-                "label": "Ingreso por perforación existente",
+                "key": "ingreso_perforacion_existente",
+                "label": "Ingreso por perforacion existente",
                 "critical": False,
             },
             {"key": "tubo_pasapared", "label": "Tubo pasapared", "critical": False},
@@ -195,9 +190,8 @@ TOOL_MATCH_RULES = {
         "keywords": ["fusionadora", "sumitomo", "fitel", "fsm"],
     },
     "cortadora": {
-        "label": f"Cortadora de precisión",
-        "keywords": ["cortadora", "cleaver", "ct-30", "fc-6", "precisión"],
-
+        "label": "Cortadora de FO (Cleaver)",
+        "keywords": ["cortadora", "cleaver", "ct-30", "fc-6", "precision", "precisión"],
     },
     "peladora": {
         "label": "Peladora de fibra",
@@ -213,16 +207,7 @@ TOOL_MATCH_RULES = {
     },
     "laser_localizador_fallas": {
         "label": "Laser localizador de fallas FO",
-        "keywords": [
-            "laser",
-            "láser",
-            "localizador",
-            "falla",
-            "fallas",
-            "vfl",
-            "visual fault locator",
-            "localizador de fallas",
-        ],
+        "keywords": ["laser", "láser", "localizador", "falla", "fallas", "vfl", "visual fault locator"],
     },
     "funda_laser_localizador_fallas": {
         "label": "Funda para laser localizador de fallas FO",
@@ -230,26 +215,15 @@ TOOL_MATCH_RULES = {
     },
     "lapiz_limpiador_conector_fo": {
         "label": "Lápiz limpiador conector FO",
-        "keywords": [
-            "280300202",
-            "lapiz",
-            "lápiz",
-            "limpiador",
-            "cleaner pen",
-            "one-click",
-            "conector",
-            "conectores",
-            "fo",
-            "fibra",
-        ],
+        "keywords": ["280300202", "lapiz", "lápiz", "limpiador", "cleaner pen", "one-click", "conector", "fo", "fibra"],
     },
     "limpieza": {
         "label": "Kit de limpieza",
-        "keywords": ["limpieza", "alcohol", "isoprop", "cletop", "cleaner", "toall", "pano"],
+        "keywords": ["limpieza", "alcohol", "isoprop", "cletop", "cleaner", "toall", "pano", "paño"],
     },
     "baterias": {
         "label": "Baterías o cargadores",
-        "keywords": ["batería", "baterías", "cargador", "charger"],
+        "keywords": ["bateria", "batería", "baterias", "baterías", "cargador", "charger", "usb"],
     },
     "cartuchera_herramientas": {
         "label": "Cartuchera porta herramientas",
