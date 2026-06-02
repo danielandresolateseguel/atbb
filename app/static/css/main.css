@@ -929,12 +929,27 @@ input[type="file"]:focus-visible {
 .evidence-upload-row {
     display: flex;
     gap: 0.6rem;
-    align-items: stretch;
+    align-items: flex-start;
     justify-content: flex-start;
 }
 
-.evidence-upload-row .button {
-    flex: 1 1 0;
+.evidence-upload-row .evidence-action {
+    width: 46px;
+    height: 46px;
+    padding: 0.35rem;
+    border-radius: 12px;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: var(--shadow);
+}
+
+.evidence-upload-row .evidence-action svg {
+    width: 18px;
+    height: 18px;
 }
 
 .evidence-filename {
