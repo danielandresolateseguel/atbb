@@ -270,18 +270,27 @@ def build_pdf_from_html_response(html, filename):
             "Instala playwright y ejecuta: python -m playwright install chromium"
         ) from exc
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
-        page.set_content(html, wait_until="networkidle")
-        page.emulate_media(media="print")
-        pdf_bytes = page.pdf(
-            format="A4",
-            print_background=True,
-            prefer_css_page_size=True,
-            margin={"top": "10mm", "right": "10mm", "bottom": "10mm", "left": "10mm"},
-        )
-        browser.close()
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                ]
+            )
+            page = browser.new_page()
+            page.set_content(html, wait_until="networkidle", timeout=60000)
+            page.emulate_media(media="print")
+            pdf_bytes = page.pdf(
+                format="A4",
+                print_background=True,
+                prefer_css_page_size=True,
+                margin={"top": "10mm", "right": "10mm", "bottom": "10mm", "left": "10mm"},
+            )
+            browser.close()
+    except Exception as exc:
+        raise RuntimeError(f"No fue posible generar el PDF (Playwright/Chromium): {type(exc).__name__}: {str(exc)[:220]}") from exc
 
     response = make_response(pdf_bytes)
     response.headers["Content-Type"] = "application/pdf"
@@ -1683,7 +1692,8 @@ def export_report_pdf(report_key):
     )
     try:
         return build_pdf_from_html_response(html, filename)
-    except RuntimeError as exc:
+    except Exception as exc:
+        current_app.logger.exception("Error generando PDF de reporte %s", report_key)
         flash(str(exc), "error")
         return redirect(
             url_for(
