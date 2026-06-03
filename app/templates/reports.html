@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Reportes{% endblock %}
+
+{% block content %}
+<section class="section-heading">
+    <div>
+        <p class="eyebrow">Gerencia</p>
+        <h2>Reportes</h2>
+    </div>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Auditorías</span>
+        <strong class="stat-value">{{ summary.total_audits }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Aprobadas</span>
+        <strong class="stat-value">{{ summary.approved_count }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Críticas</span>
+        <strong class="stat-value">{{ summary.critical_count }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Promedio</span>
+        <strong class="stat-value">{{ summary.average_score }}</strong>
+    </article>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.reports') }}">
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+        </label>
+        {% if can_view_all_audits %}
+            <label>
+                <span>Auditor</span>
+                <select name="auditor">
+                    <option value="" {% if not filters.auditor %}selected{% endif %}>Todos</option>
+                    {% for auditor_name in auditors %}
+                        <option value="{{ auditor_name }}" {% if filters.auditor == auditor_name %}selected{% endif %}>{{ auditor_name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        {% endif %}
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Aplicar</button>
+            <a class="button button-secondary" href="{{ url_for('main.reports') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Vista rápida</p>
+            <h3>Estados</h3>
+        </div>
+        <div class="filter-actions">
+            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='estados', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">CSV</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='estados', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">PDF</a>
+        </div>
+    </div>
+    {% if status_breakdown %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Estado</th>
+                        <th>Cantidad</th>
+                        <th>Promedio</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in status_breakdown %}
+                        <tr>
+                            <td>{{ row.result_status }}</td>
+                            <td>{{ row.audits_count }}</td>
+                            <td>{{ row.average_score }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">No hay datos para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Vista rápida</p>
+            <h3>Secciones con más no conformidades</h3>
+        </div>
+        <div class="filter-actions">
+            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='secciones', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">CSV</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='secciones', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">PDF</a>
+        </div>
+    </div>
+    {% if section_breakdown %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Sección</th>
+                        <th>No conformidades</th>
+                        <th>Críticas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in section_breakdown %}
+                        <tr>
+                            <td>{{ row.section_title }}</td>
+                            <td>{{ row.non_compliant_count }}</td>
+                            <td>{{ row.critical_non_compliant_count }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">No hay datos para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Exportación</p>
+            <h3>Reportes listos para enviar</h3>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Reporte</th>
+                    <th>Descripción</th>
+                    <th>Exportar</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Resumen ejecutivo</td>
+                    <td>KPIs (auditorías, aprobadas, críticas, rechazadas, tasa de aprobación, promedio).</td>
+                    <td>
+                        <a class="table-link" href="{{ url_for('main.export_report', report_key='resumen', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">CSV</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.export_report_pdf', report_key='resumen', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">PDF</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.reports_print', report_key='resumen', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Hallazgos críticos</td>
+                    <td>Ítems no conformes críticos con contexto de auditoría (móvil/técnico/vehículo).</td>
+                    <td>
+                        <a class="table-link" href="{{ url_for('main.export_report', report_key='hallazgos_criticos', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">CSV</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.export_report_pdf', report_key='hallazgos_criticos', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">PDF</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.reports_print', report_key='hallazgos_criticos', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Evidencias faltantes</td>
+                    <td>No cumple sin foto (excepto motivos olvido/perdida).</td>
+                    <td>
+                        <a class="table-link" href="{{ url_for('main.export_report', report_key='evidencias_faltantes', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">CSV</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.export_report_pdf', report_key='evidencias_faltantes', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">PDF</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.reports_print', report_key='evidencias_faltantes', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Solicitudes de insumos (detalle)</td>
+                    <td>Listado completo de solicitudes (reponer/cambiar) por auditoría.</td>
+                    <td>
+                        <a class="table-link" href="{{ url_for('main.export_report', report_key='insumos_detalle', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">CSV</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.export_report_pdf', report_key='insumos_detalle', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">PDF</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.reports_print', report_key='insumos_detalle', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Solicitudes de insumos (consolidado)</td>
+                    <td>Totales por material y tipo de solicitud.</td>
+                    <td>
+                        <a class="table-link" href="{{ url_for('main.export_report', report_key='insumos_resumen', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">CSV</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.export_report_pdf', report_key='insumos_resumen', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">PDF</a>
+                        |
+                        <a class="table-link" href="{{ url_for('main.reports_print', report_key='insumos_resumen', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir</a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

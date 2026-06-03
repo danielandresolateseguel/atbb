@@ -21,6 +21,9 @@
                         <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
                     {% endif %}
                     <a href="{{ url_for('main.audit_list') }}">Historial</a>
+                    {% if can_view_reports %}
+                        <a href="{{ url_for('main.reports') }}">Reportes</a>
+                    {% endif %}
                     {% if can_import %}
                         <a href="{{ url_for('main.imports') }}">Importar datos</a>
                     {% endif %}

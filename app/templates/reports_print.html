@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    {% if inline_css %}
+        <style>{{ inline_css|safe }}</style>
+    {% else %}
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% endif %}
+</head>
+<body class="report-body">
+    <main class="report-page">
+        <section class="report-shell">
+            <header class="report-header">
+                <div>
+                    <p class="eyebrow">Reportes</p>
+                    <h1>{{ title }}</h1>
+                    {% if subtitle %}
+                        <p class="report-subtitle">{{ subtitle }}</p>
+                    {% endif %}
+                    {% if filter_suffix %}
+                        <p class="report-subtitle">{{ filter_suffix }}</p>
+                    {% endif %}
+                </div>
+                <div class="report-actions no-print">
+                    <a class="button button-secondary" href="{{ url_for('main.reports', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">Volver a reportes</a>
+                    <a class="button button-primary" href="{{ url_for('main.reports_print', report_key=report_key, from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
+                </div>
+            </header>
+
+            {% if report_key == "resumen" and summary and executive %}
+                <section class="report-hero">
+                    <div class="report-score-card">
+                        <div class="score-ring">
+                            <svg viewBox="0 0 140 140" aria-hidden="true">
+                                <circle class="score-ring-track" cx="70" cy="70" r="54"></circle>
+                                <circle
+                                    class="score-ring-progress"
+                                    cx="70"
+                                    cy="70"
+                                    r="54"
+                                    style="stroke-dasharray: {{ executive.approval_ring.circumference }}; stroke-dashoffset: {{ executive.approval_ring.offset }};"
+                                ></circle>
+                            </svg>
+                            <div class="score-ring-center">
+                                <strong>{{ executive.approval_ring.value }}%</strong>
+                                <span>Tasa aprobación</span>
+                            </div>
+                        </div>
+                        <div>
+                            <h2>Indicadores generales</h2>
+                            <p class="report-subtitle">Resumen ejecutivo para presentación a gerencia.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="stats-grid">
+                    <article class="card stat-card">
+                        <span class="stat-label">Auditorías</span>
+                        <strong class="stat-value">{{ summary.total_audits }}</strong>
+                    </article>
+                    <article class="card stat-card">
+                        <span class="stat-label">Aprobadas</span>
+                        <strong class="stat-value">{{ summary.approved_count }}</strong>
+                    </article>
+                    <article class="card stat-card">
+                        <span class="stat-label">Críticas</span>
+                        <strong class="stat-value">{{ summary.critical_count }}</strong>
+                    </article>
+                    <article class="card stat-card">
+                        <span class="stat-label">Rechazadas</span>
+                        <strong class="stat-value">{{ summary.rejected_count }}</strong>
+                    </article>
+                    <article class="card stat-card">
+                        <span class="stat-label">Promedio</span>
+                        <strong class="stat-value">{{ summary.average_score }}</strong>
+                    </article>
+                </section>
+
+                <section class="card table-card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Distribución</p>
+                            <h3>Estados de auditoría</h3>
+                        </div>
+                    </div>
+                    {% if executive.status_total %}
+                        <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+                            <div style="width:240px;">
+                                <svg viewBox="0 0 140 140" width="220" height="220" aria-hidden="true">
+                                    <circle cx="70" cy="70" r="54" fill="none" stroke="#E5E7EB" stroke-width="14"></circle>
+                                    {% for seg in executive.donut_segments %}
+                                        {% if seg.percent %}
+                                            <circle
+                                                cx="70"
+                                                cy="70"
+                                                r="54"
+                                                fill="none"
+                                                stroke="{{ seg.color }}"
+                                                stroke-width="14"
+                                                stroke-linecap="butt"
+                                                transform="rotate(-90 70 70)"
+                                                style="stroke-dasharray: {{ seg.dasharray }}; stroke-dashoffset: {{ seg.dashoffset }};"
+                                            ></circle>
+                                        {% endif %}
+                                    {% endfor %}
+                                    <text x="70" y="68" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">{{ executive.status_total }}</text>
+                                    <text x="70" y="88" text-anchor="middle" font-size="10" fill="#6B7280">auditorías</text>
+                                </svg>
+                            </div>
+                            <div style="flex:1; min-width:260px;">
+                                <div class="table-wrap">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Estado</th>
+                                                <th>Cantidad</th>
+                                                <th>%</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for seg in executive.donut_segments %}
+                                                <tr>
+                                                    <td>
+                                                        <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:{{ seg.color }}; margin-right:8px;"></span>
+                                                        {{ seg.label }}
+                                                    </td>
+                                                    <td>{{ seg.count }}</td>
+                                                    <td>{{ seg.percent }}</td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <p class="empty-state">No hay auditorías para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
+
+                <section class="card table-card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Riesgos</p>
+                            <h3>Secciones con más no conformidades</h3>
+                        </div>
+                    </div>
+                    {% if executive.top_sections %}
+                        <svg width="780" height="{{ 40 + (executive.top_sections|length * 28) }}" viewBox="0 0 780 {{ 40 + (executive.top_sections|length * 28) }}" role="img" aria-label="Top secciones con no conformidades">
+                            <rect x="0" y="0" width="780" height="{{ 40 + (executive.top_sections|length * 28) }}" fill="#FFFFFF"></rect>
+                            {% for row in executive.top_sections %}
+                                {% set y = 20 + (loop.index0 * 28) %}
+                                <text x="10" y="{{ y + 12 }}" font-size="10" fill="#111827">
+                                    {% if row.section_title|length > 34 %}
+                                        {{ row.section_title[:34] }}…
+                                    {% else %}
+                                        {{ row.section_title }}
+                                    {% endif %}
+                                </text>
+                                <rect x="320" y="{{ y + 2 }}" width="420" height="12" fill="#E5E7EB"></rect>
+                                <rect x="320" y="{{ y + 2 }}" width="{{ (420 * (row.bar_percent / 100))|round(0, 'floor') }}" height="12" fill="#DC2626"></rect>
+                                <text x="752" y="{{ y + 12 }}" font-size="10" fill="#111827" text-anchor="end">{{ row.non_compliant_count }}</text>
+                            {% endfor %}
+                            <text x="320" y="{{ 34 + (executive.top_sections|length * 28) }}" font-size="9" fill="#6B7280">Escala relativa según la sección con mayor cantidad.</text>
+                        </svg>
+                    {% else %}
+                        <p class="empty-state">No hay datos de secciones para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
+
+                <section class="card table-card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Abastecimiento</p>
+                            <h3>Solicitudes de insumos (top)</h3>
+                        </div>
+                    </div>
+                    {% if executive.top_supplies %}
+                        <svg width="780" height="{{ 40 + (executive.top_supplies|length * 28) }}" viewBox="0 0 780 {{ 40 + (executive.top_supplies|length * 28) }}" role="img" aria-label="Top solicitudes de insumos">
+                            <rect x="0" y="0" width="780" height="{{ 40 + (executive.top_supplies|length * 28) }}" fill="#FFFFFF"></rect>
+                            {% for row in executive.top_supplies %}
+                                {% set y = 20 + (loop.index0 * 28) %}
+                                <text x="10" y="{{ y + 12 }}" font-size="10" fill="#111827">{{ row.request_type|capitalize }} | {{ row.material_code }}</text>
+                                <rect x="320" y="{{ y + 2 }}" width="420" height="12" fill="#E5E7EB"></rect>
+                                <rect x="320" y="{{ y + 2 }}" width="{{ (420 * (row.bar_percent / 100))|round(0, 'floor') }}" height="12" fill="#2563EB"></rect>
+                                <text x="752" y="{{ y + 12 }}" font-size="10" fill="#111827" text-anchor="end">{{ row.total_quantity }}</text>
+                            {% endfor %}
+                            <text x="320" y="{{ 34 + (executive.top_supplies|length * 28) }}" font-size="9" fill="#6B7280">Total consolidado por material y tipo.</text>
+                        </svg>
+                    {% else %}
+                        <p class="empty-state">No hay solicitudes de insumos para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
+
+                <section class="card table-card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Detalle</p>
+                            <h3>Hallazgos críticos (muestra)</h3>
+                        </div>
+                    </div>
+                    {% if executive.critical_preview %}
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Móvil</th>
+                                        <th>Técnico</th>
+                                        <th>Sección</th>
+                                        <th>Ítem</th>
+                                        <th>Motivo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in executive.critical_preview %}
+                                        <tr>
+                                            <td>{{ row.audit_date }}</td>
+                                            <td>{{ row.mobile_code or "-" }}</td>
+                                            <td>{{ row.technician_name or "-" }}</td>
+                                            <td>{{ row.section_title }}</td>
+                                            <td>{{ row.item_label }}</td>
+                                            <td>{{ row.non_compliance_reason or "-" }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="empty-state">No hay hallazgos críticos para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
+            {% else %}
+                <section class="card table-card">
+                    {% if rows %}
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        {% for col in columns %}
+                                            <th>{{ col.label }}</th>
+                                        {% endfor %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in rows %}
+                                        <tr>
+                                            {% for col in columns %}
+                                                <td>{{ row.get(col.key, "") }}</td>
+                                            {% endfor %}
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="empty-state">No hay datos para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

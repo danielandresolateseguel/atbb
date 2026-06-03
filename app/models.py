@@ -1407,7 +1407,7 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
     return [dict(row) for row in rows]
 
 
-def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit=12):
+def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit=None):
     mobile = fetch_mobile_unit_by_id(mobile_unit_id)
     if not mobile:
         return None
@@ -1466,20 +1466,35 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit
             (mobile_unit_id, equipment_limit),
         ).fetchall()
 
-    stock_rows = get_db().execute(
-        """
-        SELECT
-            materials.material_code,
-            materials.material_name,
-            material_stock.quantity
-        FROM material_stock
-        INNER JOIN materials ON materials.id = material_stock.material_id
-        WHERE material_stock.mobile_unit_id = ?
-        ORDER BY material_stock.quantity DESC, materials.material_name ASC
-        LIMIT ?
-        """,
-        (mobile_unit_id, stock_limit),
-    ).fetchall()
+    if stock_limit is None:
+        stock_rows = get_db().execute(
+            """
+            SELECT
+                materials.material_code,
+                materials.material_name,
+                material_stock.quantity
+            FROM material_stock
+            INNER JOIN materials ON materials.id = material_stock.material_id
+            WHERE material_stock.mobile_unit_id = ?
+            ORDER BY materials.material_name ASC
+            """,
+            (mobile_unit_id,),
+        ).fetchall()
+    else:
+        stock_rows = get_db().execute(
+            """
+            SELECT
+                materials.material_code,
+                materials.material_name,
+                material_stock.quantity
+            FROM material_stock
+            INNER JOIN materials ON materials.id = material_stock.material_id
+            WHERE material_stock.mobile_unit_id = ?
+            ORDER BY materials.material_name ASC
+            LIMIT ?
+            """,
+            (mobile_unit_id, stock_limit),
+        ).fetchall()
 
     search_rows = get_db().execute(
         """
@@ -2176,6 +2191,301 @@ def fetch_all_audits(filters=None, auditor_user_id=None):
         ORDER BY audits.created_at DESC
         """,
         tuple(params),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=None, extra_params=None):
+    filters = filters or {}
+    extra_clauses = extra_clauses or []
+    extra_params = extra_params or []
+
+    where_clauses = []
+    params = []
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    status = (filters.get("status") or "").strip()
+    auditor = (filters.get("auditor") or "").strip()
+
+    if from_date:
+        where_clauses.append("audits.audit_date >= ?")
+        params.append(from_date)
+
+    if to_date:
+        where_clauses.append("audits.audit_date <= ?")
+        params.append(to_date)
+
+    if status:
+        where_clauses.append("audits.result_status = ?")
+        params.append(status)
+
+    if auditor:
+        like_value = f"%{auditor}%"
+        if is_postgres():
+            where_clauses.append("COALESCE(audits.auditor_name, '') ILIKE ?")
+            params.append(like_value)
+        else:
+            where_clauses.append("LOWER(COALESCE(audits.auditor_name, '')) LIKE ?")
+            params.append(like_value.lower())
+
+    if auditor_user_id is not None:
+        where_clauses.append("audits.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    if extra_clauses:
+        where_clauses.extend(extra_clauses)
+        params.extend(list(extra_params))
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    return where_sql, tuple(params)
+
+
+def fetch_distinct_auditors():
+    rows = get_db().execute(
+        """
+        SELECT DISTINCT COALESCE(users.username, audits.auditor_name) AS auditor_name
+        FROM audits
+        LEFT JOIN users ON users.id = audits.auditor_user_id
+        WHERE COALESCE(users.username, audits.auditor_name) IS NOT NULL
+          AND COALESCE(users.username, audits.auditor_name) != ''
+        ORDER BY auditor_name ASC
+        """
+    ).fetchall()
+    return [dict(row)["auditor_name"] for row in rows]
+
+
+def fetch_audit_reports_management_summary(filters=None, auditor_user_id=None):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    row = get_db().execute(
+        f"""
+        SELECT
+            COUNT(*) AS total_audits,
+            SUM(CASE WHEN result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(total_score) AS average_score
+        FROM audits
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+
+    total_audits = row["total_audits"] or 0
+    approved_count = row["approved_count"] or 0
+    critical_count = row["critical_count"] or 0
+    rejected_count = row["rejected_count"] or 0
+    average_score = 0 if total_audits == 0 else round((row["average_score"] or 0), 2)
+    approval_rate = 0 if total_audits == 0 else round((approved_count / total_audits) * 100)
+
+    return {
+        "total_audits": total_audits,
+        "approved_count": approved_count,
+        "critical_count": critical_count,
+        "rejected_count": rejected_count,
+        "approval_rate": approval_rate,
+        "average_score": average_score,
+    }
+
+
+def fetch_audit_reports_status_breakdown(filters=None, auditor_user_id=None):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audits.result_status,
+            COUNT(*) AS audits_count,
+            AVG(audits.total_score) AS average_score
+        FROM audits
+        {where_sql}
+        GROUP BY audits.result_status
+        ORDER BY audits_count DESC, audits.result_status ASC
+        """,
+        params,
+    ).fetchall()
+
+    breakdown = []
+    for row in rows:
+        breakdown.append(
+            {
+                "result_status": row["result_status"],
+                "audits_count": row["audits_count"] or 0,
+                "average_score": round((row["average_score"] or 0), 2),
+            }
+        )
+    return breakdown
+
+
+def fetch_audit_reports_section_breakdown(filters=None, auditor_user_id=None):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audit_items.section_title,
+            SUM(CASE WHEN audit_items.status IN ('cumple', 'conforme') THEN 1 ELSE 0 END) AS compliant_count,
+            SUM(CASE WHEN audit_items.status IN ('no_cumple', 'nc_menor', 'nc_mayor') THEN 1 ELSE 0 END) AS non_compliant_count,
+            SUM(CASE WHEN audit_items.status IN ('no_cumple', 'nc_menor', 'nc_mayor') AND audit_items.is_critical = 1 THEN 1 ELSE 0 END) AS critical_non_compliant_count,
+            SUM(CASE WHEN audit_items.status = 'no_aplica' THEN 1 ELSE 0 END) AS not_applicable_count
+        FROM audit_items
+        INNER JOIN audits ON audits.id = audit_items.audit_id
+        {where_sql}
+        GROUP BY audit_items.section_title
+        ORDER BY non_compliant_count DESC, audit_items.section_title ASC
+        """,
+        params,
+    ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def fetch_audit_reports_critical_findings(filters=None, auditor_user_id=None, limit=500):
+    extra_clauses = ["audit_items.status IN ('no_cumple', 'nc_menor', 'nc_mayor')", "audit_items.is_critical = 1"]
+    where_sql, params = build_audits_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        extra_clauses=extra_clauses,
+    )
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audits.id AS audit_id,
+            audits.audit_date,
+            audits.auditor_name,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            vehicles.plate AS vehicle_plate,
+            audit_items.section_title,
+            audit_items.item_label,
+            audit_items.status,
+            audit_items.non_compliance_reason,
+            audit_items.notes,
+            audit_items.photo_path
+        FROM audit_items
+        INNER JOIN audits ON audits.id = audit_items.audit_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        ORDER BY audits.audit_date DESC, audits.id DESC, audit_items.id ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_audit_reports_missing_evidence(filters=None, auditor_user_id=None, limit=500):
+    optional_reasons = ("olvido", "perdida")
+    extra_clauses = [
+        "audit_items.status = 'no_cumple'",
+        "(audit_items.photo_path IS NULL OR COALESCE(audit_items.photo_path, '') = '')",
+        "(audit_items.non_compliance_reason IS NULL OR audit_items.non_compliance_reason NOT IN (?, ?))",
+    ]
+    where_sql, params = build_audits_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        extra_clauses=extra_clauses,
+        extra_params=list(optional_reasons),
+    )
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audits.id AS audit_id,
+            audits.audit_date,
+            audits.auditor_name,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            vehicles.plate AS vehicle_plate,
+            audit_items.section_title,
+            audit_items.item_label,
+            audit_items.non_compliance_reason,
+            audit_items.notes
+        FROM audit_items
+        INNER JOIN audits ON audits.id = audit_items.audit_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        ORDER BY audits.audit_date DESC, audits.id DESC, audit_items.id ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_audit_reports_supply_requests_detail(filters=None, auditor_user_id=None, limit=2000):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audits.id AS audit_id,
+            audits.audit_date,
+            audits.auditor_name,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            vehicles.plate AS vehicle_plate,
+            audit_supply_requests.created_at,
+            audit_supply_requests.section_title,
+            audit_supply_requests.item_label,
+            audit_supply_requests.request_type,
+            audit_supply_requests.material_code,
+            audit_supply_requests.quantity,
+            audit_supply_requests.notes
+        FROM audit_supply_requests
+        INNER JOIN audits ON audits.id = audit_supply_requests.audit_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        ORDER BY audits.audit_date DESC, audits.id DESC, audit_supply_requests.id ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+
+    detail = []
+    for row in rows:
+        payload = dict(row)
+        payload["quantity"] = payload.get("quantity") if payload.get("quantity") is not None else 0
+        detail.append(payload)
+    return detail
+
+
+def fetch_audit_reports_supply_requests_summary(filters=None, auditor_user_id=None, limit=2000):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audit_supply_requests.request_type,
+            audit_supply_requests.material_code,
+            COUNT(*) AS requests_count,
+            COALESCE(SUM(COALESCE(audit_supply_requests.quantity, 0)), 0) AS total_quantity
+        FROM audit_supply_requests
+        INNER JOIN audits ON audits.id = audit_supply_requests.audit_id
+        {where_sql}
+        GROUP BY audit_supply_requests.request_type, audit_supply_requests.material_code
+        ORDER BY total_quantity DESC, requests_count DESC, audit_supply_requests.material_code ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
     ).fetchall()
     return [dict(row) for row in rows]
 

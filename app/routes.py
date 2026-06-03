@@ -1,6 +1,8 @@
 import base64
 import binascii
+import csv
 import io
+import time
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
@@ -30,8 +32,16 @@ from app.models import (
     fetch_audit_items,
     fetch_audit_supply_requests,
     fetch_all_audits,
+    fetch_audit_reports_management_summary,
+    fetch_audit_reports_missing_evidence,
+    fetch_audit_reports_section_breakdown,
+    fetch_audit_reports_status_breakdown,
+    fetch_audit_reports_supply_requests_detail,
+    fetch_audit_reports_supply_requests_summary,
+    fetch_audit_reports_critical_findings,
     fetch_dashboard_stats,
     fetch_distinct_mobile_codes,
+    fetch_distinct_auditors,
     fetch_distinct_storage_centers,
     fetch_distinct_warehouse_codes,
     fetch_distinct_warehouse_types,
@@ -152,6 +162,318 @@ def can_edit_users():
     return bool(user and (user.get("role") == "admin"))
 
 
+def can_view_reports():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "auditor", "gerente"}))
+
+
+def build_csv_response(rows, filename, fieldnames=None):
+    normalized_rows = []
+    for row in rows or []:
+        normalized_rows.append({} if row is None else dict(row))
+
+    if fieldnames is None:
+        seen = set()
+        ordered = []
+        for row in normalized_rows:
+            for key in row.keys():
+                if key in seen:
+                    continue
+                seen.add(key)
+                ordered.append(key)
+        fieldnames = ordered
+
+    buffer = io.StringIO()
+    buffer.write("\ufeff")
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in normalized_rows:
+        writer.writerow({key: row.get(key, "") for key in fieldnames})
+
+    response = make_response(buffer.getvalue())
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def build_pdf_response(rows, filename, title, columns):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:
+        raise RuntimeError("PDF no disponible: falta dependencia reportlab.") from exc
+
+    normalized_rows = []
+    for row in rows or []:
+        normalized_rows.append({} if row is None else dict(row))
+
+    def to_text(value):
+        if value is None:
+            return ""
+        return str(value)
+
+    table_data = [[col.get("label", col["key"]) for col in columns]]
+    for row in normalized_rows:
+        table_data.append([to_text(row.get(col["key"])) for col in columns])
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=18,
+        rightMargin=18,
+        topMargin=18,
+        bottomMargin=18,
+        title=title,
+    )
+
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(title, styles["Title"]),
+        Spacer(1, 10),
+    ]
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F2F2")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#111111")),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D0D0D0")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FAFAFA")]),
+            ]
+        )
+    )
+    story.append(table)
+    doc.build(story)
+
+    pdf_bytes = buffer.getvalue()
+    response = make_response(pdf_bytes)
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def build_pdf_from_html_response(html, filename):
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "PDF con estilos no disponible: falta dependencia playwright. "
+            "Instala playwright y ejecuta: python -m playwright install chromium"
+        ) from exc
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page()
+        page.set_content(html, wait_until="networkidle")
+        page.emulate_media(media="print")
+        pdf_bytes = page.pdf(
+            format="A4",
+            print_background=True,
+            prefer_css_page_size=True,
+            margin={"top": "10mm", "right": "10mm", "bottom": "10mm", "left": "10mm"},
+        )
+        browser.close()
+
+    response = make_response(pdf_bytes)
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def build_reports_context(report_key, filters, auditor_user_id):
+    title = ""
+    subtitle = ""
+    rows = []
+    columns = []
+    executive = None
+
+    title_filter = []
+    if (filters.get("from_date") or "").strip():
+        title_filter.append(f"Desde {filters['from_date']}")
+    if (filters.get("to_date") or "").strip():
+        title_filter.append(f"Hasta {filters['to_date']}")
+    if (filters.get("auditor") or "").strip():
+        title_filter.append(f"Auditor {filters['auditor']}")
+    filter_suffix = " | ".join(title_filter)
+
+    if report_key == "resumen":
+        title = "Resumen ejecutivo"
+        subtitle = "KPIs para gerencia con foco en estado general, criticidad y promedio."
+        summary = fetch_audit_reports_management_summary(filters, auditor_user_id=auditor_user_id)
+        rows = [summary]
+        columns = [
+            {"key": "total_audits", "label": "Auditorías"},
+            {"key": "approved_count", "label": "Aprobadas"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
+        ]
+
+        status_rows = fetch_audit_reports_status_breakdown(filters, auditor_user_id=auditor_user_id)
+        status_total = sum((row.get("audits_count") or 0) for row in status_rows)
+        status_palette = {
+            "Aprobada": "#16A34A",
+            "Aprobada con observaciones": "#F59E0B",
+            "Critica": "#DC2626",
+            "Rechazada": "#6B7280",
+        }
+
+        circumference = round(2 * 3.1416 * 54, 2)
+        approval_value = max(0, min(100, summary.get("approval_rate") or 0))
+        approval_ring = {
+            "circumference": circumference,
+            "offset": round(circumference * (1 - (approval_value / 100)), 2),
+            "value": approval_value,
+        }
+
+        donut_segments = []
+        offset_accum = 0.0
+        for row in status_rows:
+            count = row.get("audits_count") or 0
+            label = row.get("result_status") or "-"
+            percent = 0.0 if status_total == 0 else round((count / status_total) * 100, 1)
+            segment_len = 0.0 if percent == 0 else round(circumference * (percent / 100), 2)
+            donut_segments.append(
+                {
+                    "label": label,
+                    "count": count,
+                    "percent": percent,
+                    "color": status_palette.get(label, "#2563EB"),
+                    "dasharray": f"{segment_len} {round(circumference - segment_len, 2)}",
+                    "dashoffset": round(-offset_accum, 2),
+                }
+            )
+            offset_accum += segment_len
+
+        section_rows = fetch_audit_reports_section_breakdown(filters, auditor_user_id=auditor_user_id)
+        top_sections = section_rows[:6]
+        section_max = max([row.get("non_compliant_count") or 0 for row in top_sections] + [1])
+        for row in top_sections:
+            row["bar_percent"] = round(((row.get("non_compliant_count") or 0) / section_max) * 100)
+
+        supplies_rows = fetch_audit_reports_supply_requests_summary(filters, auditor_user_id=auditor_user_id)
+        top_supplies = supplies_rows[:6]
+        supplies_max = max([row.get("total_quantity") or 0 for row in top_supplies] + [1])
+        for row in top_supplies:
+            row["bar_percent"] = round(((row.get("total_quantity") or 0) / supplies_max) * 100)
+
+        critical_preview = fetch_audit_reports_critical_findings(filters, auditor_user_id=auditor_user_id, limit=30)[:12]
+        executive = {
+            "approval_ring": approval_ring,
+            "donut_segments": donut_segments,
+            "status_total": status_total,
+            "top_sections": top_sections,
+            "top_supplies": top_supplies,
+            "critical_preview": critical_preview,
+        }
+    elif report_key == "estados":
+        title = "Desglose por estado"
+        subtitle = "Cantidad de auditorías y score promedio por estado."
+        rows = fetch_audit_reports_status_breakdown(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "result_status", "label": "Estado"},
+            {"key": "audits_count", "label": "Cantidad"},
+            {"key": "average_score", "label": "Promedio"},
+        ]
+    elif report_key == "secciones":
+        title = "Desglose por sección"
+        subtitle = "Cumplimiento y no conformidades agrupadas por sección."
+        rows = fetch_audit_reports_section_breakdown(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "section_title", "label": "Sección"},
+            {"key": "compliant_count", "label": "Cumple"},
+            {"key": "non_compliant_count", "label": "No conformes"},
+            {"key": "critical_non_compliant_count", "label": "Críticas"},
+            {"key": "not_applicable_count", "label": "No aplica"},
+        ]
+    elif report_key == "hallazgos_criticos":
+        title = "Hallazgos críticos"
+        subtitle = "Ítems críticos no conformes con contexto de auditoría."
+        rows = fetch_audit_reports_critical_findings(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "audit_date", "label": "Fecha"},
+            {"key": "audit_id", "label": "ID"},
+            {"key": "mobile_code", "label": "Móvil"},
+            {"key": "technician_name", "label": "Técnico"},
+            {"key": "vehicle_plate", "label": "Vehículo"},
+            {"key": "location", "label": "Ubicación"},
+            {"key": "result_status", "label": "Resultado"},
+            {"key": "total_score", "label": "Score"},
+            {"key": "section_title", "label": "Sección"},
+            {"key": "item_label", "label": "Ítem"},
+            {"key": "status", "label": "Estado ítem"},
+            {"key": "non_compliance_reason", "label": "Motivo"},
+            {"key": "notes", "label": "Notas"},
+        ]
+    elif report_key == "evidencias_faltantes":
+        title = "Evidencias faltantes"
+        subtitle = "No conformidades sin evidencia fotográfica (según reglas actuales)."
+        rows = fetch_audit_reports_missing_evidence(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "audit_date", "label": "Fecha"},
+            {"key": "audit_id", "label": "ID"},
+            {"key": "mobile_code", "label": "Móvil"},
+            {"key": "technician_name", "label": "Técnico"},
+            {"key": "vehicle_plate", "label": "Vehículo"},
+            {"key": "location", "label": "Ubicación"},
+            {"key": "section_title", "label": "Sección"},
+            {"key": "item_label", "label": "Ítem"},
+            {"key": "non_compliance_reason", "label": "Motivo"},
+            {"key": "notes", "label": "Notas"},
+        ]
+    elif report_key == "insumos_detalle":
+        title = "Solicitudes de insumos (detalle)"
+        subtitle = "Listado completo de solicitudes por auditoría."
+        rows = fetch_audit_reports_supply_requests_detail(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "audit_date", "label": "Fecha"},
+            {"key": "audit_id", "label": "ID"},
+            {"key": "mobile_code", "label": "Móvil"},
+            {"key": "technician_name", "label": "Técnico"},
+            {"key": "request_type", "label": "Tipo"},
+            {"key": "material_code", "label": "Material"},
+            {"key": "quantity", "label": "Cantidad"},
+            {"key": "section_title", "label": "Sección"},
+            {"key": "item_label", "label": "Ítem"},
+            {"key": "notes", "label": "Notas"},
+        ]
+    elif report_key == "insumos_resumen":
+        title = "Solicitudes de insumos (consolidado)"
+        subtitle = "Totales por material y tipo de solicitud."
+        rows = fetch_audit_reports_supply_requests_summary(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "request_type", "label": "Tipo"},
+            {"key": "material_code", "label": "Material"},
+            {"key": "requests_count", "label": "Solicitudes"},
+            {"key": "total_quantity", "label": "Total"},
+        ]
+    else:
+        return None
+
+    return {
+        "report_key": report_key,
+        "title": title,
+        "subtitle": subtitle,
+        "filter_suffix": filter_suffix,
+        "filters": filters,
+        "columns": columns,
+        "rows": rows,
+        "summary": rows[0] if report_key == "resumen" and rows else None,
+        "executive": executive if report_key == "resumen" else None,
+    }
+
+
 def safe_next_url(value):
     raw = (value or "").strip()
     if raw.startswith("/"):
@@ -192,6 +514,7 @@ def inject_auth_context():
         "can_view_users": can_view_users(),
         "can_create_users": can_create_users(),
         "can_edit_users": can_edit_users(),
+        "can_view_reports": can_view_reports(),
     }
 
 
@@ -654,6 +977,98 @@ def upload_image_to_cloudinary(content_bytes, folder, public_id):
         raise ValueError("No fue posible subir la imagen a Cloudinary. Revisa CLOUDINARY_URL.") from exc
 
 
+def upload_private_image_to_cloudinary(content_bytes, folder, public_id):
+    raw_url = (current_app.config.get("CLOUDINARY_URL") or "").strip()
+    if not raw_url.startswith("cloudinary://"):
+        raise ValueError("CLOUDINARY_URL inválida. Debe comenzar con cloudinary://")
+
+    import cloudinary
+    import cloudinary.uploader
+
+    try:
+        cloudinary.config(cloudinary_url=raw_url, secure=True)
+        result = cloudinary.uploader.upload(
+            io.BytesIO(content_bytes),
+            folder=folder,
+            public_id=public_id,
+            resource_type="image",
+            type="private",
+        )
+        return {
+            "public_id": result.get("public_id"),
+            "version": result.get("version"),
+        }
+    except Exception as exc:
+        raise ValueError("No fue posible subir la imagen a Cloudinary. Revisa CLOUDINARY_URL.") from exc
+
+
+def encode_cloudinary_ref(public_id, version=None, delivery_type="private", resource_type="image", file_format=None):
+    if not public_id:
+        raise ValueError("public_id requerido para referencia Cloudinary.")
+    parts = ["cld", delivery_type, resource_type, public_id]
+    if version is not None:
+        parts.append(str(version))
+    if file_format:
+        parts.append(str(file_format))
+    return "|".join(parts)
+
+
+def decode_cloudinary_ref(value):
+    raw = (value or "").strip()
+    if not raw.startswith("cld|"):
+        return None
+    parts = raw.split("|")
+    if len(parts) < 4:
+        return None
+    _, delivery_type, resource_type, public_id, *rest = parts
+    version = None
+    file_format = None
+    if rest:
+        version = rest[0] or None
+    if len(rest) > 1:
+        file_format = rest[1] or None
+    return {
+        "delivery_type": delivery_type or "private",
+        "resource_type": resource_type or "image",
+        "public_id": public_id,
+        "version": int(version) if version and version.isdigit() else None,
+        "file_format": file_format or None,
+    }
+
+
+def build_cloudinary_signed_url(ref_or_url, expires_in_seconds=600):
+    decoded = decode_cloudinary_ref(ref_or_url)
+    if not decoded:
+        return ref_or_url
+
+    raw_url = (current_app.config.get("CLOUDINARY_URL") or "").strip()
+    if not raw_url.startswith("cloudinary://"):
+        return ref_or_url
+
+    import cloudinary
+    from cloudinary.utils import cloudinary_url
+
+    cloudinary.config(cloudinary_url=raw_url, secure=True)
+
+    kwargs = {
+        "resource_type": decoded["resource_type"],
+        "type": decoded["delivery_type"],
+        "sign_url": True,
+        "secure": True,
+        "version": decoded["version"],
+    }
+    if decoded["file_format"]:
+        kwargs["format"] = decoded["file_format"]
+
+    url = None
+    expires_at = int(time.time()) + int(expires_in_seconds)
+    try:
+        url, _options = cloudinary_url(decoded["public_id"], expires_at=expires_at, **kwargs)
+    except TypeError:
+        url, _options = cloudinary_url(decoded["public_id"], **kwargs)
+    return url
+
+
 def image_bytes_to_data_uri(content_bytes, extension):
     normalized = (extension or "").lower().lstrip(".")
     mime_map = {
@@ -726,7 +1141,18 @@ def persist_auditor_signature(signature_data, audit_date):
         optimized_signature = optimize_signature_png_bytes(decoded_signature)
         base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
         folder = f"{base_folder}/audits/signatures/{date_folder}"
-        return upload_image_to_cloudinary(optimized_signature, folder=folder, public_id=generated_name)
+        uploaded = upload_private_image_to_cloudinary(
+            optimized_signature,
+            folder=folder,
+            public_id=generated_name,
+        )
+        return encode_cloudinary_ref(
+            uploaded.get("public_id"),
+            version=uploaded.get("version"),
+            delivery_type="private",
+            resource_type="image",
+            file_format="png",
+        )
 
     target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "signatures" / date_folder
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -761,7 +1187,18 @@ def persist_technician_signature(signature_data, audit_date):
         optimized_signature = optimize_signature_png_bytes(decoded_signature)
         base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
         folder = f"{base_folder}/audits/signatures/{date_folder}"
-        return upload_image_to_cloudinary(optimized_signature, folder=folder, public_id=generated_name)
+        uploaded = upload_private_image_to_cloudinary(
+            optimized_signature,
+            folder=folder,
+            public_id=generated_name,
+        )
+        return encode_cloudinary_ref(
+            uploaded.get("public_id"),
+            version=uploaded.get("version"),
+            delivery_type="private",
+            resource_type="image",
+            file_format="png",
+        )
 
     target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "signatures" / date_folder
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -1032,6 +1469,267 @@ def audit_list():
     )
 
 
+@main.route("/reports")
+def reports():
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "auditor": request.args.get("auditor", "").strip(),
+    }
+    if auditor_user_id is not None:
+        filters["auditor"] = ""
+
+    summary = fetch_audit_reports_management_summary(filters, auditor_user_id=auditor_user_id)
+    status_breakdown = fetch_audit_reports_status_breakdown(filters, auditor_user_id=auditor_user_id)
+    section_breakdown = fetch_audit_reports_section_breakdown(filters, auditor_user_id=auditor_user_id)[:8]
+    auditors = fetch_distinct_auditors() if can_view_all_audits() else []
+
+    return render_template(
+        "reports.html",
+        filters=filters,
+        summary=summary,
+        status_breakdown=status_breakdown,
+        section_breakdown=section_breakdown,
+        auditors=auditors,
+    )
+
+
+@main.route("/reports/export/<report_key>.csv")
+def export_report(report_key):
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "auditor": request.args.get("auditor", "").strip(),
+    }
+    if auditor_user_id is not None:
+        filters["auditor"] = ""
+
+    date_from = filters["from_date"] or "inicio"
+    date_to = filters["to_date"] or "hoy"
+    auditor_suffix = (filters.get("auditor") or "").strip().replace(" ", "_") or "todos"
+    filename = f"reporte_{report_key}_{date_from}_a_{date_to}_{auditor_suffix}.csv"
+
+    filter_context = {
+        "from_date": filters["from_date"],
+        "to_date": filters["to_date"],
+        "auditor_filter": filters["auditor"],
+    }
+
+    if report_key == "resumen":
+        summary = fetch_audit_reports_management_summary(filters, auditor_user_id=auditor_user_id)
+        row = {**filter_context, **summary}
+        return build_csv_response(
+            [row],
+            filename,
+            fieldnames=list(filter_context.keys()) + list(summary.keys()),
+        )
+
+    if report_key == "estados":
+        rows = fetch_audit_reports_status_breakdown(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys()) + ["result_status", "audits_count", "average_score"],
+        )
+
+    if report_key == "secciones":
+        rows = fetch_audit_reports_section_breakdown(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "section_title",
+                "compliant_count",
+                "non_compliant_count",
+                "critical_non_compliant_count",
+                "not_applicable_count",
+            ],
+        )
+
+    if report_key == "hallazgos_criticos":
+        rows = fetch_audit_reports_critical_findings(filters, auditor_user_id=auditor_user_id)
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=[
+                "audit_id",
+                "audit_date",
+                "auditor_name",
+                "mobile_code",
+                "technician_name",
+                "vehicle_plate",
+                "location",
+                "installation_type",
+                "result_status",
+                "total_score",
+                "section_title",
+                "item_label",
+                "status",
+                "non_compliance_reason",
+                "notes",
+                "photo_path",
+            ],
+        )
+
+    if report_key == "evidencias_faltantes":
+        rows = fetch_audit_reports_missing_evidence(filters, auditor_user_id=auditor_user_id)
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=[
+                "audit_id",
+                "audit_date",
+                "auditor_name",
+                "mobile_code",
+                "technician_name",
+                "vehicle_plate",
+                "location",
+                "installation_type",
+                "result_status",
+                "total_score",
+                "section_title",
+                "item_label",
+                "non_compliance_reason",
+                "notes",
+            ],
+        )
+
+    if report_key == "insumos_detalle":
+        rows = fetch_audit_reports_supply_requests_detail(filters, auditor_user_id=auditor_user_id)
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=[
+                "audit_id",
+                "audit_date",
+                "auditor_name",
+                "mobile_code",
+                "technician_name",
+                "vehicle_plate",
+                "location",
+                "installation_type",
+                "result_status",
+                "total_score",
+                "created_at",
+                "section_title",
+                "item_label",
+                "request_type",
+                "material_code",
+                "quantity",
+                "notes",
+            ],
+        )
+
+    if report_key == "insumos_resumen":
+        rows = fetch_audit_reports_supply_requests_summary(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys()) + ["request_type", "material_code", "requests_count", "total_quantity"],
+        )
+
+    abort(404)
+
+
+@main.route("/reports/export/<report_key>.pdf")
+def export_report_pdf(report_key):
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "auditor": request.args.get("auditor", "").strip(),
+    }
+    if auditor_user_id is not None:
+        filters["auditor"] = ""
+
+    date_from = filters["from_date"] or "inicio"
+    date_to = filters["to_date"] or "hoy"
+    auditor_suffix = (filters.get("auditor") or "").strip().replace(" ", "_") or "todos"
+    filename = f"reporte_{report_key}_{date_from}_a_{date_to}_{auditor_suffix}.pdf"
+
+    context = build_reports_context(report_key, filters, auditor_user_id)
+    if not context:
+        abort(404)
+
+    css_path = Path(current_app.root_path) / "static" / "css" / "main.css"
+    inline_css = css_path.read_text(encoding="utf-8") if css_path.exists() else ""
+
+    html = render_template(
+        "reports_print.html",
+        **context,
+        inline_css=inline_css,
+        print_mode=True,
+    )
+    try:
+        return build_pdf_from_html_response(html, filename)
+    except RuntimeError as exc:
+        flash(str(exc), "error")
+        return redirect(
+            url_for(
+                "main.reports_print",
+                report_key=report_key,
+                from_date=filters.get("from_date", ""),
+                to_date=filters.get("to_date", ""),
+                auditor=filters.get("auditor", ""),
+                print=1,
+            )
+        )
+
+
+@main.route("/reports/<report_key>/report")
+def reports_print(report_key):
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "auditor": request.args.get("auditor", "").strip(),
+    }
+    if auditor_user_id is not None:
+        filters["auditor"] = ""
+    context = build_reports_context(report_key, filters, auditor_user_id)
+    if not context:
+        abort(404)
+
+    response = make_response(
+        render_template(
+            "reports_print.html",
+            **context,
+            inline_css="",
+            print_mode=request.args.get("print") == "1",
+        )
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @main.route("/audits/<int:audit_id>")
 def audit_detail(audit_id):
     audit = fetch_audit_detail(audit_id)
@@ -1042,18 +1740,32 @@ def audit_detail(audit_id):
         if audit.get("auditor_user_id") != user["id"] and (audit.get("auditor_name") or "") != user["username"]:
             abort(404)
 
+    audit["auditor_signature_path"] = build_cloudinary_signed_url(
+        audit.get("auditor_signature_path"),
+        expires_in_seconds=900,
+    )
+    audit["technician_signature_path"] = build_cloudinary_signed_url(
+        audit.get("technician_signature_path"),
+        expires_in_seconds=900,
+    )
+
     items = fetch_audit_items(audit_id)
     grouped_items = build_grouped_audit_items(items)
     supply_requests = fetch_audit_supply_requests(audit_id)
     tnps_response = fetch_tnps_response_for_audit(audit_id)
-
-    return render_template(
-        "audit_detail.html",
-        audit=audit,
-        grouped_items=grouped_items,
-        supply_requests=supply_requests,
-        tnps_response=tnps_response,
+    response = make_response(
+        render_template(
+            "audit_detail.html",
+            audit=audit,
+            grouped_items=grouped_items,
+            supply_requests=supply_requests,
+            tnps_response=tnps_response,
+        )
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @main.route("/audits/<int:audit_id>/report")
@@ -1065,6 +1777,16 @@ def audit_report(audit_id):
         user = current_user()
         if audit.get("auditor_user_id") != user["id"] and (audit.get("auditor_name") or "") != user["username"]:
             abort(404)
+
+    expires_in_seconds = 3600 if request.args.get("print") == "1" else 900
+    audit["auditor_signature_path"] = build_cloudinary_signed_url(
+        audit.get("auditor_signature_path"),
+        expires_in_seconds=expires_in_seconds,
+    )
+    audit["technician_signature_path"] = build_cloudinary_signed_url(
+        audit.get("technician_signature_path"),
+        expires_in_seconds=expires_in_seconds,
+    )
 
     items = fetch_audit_items(audit_id)
     report = build_audit_report_metrics(audit, items)
@@ -1120,17 +1842,23 @@ def audit_report(audit_id):
     }
     tnps_response = fetch_tnps_response_for_audit(audit_id)
     supply_requests = fetch_audit_supply_requests(audit_id)
-    return render_template(
-        "audit_report.html",
-        audit=audit,
-        grouped_items=grouped_items_detail if detail_filter_active else grouped_items_all,
-        report=report,
-        tnps_response=tnps_response,
-        supply_requests=supply_requests,
-        print_mode=request.args.get("print") == "1",
-        detail_filter_active=detail_filter_active,
-        detail_filter=detail_filter,
+    response = make_response(
+        render_template(
+            "audit_report.html",
+            audit=audit,
+            grouped_items=grouped_items_detail if detail_filter_active else grouped_items_all,
+            report=report,
+            tnps_response=tnps_response,
+            supply_requests=supply_requests,
+            print_mode=request.args.get("print") == "1",
+            detail_filter_active=detail_filter_active,
+            detail_filter=detail_filter,
+        )
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @main.route("/imports", methods=["GET", "POST"])
