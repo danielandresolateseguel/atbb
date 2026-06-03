@@ -1165,6 +1165,9 @@ def fetch_mobile_units():
             mobile_units.notes,
             technicians.name AS technician_name,
             technicians.center_name AS technician_center_name,
+            technicians.supervisor_name AS technician_supervisor_name,
+            technicians.company_name AS technician_company_name,
+            technicians.union_name AS technician_union_name,
             technicians.region AS technician_region,
             (
                 SELECT storage_locations.center_name

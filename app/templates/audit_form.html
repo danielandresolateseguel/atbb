@@ -42,6 +42,9 @@
                         data-user-name="{{ (mobile.user_name or '')|upper }}"
                         data-description="{{ mobile.warehouse_description or '' }}"
                         data-center-name="{{ mobile.technician_center_name or '' }}"
+                        data-supervisor-name="{{ (mobile.technician_supervisor_name or '')|upper }}"
+                        data-company-name="{{ (mobile.technician_company_name or '')|upper }}"
+                        data-union-name="{{ (mobile.technician_union_name or '')|upper }}"
                         data-region="{{ (mobile.technician_region or '')|upper }}"
                         data-location="{{ (mobile.technician_center_name or mobile.storage_center_name or mobile.technician_region or '')|upper }}"
                         {% if request.form.get('mobile_unit_id') == mobile.id|string %}selected{% endif %}
@@ -93,6 +96,10 @@
         <div class="info-list">
             <p><strong>Móvil:</strong> <span id="selected_mobile_code">Sin seleccionar</span></p>
             <p><strong>Técnico (según móvil):</strong> <span id="selected_mobile_technician">Sin dato</span></p>
+            <p><strong>Centro:</strong> <span id="selected_mobile_center">-</span></p>
+            <p><strong>Supervisor:</strong> <span id="selected_mobile_supervisor">-</span></p>
+            <p><strong>Empresa:</strong> <span id="selected_mobile_company">-</span></p>
+            <p><strong>Sindicato:</strong> <span id="selected_mobile_union">-</span></p>
             <p><strong>Responsable operativo:</strong> <span id="selected_mobile_user">-</span></p>
             <p><strong>Descripción:</strong> <span id="selected_mobile_description">-</span></p>
         </div>
@@ -605,6 +612,10 @@
         const mobileSelect = document.getElementById("mobile_unit_id");
         const mobileCodeTarget = document.getElementById("selected_mobile_code");
         const mobileTechnicianTarget = document.getElementById("selected_mobile_technician");
+        const mobileCenterTarget = document.getElementById("selected_mobile_center");
+        const mobileSupervisorTarget = document.getElementById("selected_mobile_supervisor");
+        const mobileCompanyTarget = document.getElementById("selected_mobile_company");
+        const mobileUnionTarget = document.getElementById("selected_mobile_union");
         const mobileUserTarget = document.getElementById("selected_mobile_user");
         const mobileDescriptionTarget = document.getElementById("selected_mobile_description");
         const signatureTechnicianNameTarget = document.getElementById("signature_technician_name");
@@ -1723,6 +1734,10 @@
             if (!option || !option.value) {
                 mobileCodeTarget.textContent = "Sin seleccionar";
                 mobileTechnicianTarget.textContent = "Sin dato";
+                if (mobileCenterTarget) mobileCenterTarget.textContent = "-";
+                if (mobileSupervisorTarget) mobileSupervisorTarget.textContent = "-";
+                if (mobileCompanyTarget) mobileCompanyTarget.textContent = "-";
+                if (mobileUnionTarget) mobileUnionTarget.textContent = "-";
                 mobileUserTarget.textContent = "-";
                 mobileDescriptionTarget.textContent = "-";
                 lastAutoLocation = "";
@@ -1733,6 +1748,10 @@
             mobileCodeTarget.textContent = option.dataset.mobileCode || option.textContent.trim();
             mobileTechnicianTarget.textContent = option.dataset.technicianName || "Sin dato";
             signatureTechnicianNameTarget.textContent = option.dataset.technicianName || "-";
+            if (mobileCenterTarget) mobileCenterTarget.textContent = option.dataset.centerName || "-";
+            if (mobileSupervisorTarget) mobileSupervisorTarget.textContent = option.dataset.supervisorName || "-";
+            if (mobileCompanyTarget) mobileCompanyTarget.textContent = option.dataset.companyName || "-";
+            if (mobileUnionTarget) mobileUnionTarget.textContent = option.dataset.unionName || "-";
             mobileUserTarget.textContent = option.dataset.userName || "-";
             mobileDescriptionTarget.textContent = option.dataset.description || "-";
 
