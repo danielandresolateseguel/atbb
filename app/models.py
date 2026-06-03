@@ -2671,25 +2671,23 @@ def import_technician_information(rows):
                 """
                 UPDATE technicians
                 SET
-                    name = CASE WHEN ? != '' THEN ? ELSE name END,
-                    company_name = CASE WHEN ? != '' THEN ? ELSE company_name END,
-                    union_name = CASE WHEN ? != '' THEN ? ELSE union_name END,
-                    supervisor_name = CASE WHEN ? != '' THEN ? ELSE supervisor_name END,
-                    center_name = CASE WHEN ? != '' THEN ? ELSE center_name END,
-                    region = CASE WHEN ? != '' AND (region IS NULL OR region = '' OR region = '-') THEN ? ELSE region END
+                    name = COALESCE(NULLIF(?, ''), name),
+                    company_name = COALESCE(NULLIF(?, ''), company_name),
+                    union_name = COALESCE(NULLIF(?, ''), union_name),
+                    supervisor_name = COALESCE(NULLIF(?, ''), supervisor_name),
+                    center_name = COALESCE(NULLIF(?, ''), center_name),
+                    region = CASE
+                        WHEN (region IS NULL OR region = '' OR region = '-')
+                            THEN COALESCE(NULLIF(?, ''), region)
+                        ELSE region
+                    END
                 WHERE id = ?
                 """,
                 (
                     technician_name,
-                    technician_name,
-                    company_name,
                     company_name,
                     union_name,
-                    union_name,
                     supervisor_name,
-                    supervisor_name,
-                    center_name,
-                    center_name,
                     center_name,
                     center_name,
                     technician_id,
@@ -2772,7 +2770,7 @@ def import_technician_information(rows):
                         SET mobile_unit_id = ?,
                             warehouse_name = ?,
                             warehouse_type = ?,
-                            user_name = CASE WHEN (user_name IS NULL OR user_name = '') AND ? IS NOT NULL THEN ? ELSE user_name END,
+                            user_name = COALESCE(NULLIF(user_name, ''), NULLIF(?, '')),
                             is_enabled = ?
                         WHERE id = ?
                         """,
@@ -2780,7 +2778,6 @@ def import_technician_information(rows):
                             payload[0],
                             payload[1],
                             payload[2],
-                            payload[3],
                             payload[3],
                             payload[4],
                             storage_id,
