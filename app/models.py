@@ -82,6 +82,7 @@ def init_db():
             commune TEXT,
             team TEXT,
             company_name TEXT,
+            union_name TEXT,
             supervisor_name TEXT,
             center_name TEXT,
             is_active INTEGER NOT NULL DEFAULT 1
@@ -238,6 +239,7 @@ def init_db():
     )
     ensure_legacy_columns(connection)
     seed_demo_data(connection)
+    ensure_mobile_unit_codes_normalized_sqlite(connection)
     connection.commit()
     connection.close()
 
@@ -273,6 +275,7 @@ def init_db_postgres():
             commune TEXT,
             team TEXT,
             company_name TEXT,
+            union_name TEXT,
             supervisor_name TEXT,
             center_name TEXT,
             is_active INTEGER NOT NULL DEFAULT 1
@@ -454,6 +457,8 @@ def init_db_postgres():
         """
     )
 
+    ensure_technicians_columns_postgres(cursor)
+    ensure_mobile_unit_codes_normalized_postgres(cursor)
     connection.commit()
     connection.close()
 
@@ -608,6 +613,7 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "technicians", "commune", "TEXT")
     add_column_if_missing(connection, "technicians", "team", "TEXT")
     add_column_if_missing(connection, "technicians", "company_name", "TEXT")
+    add_column_if_missing(connection, "technicians", "union_name", "TEXT")
     add_column_if_missing(connection, "technicians", "supervisor_name", "TEXT")
     add_column_if_missing(connection, "technicians", "center_name", "TEXT")
     add_column_if_missing(connection, "technicians", "is_active", "INTEGER NOT NULL DEFAULT 1")
@@ -804,6 +810,208 @@ def add_column_if_missing(connection, table_name, column_name, column_definition
         )
 
 
+def ensure_technicians_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS company_name TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS union_name TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS supervisor_name TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS center_name TEXT")
+
+
+def ensure_mobile_unit_codes_normalized_sqlite(connection):
+    mobile_rows = connection.execute(
+        "SELECT id, mobile_code FROM mobile_units ORDER BY id ASC"
+    ).fetchall()
+    if not mobile_rows:
+        return
+
+    normalized_groups = {}
+    for row in mobile_rows:
+        mobile_id = row["id"] if hasattr(row, "keys") else row[0]
+        mobile_code = row["mobile_code"] if hasattr(row, "keys") else row[1]
+        normalized_code = normalize_mobile_code(mobile_code)
+        if not normalized_code or normalized_code == mobile_code:
+            continue
+        normalized_groups.setdefault(normalized_code, []).append((mobile_id, mobile_code))
+
+    for normalized_code, entries in normalized_groups.items():
+        existing = connection.execute(
+            "SELECT id FROM mobile_units WHERE mobile_code = ?",
+            (normalized_code,),
+        ).fetchone()
+        keep_id = (existing["id"] if hasattr(existing, "keys") else existing[0]) if existing else entries[0][0]
+
+        for source_id, _source_code in entries:
+            if source_id == keep_id:
+                continue
+            merge_mobile_unit_into_sqlite(connection, source_id, keep_id)
+            connection.execute("DELETE FROM mobile_units WHERE id = ?", (source_id,))
+
+        connection.execute(
+            "UPDATE mobile_units SET mobile_code = ? WHERE id = ?",
+            (normalized_code, keep_id),
+        )
+        normalize_storage_location_codes_for_mobile_sqlite(connection, keep_id, normalized_code)
+
+
+def ensure_mobile_unit_codes_normalized_postgres(cursor):
+    cursor.execute("SELECT id, mobile_code FROM mobile_units ORDER BY id ASC")
+    rows = cursor.fetchall()
+    if not rows:
+        return
+
+    normalized_groups = {}
+    for row in rows:
+        normalized_code = normalize_mobile_code(row["mobile_code"])
+        if not normalized_code or normalized_code == row["mobile_code"]:
+            continue
+        normalized_groups.setdefault(normalized_code, []).append((row["id"], row["mobile_code"]))
+
+    for normalized_code, entries in normalized_groups.items():
+        cursor.execute(
+            "SELECT id FROM mobile_units WHERE mobile_code = %s",
+            (normalized_code,),
+        )
+        existing = cursor.fetchone()
+        keep_id = existing["id"] if existing else entries[0][0]
+
+        for source_id, _source_code in entries:
+            if source_id == keep_id:
+                continue
+            cursor.execute(
+                "UPDATE audits SET mobile_unit_id = %s WHERE mobile_unit_id = %s",
+                (keep_id, source_id),
+            )
+            cursor.execute(
+                "UPDATE equipment_inventory SET mobile_unit_id = %s WHERE mobile_unit_id = %s",
+                (keep_id, source_id),
+            )
+            cursor.execute(
+                "UPDATE storage_locations SET mobile_unit_id = %s WHERE mobile_unit_id = %s",
+                (keep_id, source_id),
+            )
+
+            cursor.execute(
+                "SELECT material_id, quantity FROM material_stock WHERE mobile_unit_id = %s",
+                (source_id,),
+            )
+            stock_rows = cursor.fetchall()
+            for stock_row in stock_rows:
+                material_id = stock_row["material_id"]
+                source_qty = stock_row["quantity"] or 0
+                cursor.execute(
+                    """
+                    SELECT id, quantity
+                    FROM material_stock
+                    WHERE mobile_unit_id = %s AND material_id = %s
+                    """,
+                    (keep_id, material_id),
+                )
+                existing_stock = cursor.fetchone()
+                if existing_stock:
+                    target_qty = existing_stock["quantity"] or 0
+                    cursor.execute(
+                        "UPDATE material_stock SET quantity = %s WHERE id = %s",
+                        (target_qty + source_qty, existing_stock["id"]),
+                    )
+                    cursor.execute(
+                        "DELETE FROM material_stock WHERE mobile_unit_id = %s AND material_id = %s",
+                        (source_id, material_id),
+                    )
+
+            cursor.execute(
+                "UPDATE material_stock SET mobile_unit_id = %s WHERE mobile_unit_id = %s",
+                (keep_id, source_id),
+            )
+            cursor.execute("DELETE FROM mobile_units WHERE id = %s", (source_id,))
+
+        cursor.execute(
+            "UPDATE mobile_units SET mobile_code = %s WHERE id = %s",
+            (normalized_code, keep_id),
+        )
+        cursor.execute(
+            "UPDATE storage_locations SET warehouse_code = %s WHERE mobile_unit_id = %s",
+            (normalized_code, keep_id),
+        )
+
+
+def merge_mobile_unit_into_sqlite(connection, source_id, target_id):
+    connection.execute(
+        "UPDATE audits SET mobile_unit_id = ? WHERE mobile_unit_id = ?",
+        (target_id, source_id),
+    )
+    connection.execute(
+        "UPDATE equipment_inventory SET mobile_unit_id = ? WHERE mobile_unit_id = ?",
+        (target_id, source_id),
+    )
+    connection.execute(
+        "UPDATE storage_locations SET mobile_unit_id = ? WHERE mobile_unit_id = ?",
+        (target_id, source_id),
+    )
+
+    stock_rows = connection.execute(
+        "SELECT material_id, quantity FROM material_stock WHERE mobile_unit_id = ?",
+        (source_id,),
+    ).fetchall()
+    for row in stock_rows:
+        material_id = row["material_id"] if hasattr(row, "keys") else row[0]
+        source_qty = (row["quantity"] if hasattr(row, "keys") else row[1]) or 0
+        existing = connection.execute(
+            "SELECT id, quantity FROM material_stock WHERE mobile_unit_id = ? AND material_id = ?",
+            (target_id, material_id),
+        ).fetchone()
+        if existing:
+            existing_id = existing["id"] if hasattr(existing, "keys") else existing[0]
+            target_qty = (existing["quantity"] if hasattr(existing, "keys") else existing[1]) or 0
+            connection.execute(
+                "UPDATE material_stock SET quantity = ? WHERE id = ?",
+                (target_qty + source_qty, existing_id),
+            )
+            connection.execute(
+                "DELETE FROM material_stock WHERE mobile_unit_id = ? AND material_id = ?",
+                (source_id, material_id),
+            )
+
+    connection.execute(
+        "UPDATE material_stock SET mobile_unit_id = ? WHERE mobile_unit_id = ?",
+        (target_id, source_id),
+    )
+
+
+def normalize_storage_location_codes_for_mobile_sqlite(connection, mobile_unit_id, normalized_code):
+    rows = connection.execute(
+        """
+        SELECT id, center_name, warehouse_code
+        FROM storage_locations
+        WHERE mobile_unit_id = ?
+        """,
+        (mobile_unit_id,),
+    ).fetchall()
+    for row in rows:
+        storage_id = row["id"] if hasattr(row, "keys") else row[0]
+        center_name = row["center_name"] if hasattr(row, "keys") else row[1]
+        warehouse_code = row["warehouse_code"] if hasattr(row, "keys") else row[2]
+        if warehouse_code == normalized_code:
+            continue
+        if normalize_mobile_code(warehouse_code) != normalized_code:
+            continue
+
+        conflict = connection.execute(
+            """
+            SELECT id
+            FROM storage_locations
+            WHERE center_name = ? AND warehouse_code = ? AND id != ?
+            """,
+            (center_name, normalized_code, storage_id),
+        ).fetchone()
+        if conflict:
+            connection.execute("DELETE FROM storage_locations WHERE id = ?", (storage_id,))
+        else:
+            connection.execute(
+                "UPDATE storage_locations SET warehouse_code = ? WHERE id = ?",
+                (normalized_code, storage_id),
+            )
+
+
 def seed_demo_data(connection):
     technician_count = connection.execute("SELECT COUNT(*) FROM technicians").fetchone()[0]
     if technician_count == 0:
@@ -879,7 +1087,7 @@ def seed_demo_data(connection):
 def fetch_technicians():
     rows = get_db().execute(
         """
-        SELECT id, name, employee_code, region, phone, commune, team, company_name, supervisor_name, center_name, is_active
+        SELECT id, name, employee_code, region, phone, commune, team, company_name, union_name, supervisor_name, center_name, is_active
         FROM technicians
         ORDER BY name ASC
         """
@@ -956,6 +1164,21 @@ def fetch_mobile_units():
             mobile_units.is_enabled,
             mobile_units.notes,
             technicians.name AS technician_name,
+            technicians.center_name AS technician_center_name,
+            technicians.region AS technician_region,
+            (
+                SELECT storage_locations.center_name
+                FROM storage_locations
+                WHERE (
+                    storage_locations.mobile_unit_id = mobile_units.id
+                    OR storage_locations.warehouse_code = mobile_units.mobile_code
+                )
+                    AND storage_locations.is_enabled = 1
+                ORDER BY
+                    CASE WHEN LOWER(COALESCE(storage_locations.warehouse_type, '')) = 'movil' THEN 0 ELSE 1 END,
+                    storage_locations.id DESC
+                LIMIT 1
+            ) AS storage_center_name,
             technicians.employee_code
         FROM mobile_units
         LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
@@ -982,7 +1205,11 @@ def fetch_mobile_unit_detail(mobile_code):
             technicians.phone,
             technicians.region,
             technicians.commune,
-            technicians.team
+            technicians.team,
+            technicians.company_name,
+            technicians.union_name,
+            technicians.supervisor_name,
+            technicians.center_name
         FROM mobile_units
         LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
         WHERE mobile_units.mobile_code = ?
@@ -2236,6 +2463,358 @@ def import_technicians(rows):
     }
 
 
+def import_technician_information(rows):
+    connection = get_db()
+    created_count = 0
+    updated_count = 0
+    skipped_rows = []
+
+    def pick_first(row_data, keys):
+        for key in keys:
+            value = (row_data.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    def ensure_unique_employee_code(employee_code_base):
+        base = (employee_code_base or "").strip()
+        if not base:
+            base = "AUTO"
+        candidate = base
+        suffix = 2
+        while True:
+            existing = connection.execute(
+                "SELECT 1 FROM technicians WHERE employee_code = ?",
+                (candidate,),
+            ).fetchone()
+            if not existing:
+                return candidate
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+
+    def parse_company_union(company_raw, union_raw, combined_raw):
+        company = (company_raw or "").strip()
+        union = (union_raw or "").strip()
+        combined = (combined_raw or "").strip()
+        if not company and combined:
+            separators = ["|", "/", "-", ","]
+            parts = [combined]
+            for separator in separators:
+                if separator in combined:
+                    parts = [part.strip() for part in combined.split(separator) if part.strip()]
+                    if len(parts) >= 2:
+                        break
+            if len(parts) >= 2:
+                company = parts[0]
+                if not union:
+                    union = parts[1]
+            else:
+                company = combined
+        return company, union
+
+    mobile_keys = [
+        "movil",
+        "movil_tecnico",
+        "mobile_code",
+        "numero_de_tecnico",
+        "numero_tecnico",
+        "nro_tecnico",
+        "nro_movil",
+        "numero_movil",
+    ]
+    employee_code_keys = [
+        "employee_code",
+        "codigo_tecnico",
+        "cod_tecnico",
+        "tecnico_codigo",
+        "legajo",
+        "legajo_tecnico",
+    ]
+    technician_name_keys = [
+        "titular",
+        "nombre_del_tecnico",
+        "nombre_tecnico",
+        "tecnico",
+        "name",
+        "nombre",
+    ]
+    supervisor_keys = [
+        "supervisor",
+        "nombre_del_supervisor",
+        "supervisor_nombre",
+        "responsable",
+    ]
+    center_keys = [
+        "centro",
+        "ubicacion",
+        "centro_nombre",
+        "location",
+        "localidad",
+    ]
+    company_keys = [
+        "empresa",
+        "company",
+        "contratista",
+        "proveedor",
+        "empresa_contratista",
+    ]
+    union_keys = [
+        "sindicato",
+        "union",
+        "gremio",
+    ]
+    company_union_keys = [
+        "empresa_y_sindicato",
+        "empresa_sindicato",
+        "empresa_y_gremio",
+    ]
+
+    for index, row in enumerate(rows, start=2):
+        mobile_code = normalize_mobile_code(pick_first(row, mobile_keys))
+        employee_code = pick_first(row, employee_code_keys)
+        technician_name = pick_first(row, technician_name_keys)
+        supervisor_name = pick_first(row, supervisor_keys)
+        center_name = pick_first(row, center_keys)
+        company_name_raw = pick_first(row, company_keys)
+        union_name_raw = pick_first(row, union_keys)
+        company_union_raw = pick_first(row, company_union_keys)
+        company_name, union_name = parse_company_union(company_name_raw, union_name_raw, company_union_raw)
+
+        technician_id = None
+        technician_row = None
+
+        if employee_code:
+            technician_row = connection.execute(
+                "SELECT id, region FROM technicians WHERE employee_code = ?",
+                (employee_code,),
+            ).fetchone()
+            if technician_row:
+                technician_id = technician_row["id"] if is_postgres() else technician_row[0]
+        elif mobile_code:
+            linked = connection.execute(
+                "SELECT technician_id FROM mobile_units WHERE mobile_code = ?",
+                (mobile_code,),
+            ).fetchone()
+            linked_id = None
+            if linked:
+                linked_id = linked["technician_id"] if is_postgres() else linked[0]
+            if linked_id:
+                technician_id = linked_id
+
+        if technician_id is None and technician_name:
+            matches = connection.execute(
+                "SELECT id FROM technicians WHERE LOWER(name) = LOWER(?)",
+                (technician_name,),
+            ).fetchall()
+            if len(matches) == 1:
+                technician_id = matches[0]["id"] if is_postgres() else matches[0][0]
+            elif len(matches) > 1:
+                skipped_rows.append(
+                    f"Fila {index}: hay mas de un tecnico con nombre '{technician_name}'."
+                )
+                continue
+
+        region_value = (center_name or "").strip()
+        if not region_value:
+            region_value = "-"
+
+        if technician_id is None:
+            if not technician_name:
+                skipped_rows.append(f"Fila {index}: falta el titular/nombre del tecnico.")
+                continue
+
+            base_employee_code = (employee_code or "").strip()
+            if not base_employee_code and mobile_code:
+                base_employee_code = mobile_code
+            if not base_employee_code:
+                skipped_rows.append(f"Fila {index}: falta employee_code o movil para generar codigo.")
+                continue
+
+            new_employee_code = ensure_unique_employee_code(base_employee_code)
+            connection.execute(
+                """
+                INSERT INTO technicians (
+                    name,
+                    employee_code,
+                    region,
+                    phone,
+                    commune,
+                    team,
+                    company_name,
+                    union_name,
+                    supervisor_name,
+                    center_name,
+                    is_active
+                ) VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, 1)
+                """,
+                (
+                    technician_name.strip(),
+                    new_employee_code,
+                    region_value,
+                    company_name or None,
+                    union_name or None,
+                    supervisor_name or None,
+                    center_name or None,
+                ),
+            )
+            technician_row = connection.execute(
+                "SELECT id FROM technicians WHERE employee_code = ?",
+                (new_employee_code,),
+            ).fetchone()
+            technician_id = technician_row["id"] if is_postgres() else technician_row[0]
+            created_count += 1
+        else:
+            connection.execute(
+                """
+                UPDATE technicians
+                SET
+                    name = CASE WHEN ? != '' THEN ? ELSE name END,
+                    company_name = CASE WHEN ? != '' THEN ? ELSE company_name END,
+                    union_name = CASE WHEN ? != '' THEN ? ELSE union_name END,
+                    supervisor_name = CASE WHEN ? != '' THEN ? ELSE supervisor_name END,
+                    center_name = CASE WHEN ? != '' THEN ? ELSE center_name END,
+                    region = CASE WHEN ? != '' AND (region IS NULL OR region = '' OR region = '-') THEN ? ELSE region END
+                WHERE id = ?
+                """,
+                (
+                    technician_name,
+                    technician_name,
+                    company_name,
+                    company_name,
+                    union_name,
+                    union_name,
+                    supervisor_name,
+                    supervisor_name,
+                    center_name,
+                    center_name,
+                    center_name,
+                    center_name,
+                    technician_id,
+                ),
+            )
+            updated_count += 1
+
+        if mobile_code:
+            existing_mobile = connection.execute(
+                """
+                SELECT id, technician_id, user_name
+                FROM mobile_units
+                WHERE mobile_code = ?
+                """,
+                (mobile_code,),
+            ).fetchone()
+            if existing_mobile:
+                mobile_id = existing_mobile["id"] if is_postgres() else existing_mobile[0]
+                existing_tech_id = existing_mobile["technician_id"] if is_postgres() else existing_mobile[1]
+                existing_user_name = existing_mobile["user_name"] if is_postgres() else existing_mobile[2]
+                if existing_tech_id != technician_id:
+                    connection.execute(
+                        "UPDATE mobile_units SET technician_id = ? WHERE id = ?",
+                        (technician_id, mobile_id),
+                    )
+                if technician_name and not (existing_user_name or "").strip():
+                    connection.execute(
+                        "UPDATE mobile_units SET user_name = ? WHERE id = ?",
+                        (technician_name.strip(), mobile_id),
+                    )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO mobile_units (
+                        mobile_code,
+                        technician_id,
+                        user_name,
+                        warehouse_description,
+                        warehouse_type,
+                        is_enabled,
+                        notes
+                    ) VALUES (?, ?, ?, ?, 'movil', 1, '')
+                    """,
+                    (
+                        mobile_code,
+                        technician_id,
+                        technician_name.strip() if technician_name else "",
+                        f"Movil {mobile_code}",
+                    ),
+                )
+                created = connection.execute(
+                    "SELECT id FROM mobile_units WHERE mobile_code = ?",
+                    (mobile_code,),
+                ).fetchone()
+                mobile_id = created["id"] if is_postgres() else created[0]
+
+            if center_name:
+                exists_storage = connection.execute(
+                    """
+                    SELECT id
+                    FROM storage_locations
+                    WHERE center_name = ? AND warehouse_code = ?
+                    """,
+                    (center_name, mobile_code),
+                ).fetchone()
+                payload = (
+                    mobile_id,
+                    f"Movil {mobile_code}",
+                    "movil",
+                    (technician_name or "").strip() or None,
+                    1,
+                    center_name,
+                    mobile_code,
+                )
+                if exists_storage:
+                    storage_id = exists_storage["id"] if is_postgres() else exists_storage[0]
+                    connection.execute(
+                        """
+                        UPDATE storage_locations
+                        SET mobile_unit_id = ?,
+                            warehouse_name = ?,
+                            warehouse_type = ?,
+                            user_name = CASE WHEN (user_name IS NULL OR user_name = '') AND ? IS NOT NULL THEN ? ELSE user_name END,
+                            is_enabled = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            payload[0],
+                            payload[1],
+                            payload[2],
+                            payload[3],
+                            payload[3],
+                            payload[4],
+                            storage_id,
+                        ),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO storage_locations (
+                            mobile_unit_id,
+                            center_name,
+                            warehouse_code,
+                            warehouse_name,
+                            warehouse_type,
+                            user_name,
+                            is_enabled
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            mobile_id,
+                            center_name,
+                            mobile_code,
+                            f"Movil {mobile_code}",
+                            "movil",
+                            (technician_name or "").strip() or None,
+                            1,
+                        ),
+                    )
+
+    connection.commit()
+    return {
+        "created_count": created_count,
+        "updated_count": updated_count,
+        "skipped_rows": skipped_rows,
+    }
+
+
 def import_checklist_del_dia(rows):
     import re
 
@@ -2916,6 +3495,9 @@ def import_storage_locations(rows):
 
     for index, row in enumerate(rows, start=2):
         warehouse_code = (row.get("codigo") or "").strip()
+        normalized_code = normalize_mobile_code(warehouse_code)
+        if normalized_code:
+            warehouse_code = normalized_code
         user_name = (row.get("usuario") or "").strip()
         warehouse_name = (row.get("descripcion") or "").strip()
         center_name = (row.get("centro") or "").strip()
@@ -3377,6 +3959,12 @@ def normalize_mobile_code(value):
     cleaned_value = (value or "").strip()
     if cleaned_value.lower() == "total":
         return None
+    if cleaned_value and all(ch.isdigit() or ch in {".", ","} for ch in cleaned_value) and (
+        "." in cleaned_value or "," in cleaned_value
+    ):
+        numeric_value = normalize_float_value(cleaned_value)
+        if numeric_value is not None and float(numeric_value).is_integer():
+            return str(int(numeric_value))
     return cleaned_value
 
 

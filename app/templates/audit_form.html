@@ -22,7 +22,7 @@
             <input
                 type="text"
                 name="auditor_name"
-                value="{% if is_auditor and current_user %}{{ current_user['username'] }}{% else %}{{ request.form.get('auditor_name', '') }}{% endif %}"
+                value="{% if is_auditor and current_user %}{{ current_user['username']|upper }}{% else %}{{ request.form.get('auditor_name', '')|upper }}{% endif %}"
                 placeholder="Nombre del auditor"
                 {% if is_auditor %}readonly{% endif %}
                 required
@@ -38,12 +38,15 @@
                         value="{{ mobile.id }}"
                         data-mobile-code="{{ mobile.mobile_code }}"
                         data-technician-id="{{ mobile.technician_id or '' }}"
-                        data-technician-name="{{ mobile.technician_name or mobile.user_name or '' }}"
-                        data-user-name="{{ mobile.user_name or '' }}"
+                        data-technician-name="{{ (mobile.technician_name or mobile.user_name or '')|upper }}"
+                        data-user-name="{{ (mobile.user_name or '')|upper }}"
                         data-description="{{ mobile.warehouse_description or '' }}"
+                        data-center-name="{{ mobile.technician_center_name or '' }}"
+                        data-region="{{ (mobile.technician_region or '')|upper }}"
+                        data-location="{{ (mobile.technician_center_name or mobile.storage_center_name or mobile.technician_region or '')|upper }}"
                         {% if request.form.get('mobile_unit_id') == mobile.id|string %}selected{% endif %}
                     >
-                        {{ mobile.mobile_code }}{% if mobile.technician_name %} - {{ mobile.technician_name }}{% elif mobile.user_name %} - {{ mobile.user_name }}{% endif %}
+                        {{ mobile.mobile_code }}{% if mobile.technician_name %} - {{ mobile.technician_name|upper }}{% elif mobile.user_name %} - {{ mobile.user_name|upper }}{% endif %}
                     </option>
                 {% endfor %}
             </select>
@@ -71,12 +74,12 @@
 
         <label>
             <span>Ubicación</span>
-            <input type="text" name="location" value="{{ request.form.get('location', '') }}" placeholder="Distrito / Provincia" required>
+            <input type="text" name="location" value="{{ request.form.get('location', '')|upper }}" placeholder="Distrito / Provincia" required>
         </label>
 
         <label>
             <span>Tipo de instalación</span>
-            <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '') }}" placeholder="Alta / Service" required>
+            <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '')|upper }}" placeholder="Alta / Service" required>
         </label>
     </section>
 
@@ -171,7 +174,7 @@
                         name="serialized_stock_notes"
                         rows="3"
                         placeholder="Ej: faltan 2 ONT / seriales X e Y"
-                    >{{ request.form.get('serialized_stock_notes', '') }}</textarea>
+                    >{{ request.form.get('serialized_stock_notes', '')|upper }}</textarea>
                     <small>Obligatorio si seleccionas `Faltan`.</small>
                 </label>
             </article>
@@ -219,7 +222,7 @@
                         name="material_stock_notes"
                         rows="3"
                         placeholder="Ej: faltan conectores / cinta / etc."
-                    >{{ request.form.get('material_stock_notes', '') }}</textarea>
+                    >{{ request.form.get('material_stock_notes', '')|upper }}</textarea>
                     <small>Obligatorio si seleccionas `Faltan`.</small>
                 </label>
             </article>
@@ -301,7 +304,7 @@
                         </div>
 
                         <input type="hidden" name="reason__{{ item['key'] }}" value="{{ request.form.get('reason__' + item['key'], '') }}">
-                        <input type="hidden" name="notes__{{ item['key'] }}" value="{{ request.form.get('notes__' + item['key'], '') }}">
+                        <input type="hidden" name="notes__{{ item['key'] }}" value="{{ request.form.get('notes__' + item['key'], '')|upper }}">
                         <small class="auto-hint tool-match-neutral" data-hand-tool-state="{{ item['key'] }}">Sin responder aún.</small>
                     </article>
                     {% else %}
@@ -388,7 +391,7 @@
                         {% if section["key"] == "calidad_instalaciones" %}
                             <label>
                                 <span>Detalle</span>
-                                <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si hay no conformidad (menor o mayor)">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
+                                <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si hay no conformidad (menor o mayor)">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
                             </label>
                         {% else %}
                             <label>
@@ -406,7 +409,7 @@
 
                             <label>
                                 <span>Observación</span>
-                                <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si no cumple">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
+                                <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si no cumple">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
                             </label>
 
                             <label>
@@ -461,7 +464,7 @@
     <section class="card">
         <label>
             <span>Comentario general</span>
-            <textarea name="general_notes" rows="4" placeholder="Resumen general de la auditoría">{{ request.form.get('general_notes', '') }}</textarea>
+            <textarea name="general_notes" rows="4" placeholder="Resumen general de la auditoría">{{ request.form.get('general_notes', '')|upper }}</textarea>
         </label>
     </section>
 
@@ -621,6 +624,7 @@
         const technicianSignatureCanvas = document.getElementById("technician_signature_canvas");
         const clearTechnicianSignatureButton = document.getElementById("clear_technician_signature_button");
         const form = document.querySelector(".audit-form");
+        const locationInput = form ? form.querySelector('input[name="location"]') : null;
         const serializedStockNotesWrap = document.getElementById("serialized_stock_notes_wrap");
         const serializedStockNotesInput = serializedStockNotesWrap
             ? serializedStockNotesWrap.querySelector("textarea")
@@ -673,6 +677,58 @@
         const materialIndex = {{ (material_index or {})|tojson }};
         const handTools = {{ (hand_tools or [])|tojson }};
         let nextSupplyRequestIndex = 0;
+        let lastAutoLocation = "";
+
+        function shouldUppercaseField(field) {
+            if (!field) {
+                return false;
+            }
+            if (field instanceof HTMLTextAreaElement) {
+                return true;
+            }
+            if (field instanceof HTMLInputElement) {
+                if (field.type !== "text") {
+                    return false;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function forceUppercase(field) {
+            if (!shouldUppercaseField(field)) {
+                return;
+            }
+            const raw = String(field.value || "");
+            const upper = raw.toUpperCase();
+            if (raw === upper) {
+                return;
+            }
+            const start = typeof field.selectionStart === "number" ? field.selectionStart : null;
+            const end = typeof field.selectionEnd === "number" ? field.selectionEnd : null;
+            field.value = upper;
+            if (start !== null && end !== null) {
+                try {
+                    field.setSelectionRange(start, end);
+                } catch (_error) {
+                }
+            }
+        }
+
+        if (form) {
+            form.addEventListener("input", function (event) {
+                const target = event && event.target ? event.target : null;
+                forceUppercase(target);
+            });
+            form.addEventListener(
+                "blur",
+                function (event) {
+                    const target = event && event.target ? event.target : null;
+                    forceUppercase(target);
+                },
+                true
+            );
+        }
 
         function syncSerializedStockUI() {
             if (!serializedStockNotesWrap || !serializedStockNotesInput) {
@@ -1669,6 +1725,7 @@
                 mobileTechnicianTarget.textContent = "Sin dato";
                 mobileUserTarget.textContent = "-";
                 mobileDescriptionTarget.textContent = "-";
+                lastAutoLocation = "";
                 resetSnapshot("Sin datos");
                 return;
             }
@@ -1678,6 +1735,20 @@
             signatureTechnicianNameTarget.textContent = option.dataset.technicianName || "-";
             mobileUserTarget.textContent = option.dataset.userName || "-";
             mobileDescriptionTarget.textContent = option.dataset.description || "-";
+
+            if (locationInput) {
+                const autoLocation = String(
+                    option.dataset.location
+                    || option.dataset.region
+                    || option.dataset.centerName
+                    || option.dataset.description
+                    || ""
+                ).trim();
+                if (autoLocation) {
+                    locationInput.value = autoLocation;
+                    lastAutoLocation = autoLocation;
+                }
+            }
 
             loadSnapshot(option.value);
         }

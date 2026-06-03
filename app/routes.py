@@ -65,6 +65,7 @@ from app.models import (
     import_material_stock,
     import_novedades_diarias,
     import_storage_locations,
+    import_technician_information,
     import_technicians,
     import_vehicles,
     update_mobile_unit_technician,
@@ -353,6 +354,11 @@ CSV_IMPORT_TYPES = {
         "required_columns": ["employee_code", "name", "region"],
         "importer": import_technicians,
     },
+    "technician_information": {
+        "label": "Información técnicos (móvil, supervisor, centro, empresa, sindicato)",
+        "required_columns": [],
+        "importer": import_technician_information,
+    },
     "checklist_del_dia": {
         "label": "CHECK LIST DEL DIA (vehiculos, km y empresa)",
         "required_columns": [],
@@ -406,7 +412,7 @@ def calculate_section_score(section, form_data, files):
     for item in section["items"]:
         status = form_data.get(f"status__{item['key']}", "")
         non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
-        notes = form_data.get(f"notes__{item['key']}", "").strip()
+        notes = form_data.get(f"notes__{item['key']}", "").strip().upper()
         file_photo = files.get(f"photo__{item['key']}")
         camera_photo = files.get(f"photo_camera__{item['key']}")
         if has_uploaded_file(file_photo):
@@ -1395,7 +1401,7 @@ def new_audit():
             if serialized_stock_status not in {"ok", "missing", "not_checked"}:
                 raise ValueError("El estado de serializados no es valido.")
 
-            serialized_stock_notes = (request.form.get("serialized_stock_notes") or "").strip() or None
+            serialized_stock_notes = (request.form.get("serialized_stock_notes") or "").strip().upper() or None
             if serialized_stock_status == "missing" and not serialized_stock_notes:
                 raise ValueError("Si faltan serializados, debes detallar los faltantes.")
 
@@ -1407,7 +1413,7 @@ def new_audit():
             if material_stock_status not in {"ok", "missing", "not_checked"}:
                 raise ValueError("El estado del stock no es valido.")
 
-            material_stock_notes = (request.form.get("material_stock_notes") or "").strip() or None
+            material_stock_notes = (request.form.get("material_stock_notes") or "").strip().upper() or None
             if material_stock_status == "missing" and not material_stock_notes:
                 raise ValueError("Si faltan materiales en stock, debes detallar los faltantes.")
 
@@ -1459,7 +1465,7 @@ def new_audit():
                     except ValueError:
                         raise ValueError("La cantidad solicitada no es valida.")
 
-                notes = (request.form.get(f"supply_request_notes__{index}") or "").strip() or None
+                notes = (request.form.get(f"supply_request_notes__{index}") or "").strip().upper() or None
                 related_item_key = (request.form.get(f"supply_request_item__{index}") or "").strip()
                 related_label = herramientas_item_map.get(related_item_key)
 
@@ -1476,9 +1482,9 @@ def new_audit():
                     }
                 )
 
-            auditor_name = request.form["auditor_name"].strip()
+            auditor_name = request.form["auditor_name"].strip().upper()
             if user and user.get("role") == "auditor":
-                auditor_name = user["username"]
+                auditor_name = user["username"].upper()
 
             audit_id = create_audit(
                 {
@@ -1489,14 +1495,14 @@ def new_audit():
                     "technician_signature_path": technician_signature_path,
                     "technician_display_name": technician_display_name,
                     "technician_employee_code": technician_employee_code,
-                    "location": request.form["location"].strip(),
-                    "installation_type": request.form["installation_type"].strip(),
+                    "location": request.form["location"].strip().upper(),
+                    "installation_type": request.form["installation_type"].strip().upper(),
                     "mobile_unit_id": mobile_unit_id,
                     "technician_id": selected_mobile.get("technician_id"),
                     "vehicle_id": int(vehicle_id_raw),
                     "total_score": total_score,
                     "result_status": result_status,
-                    "general_notes": request.form.get("general_notes", "").strip() or None,
+                    "general_notes": request.form.get("general_notes", "").strip().upper() or None,
                     "serialized_stock_status": serialized_stock_status,
                     "serialized_stock_notes": serialized_stock_notes,
                     "material_stock_status": material_stock_status,
