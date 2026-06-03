@@ -1164,6 +1164,13 @@ def imports():
                 )
         except ValueError as exc:
             flash(str(exc), "error")
+        except Exception as exc:
+            current_app.logger.exception("Error importando %s", import_type)
+            flash(
+                "Error interno importando el archivo. "
+                f"Detalle: {type(exc).__name__}: {str(exc)[:180]}",
+                "error",
+            )
 
     return render_template(
         "imports.html",
