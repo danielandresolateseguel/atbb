@@ -2319,6 +2319,280 @@ def fetch_audit_reports_status_breakdown(filters=None, auditor_user_id=None):
     return breakdown
 
 
+def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None, limit=500):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    label_expr = "COALESCE(technicians.supervisor_name, 'Sin supervisor')"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            {label_expr} AS supervisor_name,
+            COUNT(*) AS audits_count,
+            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN audits.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(audits.total_score) AS average_score,
+            MAX(audits.audit_date) AS last_audit_date
+        FROM audits
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        {where_sql}
+        GROUP BY {label_expr}
+        ORDER BY audits_count DESC, {label_expr} ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    breakdown = []
+    for row in rows:
+        total = row["audits_count"] or 0
+        approved = row["approved_count"] or 0
+        breakdown.append(
+            {
+                "supervisor_name": row["supervisor_name"] or "Sin supervisor",
+                "audits_count": total,
+                "approved_count": approved,
+                "critical_count": row["critical_count"] or 0,
+                "rejected_count": row["rejected_count"] or 0,
+                "approval_rate": 0 if total == 0 else round((approved / total) * 100),
+                "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
+                "last_audit_date": row["last_audit_date"],
+            }
+        )
+    return breakdown
+
+
+def fetch_audit_reports_center_breakdown(filters=None, auditor_user_id=None, limit=500):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    label_expr = "COALESCE(technicians.center_name, 'Sin centro')"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            {label_expr} AS center_name,
+            COUNT(*) AS audits_count,
+            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN audits.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(audits.total_score) AS average_score,
+            MAX(audits.audit_date) AS last_audit_date
+        FROM audits
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        {where_sql}
+        GROUP BY {label_expr}
+        ORDER BY audits_count DESC, {label_expr} ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    breakdown = []
+    for row in rows:
+        total = row["audits_count"] or 0
+        approved = row["approved_count"] or 0
+        breakdown.append(
+            {
+                "center_name": row["center_name"] or "Sin centro",
+                "audits_count": total,
+                "approved_count": approved,
+                "critical_count": row["critical_count"] or 0,
+                "rejected_count": row["rejected_count"] or 0,
+                "approval_rate": 0 if total == 0 else round((approved / total) * 100),
+                "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
+                "last_audit_date": row["last_audit_date"],
+            }
+        )
+    return breakdown
+
+
+def fetch_audit_reports_company_breakdown(filters=None, auditor_user_id=None, limit=500):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    label_expr = "COALESCE(technicians.company_name, 'Sin empresa')"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            {label_expr} AS company_name,
+            COUNT(*) AS audits_count,
+            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN audits.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(audits.total_score) AS average_score,
+            MAX(audits.audit_date) AS last_audit_date
+        FROM audits
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        {where_sql}
+        GROUP BY {label_expr}
+        ORDER BY audits_count DESC, {label_expr} ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    breakdown = []
+    for row in rows:
+        total = row["audits_count"] or 0
+        approved = row["approved_count"] or 0
+        breakdown.append(
+            {
+                "company_name": row["company_name"] or "Sin empresa",
+                "audits_count": total,
+                "approved_count": approved,
+                "critical_count": row["critical_count"] or 0,
+                "rejected_count": row["rejected_count"] or 0,
+                "approval_rate": 0 if total == 0 else round((approved / total) * 100),
+                "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
+                "last_audit_date": row["last_audit_date"],
+            }
+        )
+    return breakdown
+
+
+def fetch_audit_reports_technician_ranking(filters=None, auditor_user_id=None, limit=200):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    name_expr = "COALESCE(technicians.name, audits.technician_display_name, 'Sin técnico')"
+    employee_expr = "COALESCE(technicians.employee_code, audits.technician_employee_code, '')"
+    supervisor_expr = "COALESCE(technicians.supervisor_name, '')"
+    center_expr = "COALESCE(technicians.center_name, '')"
+    company_expr = "COALESCE(technicians.company_name, '')"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            {name_expr} AS technician_name,
+            {employee_expr} AS technician_employee_code,
+            {supervisor_expr} AS supervisor_name,
+            {center_expr} AS center_name,
+            {company_expr} AS company_name,
+            COUNT(*) AS audits_count,
+            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN audits.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(audits.total_score) AS average_score,
+            MAX(audits.audit_date) AS last_audit_date
+        FROM audits
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        {where_sql}
+        GROUP BY {name_expr}, {employee_expr}, {supervisor_expr}, {center_expr}, {company_expr}
+        ORDER BY critical_count DESC, audits_count DESC, average_score ASC, {name_expr} ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    ranking = []
+    for row in rows:
+        total = row["audits_count"] or 0
+        approved = row["approved_count"] or 0
+        ranking.append(
+            {
+                "technician_name": row["technician_name"] or "Sin técnico",
+                "technician_employee_code": row["technician_employee_code"] or "",
+                "supervisor_name": row["supervisor_name"] or "",
+                "center_name": row["center_name"] or "",
+                "company_name": row["company_name"] or "",
+                "audits_count": total,
+                "approved_count": approved,
+                "critical_count": row["critical_count"] or 0,
+                "rejected_count": row["rejected_count"] or 0,
+                "approval_rate": 0 if total == 0 else round((approved / total) * 100),
+                "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
+                "last_audit_date": row["last_audit_date"],
+            }
+        )
+    return ranking
+
+
+def fetch_audit_reports_mobile_ranking(filters=None, auditor_user_id=None, limit=200):
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            COALESCE(mobile_units.mobile_code, 'Sin móvil') AS mobile_code,
+            COUNT(*) AS audits_count,
+            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN audits.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(audits.total_score) AS average_score,
+            MAX(audits.audit_date) AS last_audit_date
+        FROM audits
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        {where_sql}
+        GROUP BY COALESCE(mobile_units.mobile_code, 'Sin móvil')
+        ORDER BY critical_count DESC, audits_count DESC, average_score ASC, COALESCE(mobile_units.mobile_code, 'Sin móvil') ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    ranking = []
+    for row in rows:
+        total = row["audits_count"] or 0
+        approved = row["approved_count"] or 0
+        ranking.append(
+            {
+                "mobile_code": row["mobile_code"] or "Sin móvil",
+                "audits_count": total,
+                "approved_count": approved,
+                "critical_count": row["critical_count"] or 0,
+                "rejected_count": row["rejected_count"] or 0,
+                "approval_rate": 0 if total == 0 else round((approved / total) * 100),
+                "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
+                "last_audit_date": row["last_audit_date"],
+            }
+        )
+    return ranking
+
+
+def fetch_audit_reports_time_series(filters=None, auditor_user_id=None, granularity="month", limit=60):
+    normalized = (granularity or "").strip().lower()
+    if normalized not in {"month", "week"}:
+        raise ValueError("Granularidad no valida. Usa 'month' o 'week'.")
+
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+
+    if is_postgres():
+        if normalized == "month":
+            period_key_expr = "to_char(date_trunc('month', audits.audit_date::date), 'YYYY-MM')"
+        else:
+            period_key_expr = "to_char(date_trunc('week', audits.audit_date::date), 'IYYY-\"W\"IW')"
+        period_start_expr = "MIN(audits.audit_date::date)"
+    else:
+        if normalized == "month":
+            period_key_expr = "strftime('%Y-%m', audits.audit_date)"
+        else:
+            period_key_expr = "strftime('%Y-W%W', audits.audit_date)"
+        period_start_expr = "MIN(audits.audit_date)"
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            {period_key_expr} AS period_key,
+            {period_start_expr} AS period_start,
+            COUNT(*) AS audits_count,
+            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN audits.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(audits.total_score) AS average_score
+        FROM audits
+        {where_sql}
+        GROUP BY {period_key_expr}
+        ORDER BY period_start DESC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+
+    series = []
+    for row in rows:
+        total = row["audits_count"] or 0
+        approved = row["approved_count"] or 0
+        series.append(
+            {
+                "period_key": row["period_key"],
+                "period_start": row["period_start"],
+                "audits_count": total,
+                "approved_count": approved,
+                "critical_count": row["critical_count"] or 0,
+                "rejected_count": row["rejected_count"] or 0,
+                "approval_rate": 0 if total == 0 else round((approved / total) * 100),
+                "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
+            }
+        )
+    return series
+
+
 def fetch_audit_reports_section_breakdown(filters=None, auditor_user_id=None):
     where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
     rows = get_db().execute(

@@ -25,8 +25,8 @@
                     {% endif %}
                 </div>
                 <div class="report-actions no-print">
-                    <a class="button button-secondary" href="{{ url_for('main.reports', from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor) }}">Volver a reportes</a>
-                    <a class="button button-primary" href="{{ url_for('main.reports_print', report_key=report_key, from_date=filters.from_date, to_date=filters.to_date, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
+                    <a class="button button-secondary" href="{{ url_for('main.reports', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">Volver a reportes</a>
+                    <a class="button button-primary" href="{{ url_for('main.reports_print', report_key=report_key, from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
                 </div>
             </header>
 

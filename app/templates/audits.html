@@ -30,6 +30,7 @@
                 <option value="Aprobada" {% if filters.status == "Aprobada" %}selected{% endif %}>Aprobada</option>
                 <option value="Aprobada con observaciones" {% if filters.status == "Aprobada con observaciones" %}selected{% endif %}>Aprobada con observaciones</option>
                 <option value="Critica" {% if filters.status == "Critica" %}selected{% endif %}>Crítica</option>
+                <option value="Rechazada" {% if filters.status == "Rechazada" %}selected{% endif %}>Rechazada</option>
             </select>
         </label>
         {% if can_view_all_audits %}

@@ -39,6 +39,12 @@ from app.models import (
     fetch_audit_reports_supply_requests_detail,
     fetch_audit_reports_supply_requests_summary,
     fetch_audit_reports_critical_findings,
+    fetch_audit_reports_supervisor_breakdown,
+    fetch_audit_reports_center_breakdown,
+    fetch_audit_reports_company_breakdown,
+    fetch_audit_reports_technician_ranking,
+    fetch_audit_reports_mobile_ranking,
+    fetch_audit_reports_time_series,
     fetch_dashboard_stats,
     fetch_distinct_mobile_codes,
     fetch_distinct_auditors,
@@ -348,6 +354,8 @@ def build_reports_context(report_key, filters, auditor_user_id):
         title_filter.append(f"Desde {filters['from_date']}")
     if (filters.get("to_date") or "").strip():
         title_filter.append(f"Hasta {filters['to_date']}")
+    if (filters.get("status") or "").strip():
+        title_filter.append(f"Estado {filters['status']}")
     if (filters.get("auditor") or "").strip():
         title_filter.append(f"Auditor {filters['auditor']}")
     filter_suffix = " | ".join(title_filter)
@@ -442,6 +450,101 @@ def build_reports_context(report_key, filters, auditor_user_id):
             {"key": "non_compliant_count", "label": "No conformes"},
             {"key": "critical_non_compliant_count", "label": "Críticas"},
             {"key": "not_applicable_count", "label": "No aplica"},
+        ]
+    elif report_key == "supervisores":
+        title = "Desglose por supervisor"
+        subtitle = "Auditorías, criticidad y promedio por supervisor."
+        rows = fetch_audit_reports_supervisor_breakdown(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "supervisor_name", "label": "Supervisor"},
+            {"key": "audits_count", "label": "Auditorías"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
+            {"key": "last_audit_date", "label": "Última auditoría"},
+        ]
+    elif report_key == "centros":
+        title = "Desglose por centro"
+        subtitle = "Auditorías, criticidad y promedio por centro."
+        rows = fetch_audit_reports_center_breakdown(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "center_name", "label": "Centro"},
+            {"key": "audits_count", "label": "Auditorías"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
+            {"key": "last_audit_date", "label": "Última auditoría"},
+        ]
+    elif report_key == "empresas":
+        title = "Desglose por empresa"
+        subtitle = "Auditorías, criticidad y promedio por empresa."
+        rows = fetch_audit_reports_company_breakdown(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "company_name", "label": "Empresa"},
+            {"key": "audits_count", "label": "Auditorías"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
+            {"key": "last_audit_date", "label": "Última auditoría"},
+        ]
+    elif report_key == "ranking_tecnicos":
+        title = "Ranking de técnicos"
+        subtitle = "Ordenado por criticidad y volumen de auditorías."
+        rows = fetch_audit_reports_technician_ranking(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "technician_name", "label": "Técnico"},
+            {"key": "technician_employee_code", "label": "Legajo"},
+            {"key": "supervisor_name", "label": "Supervisor"},
+            {"key": "center_name", "label": "Centro"},
+            {"key": "company_name", "label": "Empresa"},
+            {"key": "audits_count", "label": "Auditorías"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
+            {"key": "last_audit_date", "label": "Última auditoría"},
+        ]
+    elif report_key == "ranking_moviles":
+        title = "Ranking de móviles"
+        subtitle = "Ordenado por criticidad y volumen de auditorías."
+        rows = fetch_audit_reports_mobile_ranking(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "mobile_code", "label": "Móvil"},
+            {"key": "audits_count", "label": "Auditorías"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
+            {"key": "last_audit_date", "label": "Última auditoría"},
+        ]
+    elif report_key == "tendencia_mensual":
+        title = "Tendencia mensual"
+        subtitle = "Evolución por mes de auditorías, criticidad, tasa de aprobación y promedio."
+        rows = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="month", limit=60)
+        columns = [
+            {"key": "period_key", "label": "Mes"},
+            {"key": "audits_count", "label": "Auditorías"},
+            {"key": "approved_count", "label": "Aprobadas"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
+        ]
+    elif report_key == "tendencia_semanal":
+        title = "Tendencia semanal"
+        subtitle = "Evolución por semana de auditorías, criticidad, tasa de aprobación y promedio."
+        rows = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="week", limit=80)
+        columns = [
+            {"key": "period_key", "label": "Semana"},
+            {"key": "audits_count", "label": "Auditorías"},
+            {"key": "approved_count", "label": "Aprobadas"},
+            {"key": "critical_count", "label": "Críticas"},
+            {"key": "rejected_count", "label": "Rechazadas"},
+            {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "average_score", "label": "Promedio"},
         ]
     elif report_key == "hallazgos_criticos":
         title = "Hallazgos críticos"
@@ -1571,6 +1674,7 @@ def reports():
     filters = {
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
     }
     if auditor_user_id is not None:
@@ -1579,6 +1683,8 @@ def reports():
     summary = fetch_audit_reports_management_summary(filters, auditor_user_id=auditor_user_id)
     status_breakdown = fetch_audit_reports_status_breakdown(filters, auditor_user_id=auditor_user_id)
     section_breakdown = fetch_audit_reports_section_breakdown(filters, auditor_user_id=auditor_user_id)[:8]
+    trend_monthly = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="month", limit=12)
+    trend_weekly = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="week", limit=12)
     auditors = fetch_distinct_auditors() if can_view_all_audits() else []
 
     return render_template(
@@ -1587,6 +1693,8 @@ def reports():
         summary=summary,
         status_breakdown=status_breakdown,
         section_breakdown=section_breakdown,
+        trend_monthly=trend_monthly,
+        trend_weekly=trend_weekly,
         auditors=auditors,
     )
 
@@ -1602,6 +1710,7 @@ def export_report(report_key):
     filters = {
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
     }
     if auditor_user_id is not None:
@@ -1609,12 +1718,14 @@ def export_report(report_key):
 
     date_from = filters["from_date"] or "inicio"
     date_to = filters["to_date"] or "hoy"
+    status_suffix = (filters.get("status") or "").strip().replace(" ", "_") or "todos"
     auditor_suffix = (filters.get("auditor") or "").strip().replace(" ", "_") or "todos"
-    filename = f"reporte_{report_key}_{date_from}_a_{date_to}_{auditor_suffix}.csv"
+    filename = f"reporte_{report_key}_{date_from}_a_{date_to}_{status_suffix}_{auditor_suffix}.csv"
 
     filter_context = {
         "from_date": filters["from_date"],
         "to_date": filters["to_date"],
+        "status_filter": filters["status"],
         "auditor_filter": filters["auditor"],
     }
 
@@ -1649,6 +1760,143 @@ def export_report(report_key):
                 "non_compliant_count",
                 "critical_non_compliant_count",
                 "not_applicable_count",
+            ],
+        )
+
+    if report_key == "supervisores":
+        rows = fetch_audit_reports_supervisor_breakdown(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "supervisor_name",
+                "audits_count",
+                "approved_count",
+                "critical_count",
+                "rejected_count",
+                "approval_rate",
+                "average_score",
+                "last_audit_date",
+            ],
+        )
+
+    if report_key == "centros":
+        rows = fetch_audit_reports_center_breakdown(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "center_name",
+                "audits_count",
+                "approved_count",
+                "critical_count",
+                "rejected_count",
+                "approval_rate",
+                "average_score",
+                "last_audit_date",
+            ],
+        )
+
+    if report_key == "empresas":
+        rows = fetch_audit_reports_company_breakdown(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "company_name",
+                "audits_count",
+                "approved_count",
+                "critical_count",
+                "rejected_count",
+                "approval_rate",
+                "average_score",
+                "last_audit_date",
+            ],
+        )
+
+    if report_key == "ranking_tecnicos":
+        rows = fetch_audit_reports_technician_ranking(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "technician_name",
+                "technician_employee_code",
+                "supervisor_name",
+                "center_name",
+                "company_name",
+                "audits_count",
+                "approved_count",
+                "critical_count",
+                "rejected_count",
+                "approval_rate",
+                "average_score",
+                "last_audit_date",
+            ],
+        )
+
+    if report_key == "ranking_moviles":
+        rows = fetch_audit_reports_mobile_ranking(filters, auditor_user_id=auditor_user_id)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "mobile_code",
+                "audits_count",
+                "approved_count",
+                "critical_count",
+                "rejected_count",
+                "approval_rate",
+                "average_score",
+                "last_audit_date",
+            ],
+        )
+
+    if report_key == "tendencia_mensual":
+        rows = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="month", limit=120)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "period_key",
+                "period_start",
+                "audits_count",
+                "approved_count",
+                "critical_count",
+                "rejected_count",
+                "approval_rate",
+                "average_score",
+            ],
+        )
+
+    if report_key == "tendencia_semanal":
+        rows = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="week", limit=200)
+        rows = [{**filter_context, **row} for row in rows]
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=list(filter_context.keys())
+            + [
+                "period_key",
+                "period_start",
+                "audits_count",
+                "approved_count",
+                "critical_count",
+                "rejected_count",
+                "approval_rate",
+                "average_score",
             ],
         )
 
@@ -1749,6 +1997,7 @@ def export_report_pdf(report_key):
     filters = {
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
     }
     if auditor_user_id is not None:
@@ -1756,8 +2005,9 @@ def export_report_pdf(report_key):
 
     date_from = filters["from_date"] or "inicio"
     date_to = filters["to_date"] or "hoy"
+    status_suffix = (filters.get("status") or "").strip().replace(" ", "_") or "todos"
     auditor_suffix = (filters.get("auditor") or "").strip().replace(" ", "_") or "todos"
-    filename = f"reporte_{report_key}_{date_from}_a_{date_to}_{auditor_suffix}.pdf"
+    filename = f"reporte_{report_key}_{date_from}_a_{date_to}_{status_suffix}_{auditor_suffix}.pdf"
 
     context = build_reports_context(report_key, filters, auditor_user_id)
     if not context:
@@ -1783,6 +2033,7 @@ def export_report_pdf(report_key):
                 report_key=report_key,
                 from_date=filters.get("from_date", ""),
                 to_date=filters.get("to_date", ""),
+                status=filters.get("status", ""),
                 auditor=filters.get("auditor", ""),
                 print=1,
             )
@@ -1800,6 +2051,7 @@ def reports_print(report_key):
     filters = {
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
     }
     if auditor_user_id is not None:
