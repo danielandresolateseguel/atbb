@@ -5,6 +5,10 @@ CHECKLIST_SECTIONS = [
         "weight": 30,
         "items": [
             {"key": "casco", "label": "Uso de casco de seguridad", "critical": True},
+            {"key": "lentes", "label": "Uso de lentes de proteccion", "critical": False},
+            {"key": "chaleco", "label": "Uso de chaleco reflectante", "critical": True},
+            {"key": "botas", "label": "Uso de botas de seguridad", "critical": True},
+            {"key": "senalizacion", "label": "Señalizacion del area de trabajo", "critical": True},
             {
                 "key": "guantes_fibra_sintetica_poliuretano",
                 "label": "Guantes de fibra sintética con palma y dedos de poliuretano",
@@ -15,10 +19,6 @@ CHECKLIST_SECTIONS = [
                 "label": "Guante dieléctrico (tensión de uso 1000 V, tensión de prueba máximo 5000 V)",
                 "critical": True,
             },
-            {"key": "lentes", "label": "Uso de lentes de proteccion", "critical": False},
-            {"key": "chaleco", "label": "Uso de chaleco reflectante", "critical": True},
-            {"key": "botas", "label": "Uso de botas de seguridad", "critical": True},
-            {"key": "senalizacion", "label": "Señalizacion del area de trabajo", "critical": True},
             {"key": "orden_entorno", "label": "Orden y limpieza del entorno", "critical": False},
             {"key": "detector_voltaje", "label": "280300104 - Detector de voltaje", "critical": True},
             {
