@@ -100,20 +100,16 @@ NON_COMPLIANCE_REASON_LABELS = {
     "otro": "Otro",
 }
 
-TOOL_SECTION_KEYS = {"herramientas", "herramientas_mano"}
-TOOL_NON_IMPUTABLE_REASONS = {"danio", "reparacion", "no_asignado"}
+NON_IMPUTABLE_REASONS = {"danio", "reparacion", "no_asignado"}
 
 
-def is_non_imputable_tool_failure(section_key, status, non_compliance_reason):
-    if not section_key or not status:
+def is_non_imputable_non_compliance(status, non_compliance_reason):
+    if not status:
         return False
-    normalized_section_key = str(section_key).strip().lower()
     normalized_status = str(status).strip().lower()
     normalized_reason = str(non_compliance_reason or "").strip().lower()
     return (
-        normalized_section_key in TOOL_SECTION_KEYS
-        and normalized_status == "no_cumple"
-        and normalized_reason in TOOL_NON_IMPUTABLE_REASONS
+        normalized_status == "no_cumple" and normalized_reason in NON_IMPUTABLE_REASONS
     )
 
 
@@ -785,11 +781,7 @@ def calculate_section_score(section, form_data, files):
     for item in section["items"]:
         status = form_data.get(f"status__{item['key']}", "")
         non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
-        non_imputable_tool_failure = is_non_imputable_tool_failure(
-            section.get("key"),
-            status,
-            non_compliance_reason,
-        )
+        non_imputable_non_compliance = is_non_imputable_non_compliance(status, non_compliance_reason)
         notes = form_data.get(f"notes__{item['key']}", "").strip().upper()
         file_photo = files.get(f"photo__{item['key']}")
         camera_photo = files.get(f"photo_camera__{item['key']}")
@@ -876,14 +868,14 @@ def calculate_section_score(section, form_data, files):
         if requires_photo and not has_uploaded_file(photo_file):
             raise ValueError(f"Debes adjuntar evidencia fotografica en: {item['label']}")
 
-        if status != "no_aplica" and not non_imputable_tool_failure:
+        if status != "no_aplica" and not non_imputable_non_compliance:
             valid_items += 1
             score_sum += status_scores.get(status, 0.0)
 
         if (
             status in critical_failure_statuses
             and item["critical"]
-            and not non_imputable_tool_failure
+            and not non_imputable_non_compliance
         ):
             has_critical_failure = True
 
@@ -1281,10 +1273,8 @@ def build_audit_report_metrics(audit, items):
     non_compliant_statuses = {"no_cumple", "nc_menor", "nc_mayor"}
 
     def include_in_kpi(item):
-        return item["status"] != "no_aplica" and not is_non_imputable_tool_failure(
-            item.get("section_key"),
-            item.get("status"),
-            item.get("non_compliance_reason"),
+        return item["status"] != "no_aplica" and not is_non_imputable_non_compliance(
+            item.get("status"), item.get("non_compliance_reason")
         )
 
     compliant_count = sum(
@@ -1299,11 +1289,7 @@ def build_audit_report_metrics(audit, items):
     non_imputable_findings = [
         item
         for item in items
-        if is_non_imputable_tool_failure(
-            item.get("section_key"),
-            item.get("status"),
-            item.get("non_compliance_reason"),
-        )
+        if is_non_imputable_non_compliance(item.get("status"), item.get("non_compliance_reason"))
     ]
     raw_non_compliant_count = sum(1 for item in items if item["status"] in non_compliant_statuses)
     critical_findings = [
@@ -1345,11 +1331,7 @@ def build_audit_report_metrics(audit, items):
         section_non_imputable = sum(
             1
             for item in section_items
-            if is_non_imputable_tool_failure(
-                item.get("section_key"),
-                item.get("status"),
-                item.get("non_compliance_reason"),
-            )
+            if is_non_imputable_non_compliance(item.get("status"), item.get("non_compliance_reason"))
         )
         sections.append(
             {

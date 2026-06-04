@@ -412,9 +412,7 @@
                                     <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
                                     <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                                 </select>
-                                {% if section["key"] in ["herramientas", "herramientas_mano"] %}
-                                    <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>No asignado</strong>, se registra como hallazgo sin impacto en el score.</small>
-                                {% endif %}
+                                <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>No asignado</strong>, se registra como hallazgo sin impacto en el score.</small>
                             </label>
 
                             <label>
