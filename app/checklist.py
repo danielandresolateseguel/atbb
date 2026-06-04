@@ -33,7 +33,7 @@ CHECKLIST_SECTIONS = [
         "items": [
             {"key": "fusionadora", "label": "Fusionadora operativa", "critical": True},
             {"key": "cortadora", "label": "Cortadora de FO (Cleaver)", "critical": True},
-            {"key": "peladora", "label": "Peladora de fibra funcional", "critical": False},
+            {"key": "pinza_peladora_claus_cfs2", "label": "280300208 - Pinza peladora Claus CFS2", "critical": False},
             {"key": "peladora_drop_plano", "label": "Peladora de Drop plano", "critical": False},
             {"key": "medidor", "label": "Power Meter", "critical": True},
             {"key": "laser_localizador_fallas", "label": "Laser localizador de fallas FO", "critical": False},
@@ -43,7 +43,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
             },
             {"key": "lapiz_limpiador_conector_fo", "label": "Lápiz limpiador conector FO", "critical": False},
-            {"key": "limpieza", "label": "Alcohol Ispopropilico + Paño", "critical": False},
+            {"key": "limpieza", "label": "Alcohol Isopropilico + Paño", "critical": False},
             {"key": "baterias", "label": "Cargador USB", "critical": False},
             {"key": "orden_kit", "label": "Bolso kit de fibra", "critical": False},
         ],
@@ -91,14 +91,6 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280300101",
-                "evidence_required": False,
-            },
-            {
-                "key": "mano_pinza_peladora_claus",
-                "label": "280300208 - Pinza peladora Claus CFS2",
-                "critical": False,
-                "hand_tool": True,
-                "material_code": "280300208",
                 "evidence_required": False,
             },
             {
@@ -242,9 +234,9 @@ TOOL_MATCH_RULES = {
         "label": "Cortadora de FO (Cleaver)",
         "keywords": ["cortadora", "cleaver", "ct-30", "fc-6", "precision", "precisión"],
     },
-    "peladora": {
-        "label": "Peladora de fibra",
-        "keywords": ["peladora", "stripper", "pelador", "pela fibra"],
+    "pinza_peladora_claus_cfs2": {
+        "label": "Pinza peladora Claus CFS2",
+        "keywords": ["280300208", "pinza peladora", "claus", "cfs2"],
     },
     "peladora_drop_plano": {
         "label": "Peladora de Drop plano",

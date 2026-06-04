@@ -100,6 +100,23 @@ NON_COMPLIANCE_REASON_LABELS = {
     "otro": "Otro",
 }
 
+TOOL_SECTION_KEYS = {"herramientas", "herramientas_mano"}
+TOOL_NON_IMPUTABLE_REASONS = {"danio", "reparacion"}
+
+
+def is_non_imputable_tool_failure(section_key, status, non_compliance_reason):
+    if not section_key or not status:
+        return False
+    normalized_section_key = str(section_key).strip().lower()
+    normalized_status = str(status).strip().lower()
+    normalized_reason = str(non_compliance_reason or "").strip().lower()
+    return (
+        normalized_section_key in TOOL_SECTION_KEYS
+        and normalized_status == "no_cumple"
+        and normalized_reason in TOOL_NON_IMPUTABLE_REASONS
+    )
+
+
 
 @main.app_template_filter("non_compliance_reason_label")
 def non_compliance_reason_label(value):
@@ -768,6 +785,11 @@ def calculate_section_score(section, form_data, files):
     for item in section["items"]:
         status = form_data.get(f"status__{item['key']}", "")
         non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
+        non_imputable_tool_failure = is_non_imputable_tool_failure(
+            section.get("key"),
+            status,
+            non_compliance_reason,
+        )
         notes = form_data.get(f"notes__{item['key']}", "").strip().upper()
         file_photo = files.get(f"photo__{item['key']}")
         camera_photo = files.get(f"photo_camera__{item['key']}")
@@ -854,11 +876,15 @@ def calculate_section_score(section, form_data, files):
         if requires_photo and not has_uploaded_file(photo_file):
             raise ValueError(f"Debes adjuntar evidencia fotografica en: {item['label']}")
 
-        if status != "no_aplica":
+        if status != "no_aplica" and not non_imputable_tool_failure:
             valid_items += 1
             score_sum += status_scores.get(status, 0.0)
 
-        if status in critical_failure_statuses and item["critical"]:
+        if (
+            status in critical_failure_statuses
+            and item["critical"]
+            and not non_imputable_tool_failure
+        ):
             has_critical_failure = True
 
         serialized_items.append(
@@ -1254,13 +1280,36 @@ def build_audit_report_metrics(audit, items):
     compliant_statuses = {"cumple", "conforme"}
     non_compliant_statuses = {"no_cumple", "nc_menor", "nc_mayor"}
 
-    compliant_count = sum(1 for item in items if item["status"] in compliant_statuses)
-    non_compliant_count = sum(1 for item in items if item["status"] in non_compliant_statuses)
+    def include_in_kpi(item):
+        return item["status"] != "no_aplica" and not is_non_imputable_tool_failure(
+            item.get("section_key"),
+            item.get("status"),
+            item.get("non_compliance_reason"),
+        )
+
+    compliant_count = sum(
+        1 for item in items if include_in_kpi(item) and item["status"] in compliant_statuses
+    )
+    non_compliant_count = sum(
+        1 for item in items if include_in_kpi(item) and item["status"] in non_compliant_statuses
+    )
     not_applicable_count = sum(1 for item in items if item["status"] == "no_aplica")
     applicable_count = compliant_count + non_compliant_count
     evidence_count = sum(1 for item in items if item.get("photo_path"))
+    non_imputable_findings = [
+        item
+        for item in items
+        if is_non_imputable_tool_failure(
+            item.get("section_key"),
+            item.get("status"),
+            item.get("non_compliance_reason"),
+        )
+    ]
+    raw_non_compliant_count = sum(1 for item in items if item["status"] in non_compliant_statuses)
     critical_findings = [
-        item for item in items if item["status"] in non_compliant_statuses and item["is_critical"]
+        item
+        for item in items
+        if include_in_kpi(item) and item["status"] in non_compliant_statuses and item["is_critical"]
     ]
     findings = [item for item in items if item["status"] in non_compliant_statuses]
 
@@ -1278,21 +1327,45 @@ def build_audit_report_metrics(audit, items):
     sections = []
     grouped_items = build_grouped_audit_items(items)
     for section_title, section_items in grouped_items.items():
-        section_compliant = sum(1 for item in section_items if item["status"] in compliant_statuses)
-        section_non_compliant = sum(1 for item in section_items if item["status"] in non_compliant_statuses)
+        section_compliant = sum(
+            1
+            for item in section_items
+            if include_in_kpi(item) and item["status"] in compliant_statuses
+        )
+        section_non_compliant = sum(
+            1
+            for item in section_items
+            if include_in_kpi(item) and item["status"] in non_compliant_statuses
+        )
         section_applicable = section_compliant + section_non_compliant
         section_score = 0 if section_applicable == 0 else round((section_compliant / section_applicable) * 100)
+        section_raw_non_compliant = sum(
+            1 for item in section_items if item["status"] in non_compliant_statuses
+        )
+        section_non_imputable = sum(
+            1
+            for item in section_items
+            if is_non_imputable_tool_failure(
+                item.get("section_key"),
+                item.get("status"),
+                item.get("non_compliance_reason"),
+            )
+        )
         sections.append(
             {
                 "title": section_title,
                 "score": section_score,
                 "compliant_count": section_compliant,
                 "non_compliant_count": section_non_compliant,
+                "raw_non_compliant_count": section_raw_non_compliant,
+                "non_imputable_count": section_non_imputable,
                 "not_applicable_count": sum(1 for item in section_items if item["status"] == "no_aplica"),
                 "critical_count": sum(
                     1
                     for item in section_items
-                    if item["status"] in non_compliant_statuses and item["is_critical"]
+                    if include_in_kpi(item)
+                    and item["status"] in non_compliant_statuses
+                    and item["is_critical"]
                 ),
             }
         )
@@ -1307,9 +1380,11 @@ def build_audit_report_metrics(audit, items):
             "applicable_count": applicable_count,
             "compliant_count": compliant_count,
             "non_compliant_count": non_compliant_count,
+            "raw_non_compliant_count": raw_non_compliant_count,
             "not_applicable_count": not_applicable_count,
             "critical_findings_count": len(critical_findings),
             "findings_count": len(findings),
+            "non_imputable_findings_count": len(non_imputable_findings),
             "evidence_count": evidence_count,
             "compliance_rate": compliance_rate,
             "evidence_rate": evidence_rate,
@@ -1317,6 +1392,7 @@ def build_audit_report_metrics(audit, items):
         "sections": sections,
         "critical_findings": critical_findings,
         "findings": findings,
+        "non_imputable_findings": non_imputable_findings,
         "evidence_items": [item for item in items if item.get("photo_path")],
         "score_ring": {
             "circumference": round(circumference, 2),

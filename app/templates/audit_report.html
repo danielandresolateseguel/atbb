@@ -141,7 +141,12 @@
                     <article class="report-kpi">
                         <span>Hallazgos</span>
                         <strong>{{ report["summary"]["findings_count"] }}</strong>
-                        <small>{{ report["summary"]["critical_findings_count"] }} críticos</small>
+                        <small>
+                            {{ report["summary"]["critical_findings_count"] }} críticos
+                            {% if report["summary"]["non_imputable_findings_count"] %}
+                                | {{ report["summary"]["non_imputable_findings_count"] }} sin impacto
+                            {% endif %}
+                        </small>
                     </article>
                     <article class="report-kpi">
                         <span>Evidencias</span>
@@ -171,7 +176,7 @@
                                 </div>
                                 <p class="section-bar-meta">
                                     <a class="table-link" href="{{ url_for('main.audit_report', audit_id=audit['id'], status='cumple', section=section['title'], _anchor='detalle-checklist') }}">{{ section["compliant_count"] }} cumple</a>
-                                    | <a class="table-link" href="{{ url_for('main.audit_report', audit_id=audit['id'], status='no_cumple', section=section['title'], _anchor='detalle-checklist') }}">{{ section["non_compliant_count"] }} no cumple</a>
+                                    | <a class="table-link" href="{{ url_for('main.audit_report', audit_id=audit['id'], status='no_cumple', section=section['title'], _anchor='detalle-checklist') }}">{{ section["raw_non_compliant_count"] }} no cumple</a>{% if section["non_imputable_count"] %} ({{ section["non_imputable_count"] }} sin impacto){% endif %}
                                     | <a class="table-link" href="{{ url_for('main.audit_report', audit_id=audit['id'], status='no_aplica', section=section['title'], _anchor='detalle-checklist') }}">{{ section["not_applicable_count"] }} no aplica</a>
                                 </p>
                             </div>
@@ -273,7 +278,10 @@
                     <div class="status-stack">
                         <div class="status-pill status-ok">Cumple: {{ report["summary"]["compliant_count"] }}</div>
                         <div class="status-pill status-warning">No aplica: {{ report["summary"]["not_applicable_count"] }}</div>
-                        <div class="status-pill status-danger">No cumple: {{ report["summary"]["non_compliant_count"] }}</div>
+                        <div class="status-pill status-danger">No cumple: {{ report["summary"]["raw_non_compliant_count"] }}</div>
+                        {% if report["summary"]["non_imputable_findings_count"] %}
+                            <div class="status-pill status-warning">Sin impacto: {{ report["summary"]["non_imputable_findings_count"] }}</div>
+                        {% endif %}
                     </div>
                 </article>
             </section>
