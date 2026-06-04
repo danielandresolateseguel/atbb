@@ -59,7 +59,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280300103",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mano_destornillador_ph_aislado",
@@ -67,7 +67,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "281300012",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mano_destornillador_pl_aislado",
@@ -75,7 +75,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "281300013",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mano_martillo_bolita_500",
@@ -83,7 +83,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280700022",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mano_pinza_punta_aislada",
@@ -91,7 +91,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280300101",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mano_pinza_universal_aislada",
@@ -99,7 +99,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280300100",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "taladro_rotopercutor_electroneumatico",
@@ -107,7 +107,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280100006",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mecha_encastre_8x110_widia",
@@ -115,7 +115,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280600137",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mecha_encastre_12x450_widia",
@@ -123,7 +123,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280600181",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mecha_encastre_6x110_widia",
@@ -131,7 +131,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "280600194",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "Bolso_herramientas",
@@ -139,7 +139,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "cartuchera_destornilladores_mini",
@@ -147,7 +147,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mano_alarge",
@@ -155,7 +155,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "",
-                "evidence_required": False,
+                "evidence_required": True,
             },
             {
                 "key": "mano_cinta_pasacable",
@@ -163,7 +163,7 @@ CHECKLIST_SECTIONS = [
                 "critical": False,
                 "hand_tool": True,
                 "material_code": "",
-                "evidence_required": False,
+                "evidence_required": True,
             },
         ],
     },
