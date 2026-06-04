@@ -214,7 +214,7 @@
                         <p><strong>Observación:</strong> {{ item["notes"] or "-" }}</p>
                         <p><strong>Motivo:</strong>
                             {% if item["status"] == "no_cumple" %}
-                                {{ item["non_compliance_reason"]|replace('_', ' ')|capitalize if item["non_compliance_reason"] else "-" }}
+                                {{ item["non_compliance_reason"]|non_compliance_reason_label }}
                             {% else %}
                                 -
                             {% endif %}

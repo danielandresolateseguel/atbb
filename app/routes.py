@@ -91,14 +91,38 @@ from app.spreadsheets import parse_tabular_upload
 main = Blueprint("main", __name__)
 
 
+NON_COMPLIANCE_REASON_LABELS = {
+    "olvido": "Olvido / En otro cliente",
+    "danio": "Daño",
+    "perdida": "Pérdida / Robo",
+    "reparacion": "En reparación",
+    "no_asignado": "No asignado",
+    "otro": "Otro",
+}
+
+
+@main.app_template_filter("non_compliance_reason_label")
+def non_compliance_reason_label(value):
+    if value is None:
+        return "-"
+    raw = str(value).strip()
+    if not raw:
+        return "-"
+    label = NON_COMPLIANCE_REASON_LABELS.get(raw.lower())
+    if label:
+        return label
+    return raw.replace("_", " ").capitalize()
+
+
+
 def current_user():
     if getattr(g, "_current_user_loaded", False):
         return getattr(g, "current_user", None)
-
     user_id = session.get("user_id")
     if not user_id:
         g._current_user_loaded = True
         g.current_user = None
+        return None
         return None
 
     user = fetch_user_by_id(user_id)

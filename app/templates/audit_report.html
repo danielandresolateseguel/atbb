@@ -295,7 +295,7 @@
                                 </div>
                                 <h4>{{ item["item_label"] }}</h4>
                                 <p>{{ item["notes"] or "Sin observación registrada." }}</p>
-                                <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|replace('_', ' ')|capitalize if item["non_compliance_reason"] else "-" }}</p>
+                                <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|non_compliance_reason_label }}</p>
                             </article>
                         {% endfor %}
                     </div>
@@ -396,7 +396,7 @@
                                                 <strong>{{ item["item_label"] }}</strong>
                                                 <p>{{ item["notes"] or "Sin observación." }}</p>
                                                 {% if item["status"] == "no_cumple" %}
-                                                    <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|replace('_', ' ')|capitalize if item["non_compliance_reason"] else "-" }}</p>
+                                                    <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|non_compliance_reason_label }}</p>
                                                 {% endif %}
                                             </div>
                                             <span class="badge badge-{{ item['status']|replace('_', '-') }}">
