@@ -413,7 +413,7 @@
                                     <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                                 </select>
                                 {% if section["key"] in ["herramientas", "herramientas_mano"] %}
-                                    <small>Si el motivo es <strong>Daño</strong> o <strong>En reparación</strong>, se registra como hallazgo sin impacto en el score.</small>
+                                    <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>No asignado</strong>, se registra como hallazgo sin impacto en el score.</small>
                                 {% endif %}
                             </label>
 

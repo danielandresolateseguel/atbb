@@ -206,7 +206,7 @@
                             {% endif %}
                         </div>
                         <span class="badge badge-{{ item['status']|replace('_', '-') }}">
-                            {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "conforme" %}Conforme{% elif item["status"] == "no_cumple" and item["section_key"] in ["herramientas", "herramientas_mano"] and (item["non_compliance_reason"] or "")|lower in ["danio", "reparacion"] %}No cumple (sin impacto){% elif item["status"] == "no_cumple" %}No cumple{% elif item["status"] == "nc_menor" %}No conformidad menor{% elif item["status"] == "nc_mayor" %}No conformidad Mayor{% else %}No aplica{% endif %}
+                            {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "conforme" %}Conforme{% elif item["status"] == "no_cumple" and item["section_key"] in ["herramientas", "herramientas_mano"] and (item["non_compliance_reason"] or "")|lower in ["danio", "reparacion", "no_asignado"] %}No cumple (sin impacto){% elif item["status"] == "no_cumple" %}No cumple{% elif item["status"] == "nc_menor" %}No conformidad menor{% elif item["status"] == "nc_mayor" %}No conformidad Mayor{% else %}No aplica{% endif %}
                         </span>
                     </div>
 

@@ -101,7 +101,7 @@ NON_COMPLIANCE_REASON_LABELS = {
 }
 
 TOOL_SECTION_KEYS = {"herramientas", "herramientas_mano"}
-TOOL_NON_IMPUTABLE_REASONS = {"danio", "reparacion"}
+TOOL_NON_IMPUTABLE_REASONS = {"danio", "reparacion", "no_asignado"}
 
 
 def is_non_imputable_tool_failure(section_key, status, non_compliance_reason):
