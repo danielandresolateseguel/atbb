@@ -303,7 +303,7 @@ def build_pdf_from_html_response(html, filename):
                     "--disable-dev-shm-usage",
                 ]
             )
-            page = browser.new_page()
+            page = browser.new_page(viewport={"width": 794, "height": 1123})
             page.set_content(html, wait_until="networkidle", timeout=60000)
             page.emulate_media(media="print")
             pdf_bytes = page.pdf(

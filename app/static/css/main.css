@@ -1748,6 +1748,31 @@ td {
     .report-shell {
         gap: 0.75rem;
     }
+
+    .report-header {
+        grid-template-columns: 1fr !important;
+    }
+
+    .report-header,
+    .report-hero,
+    .report-score-card,
+    .report-meta-card,
+    .report-card,
+    .table-card,
+    .card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .score-ring,
+    .score-ring svg {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .score-ring svg {
+        display: block;
+    }
 }
 
 .import-summary strong {
