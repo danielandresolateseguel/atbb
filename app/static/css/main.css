@@ -1722,6 +1722,11 @@ td {
     display: inherit;
 }
 
+.break-before-page {
+    break-before: page;
+    page-break-before: always;
+}
+
 @media print {
     body,
     .report-body {

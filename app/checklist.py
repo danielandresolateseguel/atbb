@@ -5,7 +5,16 @@ CHECKLIST_SECTIONS = [
         "weight": 30,
         "items": [
             {"key": "casco", "label": "Uso de casco de seguridad", "critical": True},
-            {"key": "guantes", "label": "Uso de guantes adecuados", "critical": True},
+            {
+                "key": "guantes_fibra_sintetica_poliuretano",
+                "label": "Guantes de fibra sintética con palma y dedos de poliuretano",
+                "critical": True,
+            },
+            {
+                "key": "guante_dielectrico_1000v",
+                "label": "Guante dieléctrico (tensión de uso 1000 V, tensión de prueba máximo 5000 V)",
+                "critical": True,
+            },
             {"key": "lentes", "label": "Uso de lentes de proteccion", "critical": False},
             {"key": "chaleco", "label": "Uso de chaleco reflectante", "critical": True},
             {"key": "botas", "label": "Uso de botas de seguridad", "critical": True},

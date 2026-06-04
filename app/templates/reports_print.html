@@ -54,6 +54,31 @@
                             <p class="report-subtitle">Resumen ejecutivo para presentación a gerencia.</p>
                         </div>
                     </div>
+                    <aside class="report-meta-card">
+                        <div class="status-stack">
+                            <span class="status-pill {{ executive.health.class }}">Estado general: {{ executive.health.label }}</span>
+                        </div>
+                        <div class="report-meta-grid">
+                            <article>
+                                <strong>Período</strong>
+                                <span>
+                                    {{ (filters.from_date or "inicio") }} — {{ (filters.to_date or "hoy") }}
+                                </span>
+                            </article>
+                            <article>
+                                <strong>Auditorías</strong>
+                                <span>{{ summary.total_audits }}</span>
+                            </article>
+                            <article>
+                                <strong>Tasa aprobación</strong>
+                                <span>{{ summary.approval_rate }}%</span>
+                            </article>
+                            <article>
+                                <strong>Promedio</strong>
+                                <span>{{ summary.average_score }}</span>
+                            </article>
+                        </div>
+                    </aside>
                 </section>
 
                 <section class="stats-grid">
@@ -128,7 +153,7 @@
                                                         {{ seg.label }}
                                                     </td>
                                                     <td>{{ seg.count }}</td>
-                                                    <td>{{ seg.percent }}</td>
+                                                    <td>{{ seg.percent }}%</td>
                                                 </tr>
                                             {% endfor %}
                                         </tbody>
@@ -141,61 +166,122 @@
                     {% endif %}
                 </section>
 
-                <section class="card table-card">
+                <section class="card table-card break-before-page">
                     <div class="section-heading">
                         <div>
-                            <p class="eyebrow">Riesgos</p>
-                            <h3>Secciones con más no conformidades</h3>
+                            <p class="eyebrow">Lectura ejecutiva</p>
+                            <h3>Insights clave</h3>
                         </div>
                     </div>
-                    {% if executive.top_sections %}
-                        <svg width="780" height="{{ 40 + (executive.top_sections|length * 28) }}" viewBox="0 0 780 {{ 40 + (executive.top_sections|length * 28) }}" role="img" aria-label="Top secciones con no conformidades">
-                            <rect x="0" y="0" width="780" height="{{ 40 + (executive.top_sections|length * 28) }}" fill="#FFFFFF"></rect>
-                            {% for row in executive.top_sections %}
-                                {% set y = 20 + (loop.index0 * 28) %}
-                                <text x="10" y="{{ y + 12 }}" font-size="10" fill="#111827">
-                                    {% if row.section_title|length > 34 %}
-                                        {{ row.section_title[:34] }}…
-                                    {% else %}
-                                        {{ row.section_title }}
-                                    {% endif %}
-                                </text>
-                                <rect x="320" y="{{ y + 2 }}" width="420" height="12" fill="#E5E7EB"></rect>
-                                <rect x="320" y="{{ y + 2 }}" width="{{ (420 * (row.bar_percent / 100))|round(0, 'floor') }}" height="12" fill="#DC2626"></rect>
-                                <text x="752" y="{{ y + 12 }}" font-size="10" fill="#111827" text-anchor="end">{{ row.non_compliant_count }}</text>
+                    {% if executive.insights %}
+                        <div class="executive-list">
+                            {% for insight in executive.insights %}
+                                <p><strong>{{ insight.label }}:</strong> {{ insight.value }}</p>
                             {% endfor %}
-                            <text x="320" y="{{ 34 + (executive.top_sections|length * 28) }}" font-size="9" fill="#6B7280">Escala relativa según la sección con mayor cantidad.</text>
-                        </svg>
+                        </div>
                     {% else %}
-                        <p class="empty-state">No hay datos de secciones para los filtros seleccionados.</p>
+                        <p class="empty-state">No hay insights disponibles para los filtros seleccionados.</p>
                     {% endif %}
+                </section>
+
+                <section class="report-grid">
+                    <section class="card table-card">
+                        <div class="section-heading">
+                            <div>
+                                <p class="eyebrow">Riesgos</p>
+                                <h3>Secciones con más no conformidades</h3>
+                            </div>
+                        </div>
+                        {% if executive.top_sections %}
+                            <svg width="100%" height="{{ 40 + (executive.top_sections|length * 28) }}" viewBox="0 0 780 {{ 40 + (executive.top_sections|length * 28) }}" role="img" aria-label="Top secciones con no conformidades" preserveAspectRatio="xMinYMin meet">
+                                <rect x="0" y="0" width="780" height="{{ 40 + (executive.top_sections|length * 28) }}" fill="#FFFFFF"></rect>
+                                {% for row in executive.top_sections %}
+                                    {% set y = 20 + (loop.index0 * 28) %}
+                                    <text x="10" y="{{ y + 12 }}" font-size="10" fill="#111827">
+                                        {% if row.section_title|length > 34 %}
+                                            {{ row.section_title[:34] }}…
+                                        {% else %}
+                                            {{ row.section_title }}
+                                        {% endif %}
+                                    </text>
+                                    <rect x="320" y="{{ y + 2 }}" width="420" height="12" fill="#E5E7EB"></rect>
+                                    <rect x="320" y="{{ y + 2 }}" width="{{ (420 * (row.bar_percent / 100))|round(0, 'floor') }}" height="12" fill="#DC2626"></rect>
+                                    <text x="752" y="{{ y + 12 }}" font-size="10" fill="#111827" text-anchor="end">{{ row.non_compliant_count }}</text>
+                                {% endfor %}
+                                <text x="320" y="{{ 34 + (executive.top_sections|length * 28) }}" font-size="9" fill="#6B7280">Escala relativa según la sección con mayor cantidad.</text>
+                            </svg>
+                        {% else %}
+                            <p class="empty-state">No hay datos de secciones para los filtros seleccionados.</p>
+                        {% endif %}
+                    </section>
+
+                    <section class="card table-card">
+                        <div class="section-heading">
+                            <div>
+                                <p class="eyebrow">Abastecimiento</p>
+                                <h3>Solicitudes de insumos (top)</h3>
+                            </div>
+                        </div>
+                        {% if executive.top_supplies %}
+                            <svg width="100%" height="{{ 40 + (executive.top_supplies|length * 28) }}" viewBox="0 0 780 {{ 40 + (executive.top_supplies|length * 28) }}" role="img" aria-label="Top solicitudes de insumos" preserveAspectRatio="xMinYMin meet">
+                                <rect x="0" y="0" width="780" height="{{ 40 + (executive.top_supplies|length * 28) }}" fill="#FFFFFF"></rect>
+                                {% for row in executive.top_supplies %}
+                                    {% set y = 20 + (loop.index0 * 28) %}
+                                    <text x="10" y="{{ y + 12 }}" font-size="10" fill="#111827">{{ row.request_type|capitalize }} | {{ row.material_code }}</text>
+                                    <rect x="320" y="{{ y + 2 }}" width="420" height="12" fill="#E5E7EB"></rect>
+                                    <rect x="320" y="{{ y + 2 }}" width="{{ (420 * (row.bar_percent / 100))|round(0, 'floor') }}" height="12" fill="#2563EB"></rect>
+                                    <text x="752" y="{{ y + 12 }}" font-size="10" fill="#111827" text-anchor="end">{{ row.total_quantity }}</text>
+                                {% endfor %}
+                                <text x="320" y="{{ 34 + (executive.top_supplies|length * 28) }}" font-size="9" fill="#6B7280">Total consolidado por material y tipo.</text>
+                            </svg>
+                        {% else %}
+                            <p class="empty-state">No hay solicitudes de insumos para los filtros seleccionados.</p>
+                        {% endif %}
+                    </section>
                 </section>
 
                 <section class="card table-card">
                     <div class="section-heading">
                         <div>
-                            <p class="eyebrow">Abastecimiento</p>
-                            <h3>Solicitudes de insumos (top)</h3>
+                            <p class="eyebrow">Vista rápida</p>
+                            <h3>Tendencia semanal (últimas 8 semanas)</h3>
                         </div>
                     </div>
-                    {% if executive.top_supplies %}
-                        <svg width="780" height="{{ 40 + (executive.top_supplies|length * 28) }}" viewBox="0 0 780 {{ 40 + (executive.top_supplies|length * 28) }}" role="img" aria-label="Top solicitudes de insumos">
-                            <rect x="0" y="0" width="780" height="{{ 40 + (executive.top_supplies|length * 28) }}" fill="#FFFFFF"></rect>
-                            {% for row in executive.top_supplies %}
-                                {% set y = 20 + (loop.index0 * 28) %}
-                                <text x="10" y="{{ y + 12 }}" font-size="10" fill="#111827">{{ row.request_type|capitalize }} | {{ row.material_code }}</text>
-                                <rect x="320" y="{{ y + 2 }}" width="420" height="12" fill="#E5E7EB"></rect>
-                                <rect x="320" y="{{ y + 2 }}" width="{{ (420 * (row.bar_percent / 100))|round(0, 'floor') }}" height="12" fill="#2563EB"></rect>
-                                <text x="752" y="{{ y + 12 }}" font-size="10" fill="#111827" text-anchor="end">{{ row.total_quantity }}</text>
-                            {% endfor %}
-                            <text x="320" y="{{ 34 + (executive.top_supplies|length * 28) }}" font-size="9" fill="#6B7280">Total consolidado por material y tipo.</text>
-                        </svg>
+                    {% if executive.trend_weekly %}
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Semana</th>
+                                        <th>Aud.</th>
+                                        <th>Aprob.</th>
+                                        <th>Crít.</th>
+                                        <th>Rech.</th>
+                                        <th>Aprob. %</th>
+                                        <th>Prom.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in (executive.trend_weekly|reverse) %}
+                                        <tr>
+                                            <td>{{ row.period_key }}</td>
+                                            <td>{{ row.audits_count }}</td>
+                                            <td>{{ row.approved_count }}</td>
+                                            <td>{{ row.critical_count }}</td>
+                                            <td>{{ row.rejected_count }}</td>
+                                            <td>{{ row.approval_rate }}%</td>
+                                            <td>{{ row.average_score }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     {% else %}
-                        <p class="empty-state">No hay solicitudes de insumos para los filtros seleccionados.</p>
+                        <p class="empty-state">No hay datos de tendencia para los filtros seleccionados.</p>
                     {% endif %}
                 </section>
 
-                <section class="card table-card">
+                <section class="card table-card break-before-page">
                     <div class="section-heading">
                         <div>
                             <p class="eyebrow">Detalle</p>

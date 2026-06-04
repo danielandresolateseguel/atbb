@@ -422,13 +422,96 @@ def build_reports_context(report_key, filters, auditor_user_id):
         for row in top_supplies:
             row["bar_percent"] = round(((row.get("total_quantity") or 0) / supplies_max) * 100)
 
+        total_audits = summary.get("total_audits") or 0
+        approval_rate = summary.get("approval_rate") or 0
+        critical_count = summary.get("critical_count") or 0
+        rejected_count = summary.get("rejected_count") or 0
+        if total_audits == 0:
+            health = {"class": "status-warning", "label": "Sin datos"}
+        elif rejected_count > 0 or approval_rate < 70:
+            health = {"class": "status-danger", "label": "Crítico"}
+        elif critical_count > 0 or approval_rate < 85:
+            health = {"class": "status-warning", "label": "En riesgo"}
+        else:
+            health = {"class": "status-ok", "label": "OK"}
+
+        trend_weekly = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="week", limit=8)
+
         critical_preview = fetch_audit_reports_critical_findings(filters, auditor_user_id=auditor_user_id, limit=30)[:12]
+        target_approval_rate = 85
+        target_average_score = 95
+
+        trend_phrase = ""
+        if trend_weekly and len(trend_weekly) > 1:
+            latest = trend_weekly[0]
+            previous = trend_weekly[1]
+            if (latest.get("audits_count") or 0) > 0 and (previous.get("audits_count") or 0) > 0:
+                delta_pp = int((latest.get("approval_rate") or 0) - (previous.get("approval_rate") or 0))
+                delta_sign = "+" if delta_pp > 0 else ""
+                trend_phrase = f" vs semana anterior: {delta_sign}{delta_pp} pp"
+
+        hallazgo_value = "Sin auditorías en el período seleccionado."
+        if total_audits > 0:
+            hallazgo_value = (
+                f"Tasa aprobación {approval_rate}% (meta {target_approval_rate}%). "
+                f"Promedio {summary.get('average_score')} (meta {target_average_score}). "
+                f"Críticas {critical_count}, rechazadas {rejected_count}."
+                f"{trend_phrase}"
+            )
+
+        top_section = top_sections[0] if top_sections else None
+        riesgo_value = "Sin datos de no conformidades por sección."
+        if top_section:
+            riesgo_value = (
+                f"Sección con más no conformidades: {top_section.get('section_title') or '-' } "
+                f"({top_section.get('non_compliant_count') or 0} NC, {top_section.get('critical_non_compliant_count') or 0} críticas)."
+            )
+
+        reason_counts = {}
+        for row in critical_preview:
+            raw_reason = (row.get("non_compliance_reason") or "").strip().lower()
+            if not raw_reason:
+                continue
+            reason_counts[raw_reason] = reason_counts.get(raw_reason, 0) + 1
+        top_reason_raw = ""
+        top_reason_count = 0
+        for key, count in reason_counts.items():
+            if count > top_reason_count:
+                top_reason_raw = key
+                top_reason_count = count
+        top_reason_label = non_compliance_reason_label(top_reason_raw)
+        if top_reason_raw and top_reason_label != "-":
+            riesgo_value = f"{riesgo_value} Motivo crítico más frecuente: {top_reason_label} ({top_reason_count})."
+
+        top_supply = top_supplies[0] if top_supplies else None
+        action_parts = []
+        if top_section:
+            action_parts.append(f"Plan de acción en {top_section.get('section_title') or '-'}: repasar estándar y reforzar control en terreno.")
+        if top_reason_raw and top_reason_label != "-":
+            action_parts.append(f"Atacar causa '{top_reason_label}' con checklist específico y validación de evidencia.")
+        if top_supply:
+            action_parts.append(
+                f"Priorizar abastecimiento: {str(top_supply.get('request_type') or '').capitalize()} {top_supply.get('material_code') or '-'} "
+                f"(total {top_supply.get('total_quantity') or 0})."
+            )
+        if not action_parts:
+            action_parts.append("Mantener monitoreo semanal y ajustar foco según próximos hallazgos.")
+        accion_value = " ".join(action_parts)
+
+        insights = [
+            {"label": "Hallazgo clave", "value": hallazgo_value},
+            {"label": "Riesgo principal", "value": riesgo_value},
+            {"label": "Acción sugerida", "value": accion_value},
+        ]
         executive = {
             "approval_ring": approval_ring,
             "donut_segments": donut_segments,
             "status_total": status_total,
             "top_sections": top_sections,
             "top_supplies": top_supplies,
+            "health": health,
+            "trend_weekly": trend_weekly,
+            "insights": insights,
             "critical_preview": critical_preview,
         }
     elif report_key == "estados":
