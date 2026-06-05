@@ -113,6 +113,73 @@
                 }
             });
         }());
+
+        (function () {
+            async function sharePdf(url, filename, title, triggerEl) {
+                if (!url) {
+                    return;
+                }
+
+                const originalText = triggerEl && "innerText" in triggerEl ? triggerEl.innerText : "";
+                if (triggerEl) {
+                    triggerEl.disabled = true;
+                    triggerEl.innerText = "Preparando...";
+                }
+
+                try {
+                    const response = await fetch(url, { credentials: "same-origin" });
+                    if (!response.ok) {
+                        throw new Error("No fue posible descargar el PDF.");
+                    }
+                    const blob = await response.blob();
+                    const file = typeof File === "function" ? new File([blob], filename || "reporte.pdf", { type: "application/pdf" }) : null;
+
+                    const canShareFiles =
+                        !!file &&
+                        !!navigator.share &&
+                        (!navigator.canShare || navigator.canShare({ files: [file] }));
+
+                    if (canShareFiles) {
+                        try {
+                            await navigator.share({ files: [file], title: title || "PDF" });
+                            return;
+                        } catch (error) {
+                            if (error && error.name === "AbortError") {
+                                return;
+                            }
+                        }
+                    }
+
+                    const objectUrl = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = objectUrl;
+                    link.download = filename || "reporte.pdf";
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(objectUrl);
+                } finally {
+                    if (triggerEl) {
+                        triggerEl.disabled = false;
+                        triggerEl.innerText = originalText;
+                    }
+                }
+            }
+
+            document.addEventListener("click", function (event) {
+                const trigger = event.target.closest("[data-share-pdf]");
+                if (!trigger) {
+                    return;
+                }
+                event.preventDefault();
+                sharePdf(
+                    trigger.getAttribute("data-pdf-url") || "",
+                    trigger.getAttribute("data-filename") || "",
+                    trigger.getAttribute("data-title") || "",
+                    trigger
+                );
+            });
+        }());
     </script>
 </body>
 </html>
