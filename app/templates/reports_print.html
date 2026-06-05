@@ -319,6 +319,305 @@
                         <p class="empty-state">No hay hallazgos críticos para los filtros seleccionados.</p>
                     {% endif %}
                 </section>
+            {% elif report_key == "tendencia_semanal" and trend %}
+                {% set ring_value = (trend.latest.approval_rate if trend.latest else 0) %}
+                {% set ring_circ = 339.29 %}
+                {% set ring_offset = (ring_circ * (1 - (ring_value / 100))) %}
+                <section class="report-hero report-trend-weekly">
+                    <div class="report-score-card">
+                        <div class="score-ring">
+                            <svg viewBox="0 0 140 140" aria-hidden="true">
+                                <circle class="score-ring-track" cx="70" cy="70" r="54"></circle>
+                                <circle
+                                    class="score-ring-progress"
+                                    cx="70"
+                                    cy="70"
+                                    r="54"
+                                    style="stroke-dasharray: {{ ring_circ }}; stroke-dashoffset: {{ ring_offset|round(2) }};"
+                                ></circle>
+                            </svg>
+                            <div class="score-ring-center">
+                                <strong>{{ ring_value }}%</strong>
+                                <span>Aprobación (última semana)</span>
+                            </div>
+                        </div>
+                        <div>
+                            <h2>Última semana: {{ trend.latest.period_key if trend.latest else "-" }}</h2>
+                            <p class="report-subtitle">Lectura rápida de evolución semanal con foco en aprobación y volumen.</p>
+                        </div>
+                    </div>
+                    <aside class="report-meta-card">
+                        <div class="status-stack">
+                            {% if trend.latest %}
+                                {% if trend.latest.approval_class == "metric-ok" %}
+                                    <span class="status-pill status-ok">Estado: OK</span>
+                                {% elif trend.latest.approval_class == "metric-warning" %}
+                                    <span class="status-pill status-warning">Estado: En riesgo</span>
+                                {% else %}
+                                    <span class="status-pill status-danger">Estado: Crítico</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="status-pill status-warning">Estado: Sin datos</span>
+                            {% endif %}
+                        </div>
+                        <div class="report-meta-grid">
+                            <article>
+                                <strong>Período</strong>
+                                <span>{{ (filters.from_date or "inicio") }} — {{ (filters.to_date or "hoy") }}</span>
+                            </article>
+                            <article>
+                                <strong>Semanas</strong>
+                                <span>{{ rows|length }}</span>
+                            </article>
+                            <article>
+                                <strong>Delta aprobación</strong>
+                                <span>
+                                    {% if trend.delta.approval_rate_pp is not none %}
+                                        {% set d = trend.delta.approval_rate_pp %}
+                                        {{ ("+" if d > 0 else "") }}{{ d }} pp
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </span>
+                            </article>
+                            <article>
+                                <strong>Delta promedio</strong>
+                                <span>
+                                    {% if trend.delta.average_score is not none %}
+                                        {% set d = trend.delta.average_score %}
+                                        {{ ("+" if d > 0 else "") }}{{ d }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </span>
+                            </article>
+                        </div>
+                    </aside>
+                </section>
+
+                <section class="report-kpis">
+                    <article class="report-kpi">
+                        <span>Auditorías</span>
+                        <strong>{{ trend.latest.audits_count if trend.latest else 0 }}</strong>
+                        <small>
+                            {% if trend.delta.audits_count is not none %}
+                                {% set d = trend.delta.audits_count %}
+                                vs sem. anterior: {{ ("+" if d > 0 else "") }}{{ d }}
+                            {% else %}
+                                vs sem. anterior: -
+                            {% endif %}
+                        </small>
+                    </article>
+                    <article class="report-kpi">
+                        <span>Aprobadas</span>
+                        <strong>{{ trend.latest.approved_count if trend.latest else 0 }}</strong>
+                        <small>última semana</small>
+                    </article>
+                    <article class="report-kpi">
+                        <span>Críticas</span>
+                        <strong>{{ trend.latest.critical_count if trend.latest else 0 }}</strong>
+                        <small>
+                            {% if trend.delta.critical_count is not none %}
+                                {% set d = trend.delta.critical_count %}
+                                vs sem. anterior: {{ ("+" if d > 0 else "") }}{{ d }}
+                            {% else %}
+                                vs sem. anterior: -
+                            {% endif %}
+                        </small>
+                    </article>
+                    <article class="report-kpi">
+                        <span>Rechazadas</span>
+                        <strong>{{ trend.latest.rejected_count if trend.latest else 0 }}</strong>
+                        <small>
+                            {% if trend.delta.rejected_count is not none %}
+                                {% set d = trend.delta.rejected_count %}
+                                vs sem. anterior: {{ ("+" if d > 0 else "") }}{{ d }}
+                            {% else %}
+                                vs sem. anterior: -
+                            {% endif %}
+                        </small>
+                    </article>
+                    <article class="report-kpi">
+                        <span>Promedio</span>
+                        <strong>{{ trend.latest.average_score if trend.latest else 0 }}</strong>
+                        <small>
+                            {% if trend.delta.average_score is not none %}
+                                {% set d = trend.delta.average_score %}
+                                vs sem. anterior: {{ ("+" if d > 0 else "") }}{{ d }}
+                            {% else %}
+                                vs sem. anterior: -
+                            {% endif %}
+                        </small>
+                    </article>
+                </section>
+
+                <section class="card table-card report-trend-weekly">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Lectura ejecutiva</p>
+                            <h3>Insights clave</h3>
+                        </div>
+                    </div>
+                    {% if trend.insights %}
+                        <div class="executive-list">
+                            {% for insight in trend.insights %}
+                                <p><strong>{{ insight.label }}:</strong> {{ insight.value }}</p>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="empty-state">No hay insights disponibles para los filtros seleccionados.</p>
+                    {% endif %}
+
+                    {% if trend.compare and trend.compare.last4 and trend.compare.prev4 and trend.compare.delta %}
+                        {% set target_appr = (trend.targets.approval_rate if trend.targets else 85) %}
+                        {% set warn_appr = (trend.targets.approval_warning if trend.targets else 70) %}
+                        {% set target_avg = (trend.targets.average_score if trend.targets else 95) %}
+                        {% set warn_avg = (trend.targets.average_warning if trend.targets else 90) %}
+                        {% set l4 = trend.compare.last4 %}
+                        {% set p4 = trend.compare.prev4 %}
+                        {% set dd = trend.compare.delta %}
+                        <div class="table-wrap">
+                            <table class="compact-table">
+                                <thead>
+                                    <tr>
+                                        <th>Período</th>
+                                        <th>Auditorías</th>
+                                        <th>Aprob. %</th>
+                                        <th>Prom.</th>
+                                        <th>Crít.</th>
+                                        <th>Rech.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% set l4_appr_class = "metric-ok" if (l4.approval_rate >= target_appr) else ("metric-warning" if (l4.approval_rate >= warn_appr) else "metric-danger") %}
+                                    {% set l4_avg_class = "metric-ok" if (l4.average_score >= target_avg) else ("metric-warning" if (l4.average_score >= warn_avg) else "metric-danger") %}
+                                    <tr>
+                                        <td>Últimas 4</td>
+                                        <td>{{ l4.audits_count }}</td>
+                                        <td><span class="metric-pill {{ l4_appr_class }}">{{ l4.approval_rate }}%</span></td>
+                                        <td><span class="metric-pill {{ l4_avg_class }}">{{ l4.average_score }}</span></td>
+                                        <td>{{ l4.critical_count }}</td>
+                                        <td>{{ l4.rejected_count }}</td>
+                                    </tr>
+
+                                    {% set p4_appr_class = "metric-ok" if (p4.approval_rate >= target_appr) else ("metric-warning" if (p4.approval_rate >= warn_appr) else "metric-danger") %}
+                                    {% set p4_avg_class = "metric-ok" if (p4.average_score >= target_avg) else ("metric-warning" if (p4.average_score >= warn_avg) else "metric-danger") %}
+                                    <tr>
+                                        <td>4 anteriores</td>
+                                        <td>{{ p4.audits_count }}</td>
+                                        <td><span class="metric-pill {{ p4_appr_class }}">{{ p4.approval_rate }}%</span></td>
+                                        <td><span class="metric-pill {{ p4_avg_class }}">{{ p4.average_score }}</span></td>
+                                        <td>{{ p4.critical_count }}</td>
+                                        <td>{{ p4.rejected_count }}</td>
+                                    </tr>
+
+                                    <tr>
+                                        <td>Δ</td>
+                                        <td>{{ ("+" if dd.audits_count > 0 else "") }}{{ dd.audits_count }}</td>
+                                        <td>{{ ("+" if dd.approval_rate_pp > 0 else "") }}{{ dd.approval_rate_pp }} pp</td>
+                                        <td>{{ ("+" if dd.average_score > 0 else "") }}{{ dd.average_score }}</td>
+                                        <td>{{ ("+" if dd.critical_count > 0 else "") }}{{ dd.critical_count }}</td>
+                                        <td>{{ ("+" if dd.rejected_count > 0 else "") }}{{ dd.rejected_count }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    {% endif %}
+                </section>
+
+                <section class="card table-card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Visual</p>
+                            <h3>Tendencia (últimas {{ trend.chart.points|length }} semanas)</h3>
+                        </div>
+                    </div>
+                    {% if trend.chart.points %}
+                        {% set plot = trend.chart.plot %}
+                        {% set y_mid = ((plot.top + plot.bottom) / 2)|round(0, 'floor') %}
+                        <svg class="trend-chart" width="100%" height="260" viewBox="0 0 780 220" role="img" aria-label="Tendencia semanal" preserveAspectRatio="xMinYMin meet">
+                            <rect x="0" y="0" width="780" height="220" fill="#FFFFFF"></rect>
+                            <line x1="{{ plot.left }}" y1="{{ plot.bottom }}" x2="{{ plot.right }}" y2="{{ plot.bottom }}" stroke="#E5E7EB" stroke-width="1"></line>
+                            <line x1="{{ plot.left }}" y1="{{ y_mid }}" x2="{{ plot.right }}" y2="{{ y_mid }}" stroke="#F3F4F6" stroke-width="1"></line>
+                            <line x1="{{ plot.left }}" y1="{{ plot.top }}" x2="{{ plot.right }}" y2="{{ plot.top }}" stroke="#F3F4F6" stroke-width="1"></line>
+
+                            <text x="{{ plot.left - 10 }}" y="{{ plot.bottom + 4 }}" font-size="9" fill="#6B7280" text-anchor="end">0%</text>
+                            <text x="{{ plot.left - 10 }}" y="{{ y_mid + 4 }}" font-size="9" fill="#6B7280" text-anchor="end">50%</text>
+                            <text x="{{ plot.left - 10 }}" y="{{ plot.top + 4 }}" font-size="9" fill="#6B7280" text-anchor="end">100%</text>
+
+                            {% set bar_w = 26 %}
+                            {% for p in trend.chart.points %}
+                                <rect x="{{ (p.x - (bar_w / 2))|round(2) }}" y="{{ p.bar_y }}" width="{{ bar_w }}" height="{{ p.bar_h }}" rx="3" fill="rgba(37, 99, 235, 0.18)" stroke="rgba(37, 99, 235, 0.35)"></rect>
+                            {% endfor %}
+
+                            <polyline points="{{ trend.chart.polyline }}" fill="none" stroke="#2563EB" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                            {% for p in trend.chart.points %}
+                                <circle cx="{{ p.x }}" cy="{{ p.y }}" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"></circle>
+                                {% if loop.index0 % 2 == 0 or loop.last %}
+                                    <text x="{{ p.x }}" y="{{ plot.bottom + 18 }}" font-size="9" fill="#111827" text-anchor="middle">{{ p.period_key }}</text>
+                                {% endif %}
+                            {% endfor %}
+
+                            <rect x="{{ plot.left }}" y="196" width="10" height="10" rx="2" fill="rgba(37, 99, 235, 0.18)" stroke="rgba(37, 99, 235, 0.35)"></rect>
+                            <text x="{{ plot.left + 16 }}" y="205" font-size="9" fill="#6B7280">Auditorías (barra)</text>
+                            <line x1="{{ plot.left + 150 }}" y1="201" x2="{{ plot.left + 170 }}" y2="201" stroke="#2563EB" stroke-width="3" stroke-linecap="round"></line>
+                            <text x="{{ plot.left + 176 }}" y="205" font-size="9" fill="#6B7280">Aprobación % (línea)</text>
+                        </svg>
+                    {% else %}
+                        <p class="empty-state">No hay datos de tendencia para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
+
+                <section class="card table-card break-before-page report-trend-weekly">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Detalle</p>
+                            <h3>Detalle por semana</h3>
+                        </div>
+                    </div>
+                    {% if rows %}
+                        <div class="table-wrap">
+                            <table class="compact-table">
+                                <thead>
+                                    <tr>
+                                        <th>Semana</th>
+                                        <th>Inicio</th>
+                                        <th>Auditorías</th>
+                                        <th>Aprobadas</th>
+                                        <th>Críticas</th>
+                                        <th>Rechazadas</th>
+                                        <th>Tasa aprobación</th>
+                                        <th>Promedio</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in (rows|reverse) %}
+                                        {% set approval_rate = row.approval_rate or 0 %}
+                                        {% set target_appr = (trend.targets.approval_rate if trend.targets else 85) %}
+                                        {% set warn_appr = (trend.targets.approval_warning if trend.targets else 70) %}
+                                        {% set approval_class = "metric-ok" if approval_rate >= target_appr else ("metric-warning" if approval_rate >= warn_appr else "metric-danger") %}
+                                        {% set avg = row.average_score or 0 %}
+                                        {% set target_avg = (trend.targets.average_score if trend.targets else 95) %}
+                                        {% set warn_avg = (trend.targets.average_warning if trend.targets else 90) %}
+                                        {% set avg_class = "metric-ok" if avg >= target_avg else ("metric-warning" if avg >= warn_avg else "metric-danger") %}
+                                        <tr class="{{ 'trend-latest-row' if loop.last else '' }}">
+                                            <td>{{ row.period_key }}</td>
+                                            <td>{{ row.period_start }}</td>
+                                            <td>{{ row.audits_count }}</td>
+                                            <td>{{ row.approved_count }}</td>
+                                            <td>{{ row.critical_count }}</td>
+                                            <td>{{ row.rejected_count }}</td>
+                                            <td><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
+                                            <td><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="empty-state">No hay datos para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
             {% else %}
                 <section class="card table-card">
                     {% if rows %}

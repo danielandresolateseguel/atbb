@@ -348,6 +348,7 @@ def build_reports_context(report_key, filters, auditor_user_id):
     rows = []
     columns = []
     executive = None
+    trend = None
 
     title_filter = []
     if (filters.get("from_date") or "").strip():
@@ -438,8 +439,16 @@ def build_reports_context(report_key, filters, auditor_user_id):
         trend_weekly = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="week", limit=8)
 
         critical_preview = fetch_audit_reports_critical_findings(filters, auditor_user_id=auditor_user_id, limit=30)[:12]
-        target_approval_rate = 85
-        target_average_score = 95
+        target_approval_rate = current_app.config.get("REPORT_TARGET_APPROVAL_RATE", 85)
+        target_average_score = current_app.config.get("REPORT_TARGET_AVERAGE_SCORE", 95.0)
+        try:
+            target_approval_rate = int(target_approval_rate)
+        except (TypeError, ValueError):
+            target_approval_rate = 85
+        try:
+            target_average_score = float(target_average_score)
+        except (TypeError, ValueError):
+            target_average_score = 95.0
 
         trend_phrase = ""
         if trend_weekly and len(trend_weekly) > 1:
@@ -629,6 +638,210 @@ def build_reports_context(report_key, filters, auditor_user_id):
             {"key": "approval_rate", "label": "Tasa aprobación %"},
             {"key": "average_score", "label": "Promedio"},
         ]
+
+        latest = rows[0] if rows else None
+        previous = rows[1] if rows and len(rows) > 1 else None
+
+        approval_target = current_app.config.get("REPORT_TARGET_APPROVAL_RATE", 85)
+        average_target = current_app.config.get("REPORT_TARGET_AVERAGE_SCORE", 95.0)
+        try:
+            approval_target = int(approval_target)
+        except (TypeError, ValueError):
+            approval_target = 85
+        try:
+            average_target = float(average_target)
+        except (TypeError, ValueError):
+            average_target = 95.0
+
+        approval_warning = max(0, int(approval_target) - 15)
+        average_warning = float(average_target) - 5.0
+
+        delta = {
+            "audits_count": None,
+            "approval_rate_pp": None,
+            "average_score": None,
+            "critical_count": None,
+            "rejected_count": None,
+        }
+        if latest and previous:
+            delta["audits_count"] = int((latest.get("audits_count") or 0) - (previous.get("audits_count") or 0))
+            delta["approval_rate_pp"] = int((latest.get("approval_rate") or 0) - (previous.get("approval_rate") or 0))
+            delta["average_score"] = round((latest.get("average_score") or 0) - (previous.get("average_score") or 0), 2)
+            delta["critical_count"] = int((latest.get("critical_count") or 0) - (previous.get("critical_count") or 0))
+            delta["rejected_count"] = int((latest.get("rejected_count") or 0) - (previous.get("rejected_count") or 0))
+
+        def metric_class(value, ok_threshold, warning_threshold):
+            if value is None:
+                return "metric-neutral"
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return "metric-neutral"
+            if numeric >= ok_threshold:
+                return "metric-ok"
+            if numeric >= warning_threshold:
+                return "metric-warning"
+            return "metric-danger"
+
+        latest_metrics = None
+        if latest:
+            latest_metrics = {
+                **latest,
+                "approval_class": metric_class(latest.get("approval_rate"), approval_target, approval_warning),
+                "average_class": metric_class(latest.get("average_score"), average_target, average_warning),
+            }
+
+        def aggregate_time_series(period_rows):
+            total = sum((row.get("audits_count") or 0) for row in period_rows)
+            approved = sum((row.get("approved_count") or 0) for row in period_rows)
+            critical = sum((row.get("critical_count") or 0) for row in period_rows)
+            rejected = sum((row.get("rejected_count") or 0) for row in period_rows)
+            weighted_sum = sum(((row.get("average_score") or 0) * (row.get("audits_count") or 0)) for row in period_rows)
+            approval_rate = 0 if total == 0 else round((approved / total) * 100)
+            average_score = 0 if total == 0 else round((weighted_sum / total), 2)
+            return {
+                "audits_count": int(total),
+                "approved_count": int(approved),
+                "critical_count": int(critical),
+                "rejected_count": int(rejected),
+                "approval_rate": int(approval_rate),
+                "average_score": average_score,
+            }
+
+        last4_rows = rows[:4]
+        prev4_rows = rows[4:8]
+        compare_last4 = aggregate_time_series(last4_rows) if last4_rows else None
+        compare_prev4 = aggregate_time_series(prev4_rows) if prev4_rows else None
+
+        compare_delta = None
+        if compare_last4 and compare_prev4:
+            compare_delta = {
+                "audits_count": compare_last4["audits_count"] - compare_prev4["audits_count"],
+                "approval_rate_pp": compare_last4["approval_rate"] - compare_prev4["approval_rate"],
+                "average_score": round(compare_last4["average_score"] - compare_prev4["average_score"], 2),
+                "critical_count": compare_last4["critical_count"] - compare_prev4["critical_count"],
+                "rejected_count": compare_last4["rejected_count"] - compare_prev4["rejected_count"],
+            }
+
+        insights = []
+        if latest_metrics:
+            d_pp = delta.get("approval_rate_pp")
+            d_pp_str = f"{'+' if d_pp and d_pp > 0 else ''}{d_pp} pp" if d_pp is not None else "-"
+            d_avg = delta.get("average_score")
+            d_avg_str = f"{'+' if d_avg and d_avg > 0 else ''}{d_avg}" if d_avg is not None else "-"
+            insights.append(
+                {
+                    "label": "Última semana",
+                    "value": (
+                        f"{latest_metrics.get('period_key')}: aprobación {latest_metrics.get('approval_rate')}% "
+                        f"({d_pp_str} vs anterior), promedio {latest_metrics.get('average_score')} ({d_avg_str} vs anterior)."
+                    ),
+                }
+            )
+            insights.append(
+                {
+                    "label": "Metas",
+                    "value": f"Aprobación ≥ {approval_target}% | Promedio ≥ {round(average_target, 2)}.",
+                }
+            )
+
+        if compare_last4 and compare_prev4 and compare_delta:
+            delta_pp = compare_delta.get("approval_rate_pp")
+            delta_pp_str = f"{'+' if delta_pp and delta_pp > 0 else ''}{delta_pp} pp"
+            delta_avg = compare_delta.get("average_score")
+            delta_avg_str = f"{'+' if delta_avg and delta_avg > 0 else ''}{delta_avg}"
+            delta_audits = compare_delta.get("audits_count")
+            delta_audits_str = f"{'+' if delta_audits and delta_audits > 0 else ''}{delta_audits}"
+            insights.append(
+                {
+                    "label": "Últimas 4 vs 4 anteriores",
+                    "value": (
+                        f"Aprobación {compare_last4.get('approval_rate')}% ({delta_pp_str}), "
+                        f"promedio {compare_last4.get('average_score')} ({delta_avg_str}), "
+                        f"auditorías {compare_last4.get('audits_count')} ({delta_audits_str})."
+                    ),
+                }
+            )
+
+        action_value = ""
+        if compare_last4:
+            rejected = compare_last4.get("rejected_count") or 0
+            critical = compare_last4.get("critical_count") or 0
+            if rejected > 0:
+                action_value = "Priorizar análisis de rechazos (causas recurrentes, refuerzo de control y evidencias)."
+            elif critical > 0:
+                action_value = "Foco en cierre de críticas: checklist específico y validación en terreno."
+            else:
+                action_value = "Mantener monitoreo semanal y sostener buenas prácticas."
+        if action_value:
+            insights.append({"label": "Acción sugerida", "value": action_value})
+
+        chart_rows = list(reversed(rows[:12]))
+        max_audits = max([row.get("audits_count") or 0 for row in chart_rows] + [1])
+        plot_left = 60
+        plot_right = 760
+        plot_top = 24
+        plot_bottom = 180
+        plot_width = plot_right - plot_left
+        plot_height = plot_bottom - plot_top
+
+        points = []
+        n = len(chart_rows)
+        for idx, row in enumerate(chart_rows):
+            if n > 1:
+                x = plot_left + (plot_width * (idx / (n - 1)))
+            else:
+                x = plot_left + (plot_width / 2)
+
+            approval_rate = max(0, min(100, row.get("approval_rate") or 0))
+            y = plot_bottom - ((approval_rate / 100) * plot_height)
+
+            audits = row.get("audits_count") or 0
+            bar_h = 0 if max_audits == 0 else (audits / max_audits) * plot_height
+            bar_y = plot_bottom - bar_h
+
+            points.append(
+                {
+                    "period_key": row.get("period_key"),
+                    "period_start": row.get("period_start"),
+                    "audits_count": audits,
+                    "approval_rate": approval_rate,
+                    "x": round(x, 2),
+                    "y": round(y, 2),
+                    "bar_y": round(bar_y, 2),
+                    "bar_h": round(bar_h, 2),
+                }
+            )
+
+        polyline = " ".join([f"{p['x']},{p['y']}" for p in points])
+        trend = {
+            "latest": latest_metrics,
+            "previous": previous,
+            "delta": delta,
+            "targets": {
+                "approval_rate": approval_target,
+                "average_score": round(average_target, 2),
+                "approval_warning": approval_warning,
+                "average_warning": round(average_warning, 2),
+            },
+            "insights": insights,
+            "compare": {
+                "last4": compare_last4,
+                "prev4": compare_prev4,
+                "delta": compare_delta,
+            },
+            "chart": {
+                "points": points,
+                "polyline": polyline,
+                "max_audits": max_audits,
+                "plot": {
+                    "left": plot_left,
+                    "right": plot_right,
+                    "top": plot_top,
+                    "bottom": plot_bottom,
+                },
+            },
+        }
     elif report_key == "hallazgos_criticos":
         title = "Hallazgos críticos"
         subtitle = "Ítems críticos no conformes con contexto de auditoría."
@@ -703,6 +916,7 @@ def build_reports_context(report_key, filters, auditor_user_id):
         "rows": rows,
         "summary": rows[0] if report_key == "resumen" and rows else None,
         "executive": executive if report_key == "resumen" else None,
+        "trend": trend,
     }
 
 

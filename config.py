@@ -15,6 +15,16 @@ def env_int(name, default):
         return int(default)
 
 
+def env_float(name, default):
+    raw = os.environ.get(name)
+    if raw is None:
+        return float(default)
+    try:
+        return float(str(raw).strip())
+    except ValueError:
+        return float(default)
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
     DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -25,3 +35,5 @@ class Config:
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL")
     CLOUDINARY_FOLDER = os.environ.get("CLOUDINARY_FOLDER", "atbb")
+    REPORT_TARGET_APPROVAL_RATE = env_int("REPORT_TARGET_APPROVAL_RATE", 85)
+    REPORT_TARGET_AVERAGE_SCORE = env_float("REPORT_TARGET_AVERAGE_SCORE", 95.0)
