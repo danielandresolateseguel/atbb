@@ -1778,6 +1778,34 @@ td {
     .score-ring svg {
         display: block;
     }
+
+    .report-score-card {
+        grid-template-columns: auto 1fr;
+        align-items: center;
+    }
+
+    .report-score-card .score-ring {
+        width: 160px;
+        height: 160px;
+        margin: 0;
+    }
+
+    .report-body .stats-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.6rem;
+    }
+
+    .report-body .stats-grid .stat-card {
+        padding: 0.65rem 0.75rem;
+    }
+
+    .report-body .stat-label {
+        font-size: 0.8rem;
+    }
+
+    .report-body .stat-value {
+        font-size: 1.45rem;
+    }
 }
 
 .import-summary strong {
