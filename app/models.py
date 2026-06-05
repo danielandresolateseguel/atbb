@@ -2657,11 +2657,11 @@ def fetch_audit_reports_critical_findings(filters=None, auditor_user_id=None, li
 
 
 def fetch_audit_reports_missing_evidence(filters=None, auditor_user_id=None, limit=500):
-    optional_reasons = ("olvido", "perdida")
+    optional_reasons = ("olvido", "perdida", "robo", "no_asignado")
     extra_clauses = [
         "audit_items.status = 'no_cumple'",
         "(audit_items.photo_path IS NULL OR COALESCE(audit_items.photo_path, '') = '')",
-        "(audit_items.non_compliance_reason IS NULL OR audit_items.non_compliance_reason NOT IN (?, ?))",
+        "(audit_items.non_compliance_reason IS NULL OR audit_items.non_compliance_reason NOT IN (?, ?, ?, ?))",
     ]
     where_sql, params = build_audits_where_sql(
         filters,

@@ -100,13 +100,15 @@ main = Blueprint("main", __name__)
 NON_COMPLIANCE_REASON_LABELS = {
     "olvido": "Olvido / En otro cliente",
     "danio": "Daño",
-    "perdida": "Pérdida / Robo",
+    "perdida": "Pérdida",
+    "robo": "Robo",
     "reparacion": "En reparación",
     "no_asignado": "No asignado",
+    "no_solicitado": "No solicitado",
     "otro": "Otro",
 }
 
-NON_IMPUTABLE_REASONS = {"danio", "reparacion", "no_asignado"}
+NON_IMPUTABLE_REASONS = {"danio", "reparacion", "robo"}
 
 
 def is_non_imputable_non_compliance(status, non_compliance_reason):
@@ -1168,7 +1170,7 @@ def calculate_section_score(section, form_data, files):
     has_critical_failure = False
     serialized_items = []
 
-    photo_optional_reasons = {"olvido", "perdida"}
+    photo_optional_reasons = {"olvido", "perdida", "robo", "no_asignado"}
     status_scores = {
         "cumple": 1.0,
         "conforme": 1.0,

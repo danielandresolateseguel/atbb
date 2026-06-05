@@ -314,12 +314,14 @@
                                 <option value="" {% if not request.form.get('reason__' + item['key']) %}selected{% endif %}>Selecciona</option>
                                 <option value="olvido" {% if request.form.get('reason__' + item['key']) == 'olvido' %}selected{% endif %}>Olvido / En otro cliente</option>
                                 <option value="danio" {% if request.form.get('reason__' + item['key']) == 'danio' %}selected{% endif %}>Daño</option>
-                                <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida / Robo</option>
+                                <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
+                                <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                 <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
                                 <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                <option value="no_solicitado" {% if request.form.get('reason__' + item['key']) == 'no_solicitado' %}selected{% endif %}>No solicitado</option>
                                 <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                             </select>
-                            <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>No asignado</strong>, se registra como hallazgo sin impacto en el score.</small>
+                            <small>Si el motivo es <strong>Daño</strong> o <strong>En reparación</strong>, se registra como hallazgo sin impacto en el score.</small>
                         </label>
 
                         <label>
@@ -361,7 +363,7 @@
                                 </button>
                             </div>
                             <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
-                            <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
+                            <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`.</small>
                         </label>
 
                         <small class="auto-hint tool-match-neutral" data-hand-tool-state="{{ item['key'] }}">Sin responder aún.</small>
@@ -459,12 +461,14 @@
                                     <option value="" {% if not request.form.get('reason__' + item['key']) %}selected{% endif %}>Selecciona</option>
                                     <option value="olvido" {% if request.form.get('reason__' + item['key']) == 'olvido' %}selected{% endif %}>Olvido / En otro cliente</option>
                                     <option value="danio" {% if request.form.get('reason__' + item['key']) == 'danio' %}selected{% endif %}>Daño</option>
-                                    <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida / Robo</option>
+                                    <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
+                                    <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                     <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
                                     <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                    <option value="no_solicitado" {% if request.form.get('reason__' + item['key']) == 'no_solicitado' %}selected{% endif %}>No solicitado</option>
                                     <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                                 </select>
-                                <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>No asignado</strong>, se registra como hallazgo sin impacto en el score.</small>
+                                <small>Si el motivo es <strong>Daño</strong> o <strong>En reparación</strong>, se registra como hallazgo sin impacto en el score.</small>
                             </label>
 
                             <label>
@@ -506,7 +510,7 @@
                                     </button>
                                 </div>
                                 <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
-                                <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
+                                <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`.</small>
                             </label>
                         {% endif %}
                     </article>
@@ -610,7 +614,7 @@
         <ul class="closure-issue-list" id="closure_issue_list">
             <li>Completa el checklist para ver el resumen de cierre.</li>
         </ul>
-        <small>Los items en `No cumple` deben tener observación y motivo. La evidencia fotográfica es obligatoria salvo motivo `Olvido / En otro cliente` o `Pérdida / Robo`.</small>
+        <small>Los items en `No cumple` deben tener observación y motivo. La evidencia fotográfica es obligatoria salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`.</small>
     </section>
 
     <div class="signature-grid">
@@ -1420,7 +1424,7 @@
                         });
                     }
 
-                    const photoOptional = reasonValue === "olvido" || reasonValue === "perdida";
+                    const photoOptional = reasonValue === "olvido" || reasonValue === "perdida" || reasonValue === "robo" || reasonValue === "no_asignado";
                     if (evidenceRequired && reasonValue && !photoOptional && !hasPhoto) {
                         missingPhotoCount += 1;
                         hasItemIssue = true;
