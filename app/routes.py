@@ -1393,7 +1393,7 @@ def cloudinary_enabled():
     return raw.startswith("cloudinary://")
 
 
-def optimize_photo_bytes(content_bytes, extension, max_dim=1600):
+def optimize_photo_bytes(content_bytes, extension, max_dim=2400):
     normalized_extension = (extension or "").lower().lstrip(".")
     if not content_bytes or Image is None or ImageOps is None:
         return content_bytes, normalized_extension
@@ -1589,7 +1589,7 @@ def persist_item_evidence(items, audit_date):
         if not raw_bytes:
             raise ValueError(f"La evidencia de {item['item_label']} no contiene datos validos.")
 
-        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=1600)
+        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
         if cloudinary_enabled():
             base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
             folder = f"{base_folder}/audits/{date_folder}"

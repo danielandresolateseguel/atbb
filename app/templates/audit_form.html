@@ -318,7 +318,9 @@
                                 <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
                                 <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                 <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                {% if item["key"] in ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"] %}
                                 <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
+                                {% endif %}
                                 {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
                                 <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
                                 {% endif %}
@@ -506,7 +508,9 @@
                                     <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
                                     <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                     <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                    {% if item["key"] in ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"] %}
                                     <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
+                                    {% endif %}
                                     {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
                                     <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
                                     {% endif %}
