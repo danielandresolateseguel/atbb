@@ -676,101 +676,204 @@
         </div>
 
         {% if auditor_rules %}
-            <div class="info-list">
-                {% for target in auditor_rules.get("impact_targets", []) %}
-                    <p><strong>Impacta a:</strong> {{ target.who }} — {{ target.how }}</p>
-                {% endfor %}
-            </div>
+            <details>
+                <summary class="button button-secondary">Ver guía</summary>
 
-            <div class="table-wrap">
-                <table class="compact-table">
-                    <thead>
-                        <tr>
-                            <th>Motivo (No cumple)</th>
-                            <th>Impacto</th>
-                            <th>Notas</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for reason in auditor_rules.get("non_imputable_reasons", []) %}
+                <div class="info-list">
+                    {% for target in auditor_rules.get("impact_targets", []) %}
+                        <p><strong>Impacta a:</strong> {{ target.who }} — {{ target.how }}</p>
+                    {% endfor %}
+                    {% if auditor_rules.get("score_rules", {}).get("non_imputable_note") %}
+                        <p><strong>Score:</strong> {{ auditor_rules.get("score_rules", {}).get("non_imputable_note") }}</p>
+                    {% endif %}
+                    {% if auditor_rules.get("score_rules", {}).get("weight_note") %}
+                        <p><strong>Nota:</strong> {{ auditor_rules.get("score_rules", {}).get("weight_note") }}</p>
+                    {% endif %}
+                </div>
+
+                <div class="table-wrap">
+                    <table class="compact-table">
+                        <thead>
                             <tr>
-                                <td>{{ reason.label }}</td>
-                                <td>Sin impacto (no imputable)</td>
-                                <td>No afecta el score ni el desglose por supervisor.</td>
+                                <th>Motivo (No cumple)</th>
+                                <th>Impacto</th>
+                                <th>Impacta a</th>
+                                <th>Cuenta en score</th>
+                                <th>Valor del ítem</th>
+                                <th>Notas</th>
                             </tr>
-                        {% endfor %}
-                        {% for reason in auditor_rules.get("imputable_reasons", []) %}
-                            {% if reason.code not in ["vencido", "no_apta_para_el_uso"] %}
+                        </thead>
+                        <tbody>
+                            {% for reason in auditor_rules.get("reason_rows", []) %}
+                                {% set special = None %}
+                                {% for rule in auditor_rules.get("special_reasons", []) %}
+                                    {% if rule.code == reason.code %}
+                                        {% set special = rule %}
+                                    {% endif %}
+                                {% endfor %}
                                 <tr>
                                     <td>{{ reason.label }}</td>
-                                    <td>Impacta (imputable)</td>
-                                    <td>Influye en el score/estado y en los KPIs por supervisor.</td>
+                                    <td>{{ reason.impact }}</td>
+                                    <td>
+                                        {% if reason.counts_in_score %}
+                                            Técnico y supervisor
+                                        {% else %}
+                                            Nadie
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ "Sí" if reason.counts_in_score else "No" }}</td>
+                                    <td>
+                                        {% if reason.counts_in_score %}
+                                            {{ reason.item_score_value }}
+                                        {% else %}
+                                            Excluido
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if not reason.counts_in_score %}
+                                            No afecta el score ni el desglose por supervisor.
+                                        {% else %}
+                                            Baja el score (No cumple = 0).
+                                        {% endif %}
+                                        {% if special %}
+                                            Disponible solo en:
+                                            {% for item_key in special.only_items %}
+                                                <strong>{{ item_key|replace("_", " ") }}</strong>{% if not loop.last %}, {% endif %}
+                                            {% endfor %}.
+                                        {% endif %}
+                                    </td>
                                 </tr>
-                            {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
 
-            <div class="table-wrap">
-                <table class="compact-table">
-                    <thead>
-                        <tr>
-                            <th>Regla</th>
-                            <th>Detalle</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>Control de Calidad</td>
-                            <td>
-                                En la sección <strong>Control de Calidad de Instalaciones</strong>, las no conformidades
-                                <strong>NC menor</strong> y <strong>NC mayor</strong> impactan el score (no usan motivo).
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Evidencia (general)</td>
-                            <td>
-                                En <strong>No cumple</strong> se exige foto salvo motivos
-                                {% for code in auditor_rules.get("photo_rules", {}).get("optional_reasons", []) %}
-                                    <strong>{{ code|non_compliance_reason_label }}</strong>{% if not loop.last %}, {% endif %}
-                                {% endfor %}.
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Evidencia (excepción por ítem)</td>
-                            <td>
-                                No se exige foto en:
-                                {% for item_key in auditor_rules.get("photo_rules", {}).get("optional_items", []) %}
-                                    <strong>{{ item_key|replace("_", " ") }}</strong>{% if not loop.last %}, {% endif %}
-                                {% endfor %}.
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>Evidencia (Calidad)</td>
-                            <td>
-                                En <strong>Control de Calidad</strong>, se exige evidencia en
-                                <strong>NC menor</strong> / <strong>NC mayor</strong>.
-                            </td>
-                        </tr>
-                        {% for rule in auditor_rules.get("special_reasons", []) %}
+                <div class="table-wrap">
+                    <table class="compact-table">
+                        <thead>
                             <tr>
-                                <td>Motivo: {{ rule.label }}</td>
+                                <th>Estado</th>
+                                <th>Impacta a</th>
+                                <th>Cuenta en score</th>
+                                <th>Valor del ítem</th>
+                                <th>Notas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set scores = auditor_rules.get("score_rules", {}).get("status_scores", {}) %}
+                            <tr>
+                                <td>Cumple</td>
+                                <td>Técnico y supervisor</td>
+                                <td>Sí</td>
+                                <td>{{ scores.get("cumple") }}</td>
+                                <td>Impacto positivo en la sección.</td>
+                            </tr>
+                            <tr>
+                                <td>Conforme (Calidad)</td>
+                                <td>Técnico y supervisor</td>
+                                <td>Sí</td>
+                                <td>{{ scores.get("conforme") }}</td>
+                                <td>Impacto positivo en la sección.</td>
+                            </tr>
+                            <tr>
+                                <td>No conformidad menor (Calidad)</td>
+                                <td>Técnico y supervisor</td>
+                                <td>Sí</td>
+                                <td>{{ scores.get("nc_menor") }}</td>
+                                <td>Impacto medio (50%).</td>
+                            </tr>
+                            <tr>
+                                <td>No conformidad mayor (Calidad)</td>
+                                <td>Técnico y supervisor</td>
+                                <td>Sí</td>
+                                <td>{{ scores.get("nc_mayor") }}</td>
+                                <td>Impacto negativo (0%). Puede activar criticidad si el ítem es crítico.</td>
+                            </tr>
+                            <tr>
+                                <td>No cumple (imputable)</td>
+                                <td>Técnico y supervisor</td>
+                                <td>Sí</td>
+                                <td>{{ scores.get("no_cumple") }}</td>
+                                <td>Impacto negativo (0%).</td>
+                            </tr>
+                            <tr>
+                                <td>No cumple (sin impacto)</td>
+                                <td>Nadie</td>
+                                <td>No</td>
+                                <td>Excluido</td>
+                                <td>Aplica a motivos: Daño / En reparación / Robo.</td>
+                            </tr>
+                            <tr>
+                                <td>No aplica</td>
+                                <td>Nadie</td>
+                                <td>No</td>
+                                <td>Excluido</td>
+                                <td>No participa del score.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="compact-table">
+                        <thead>
+                            <tr>
+                                <th>Regla</th>
+                                <th>Detalle</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Control de Calidad</td>
                                 <td>
-                                    Disponible solo en:
-                                    {% for item_key in rule.only_items %}
+                                    En la sección <strong>Control de Calidad de Instalaciones</strong>, las no conformidades
+                                    <strong>NC menor</strong> y <strong>NC mayor</strong> impactan el score (no usan motivo).
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Evidencia (general)</td>
+                                <td>
+                                    En <strong>No cumple</strong> se exige foto salvo motivos
+                                    {% for code in auditor_rules.get("photo_rules", {}).get("optional_reasons", []) %}
+                                        <strong>{{ code|non_compliance_reason_label }}</strong>{% if not loop.last %}, {% endif %}
+                                    {% endfor %}.
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Evidencia (excepción por ítem)</td>
+                                <td>
+                                    No se exige foto en:
+                                    {% for item_key in auditor_rules.get("photo_rules", {}).get("optional_items", []) %}
                                         <strong>{{ item_key|replace("_", " ") }}</strong>{% if not loop.last %}, {% endif %}
                                     {% endfor %}.
                                 </td>
                             </tr>
-                        {% endfor %}
-                        <tr>
-                            <td>Criticidad</td>
-                            <td>{{ auditor_rules.get("critical_rules", {}).get("note", "") }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                            <tr>
+                                <td>Evidencia (Calidad)</td>
+                                <td>
+                                    En <strong>Control de Calidad</strong>, se exige evidencia en
+                                    <strong>NC menor</strong> / <strong>NC mayor</strong>.
+                                </td>
+                            </tr>
+                            {% for rule in auditor_rules.get("special_reasons", []) %}
+                                <tr>
+                                    <td>Motivo: {{ rule.label }}</td>
+                                    <td>
+                                        Disponible solo en:
+                                        {% for item_key in rule.only_items %}
+                                            <strong>{{ item_key|replace("_", " ") }}</strong>{% if not loop.last %}, {% endif %}
+                                        {% endfor %}.
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                            <tr>
+                                <td>Criticidad</td>
+                                <td>{{ auditor_rules.get("critical_rules", {}).get("note", "") }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
         {% else %}
             <p class="empty-state">No hay reglas disponibles.</p>
         {% endif %}

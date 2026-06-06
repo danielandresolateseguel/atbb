@@ -3008,15 +3008,32 @@ def new_audit():
                         "how": "A través del score/estado de la auditoría del técnico asociado al móvil.",
                     }
                 ],
-                "non_imputable_reasons": [
-                    {"code": code, "label": NON_COMPLIANCE_REASON_LABELS.get(code, code)}
-                    for code in sorted(NON_IMPUTABLE_REASONS)
-                ],
-                "imputable_reasons": [
-                    {"code": code, "label": NON_COMPLIANCE_REASON_LABELS.get(code, code)}
-                    for code in sorted(
-                        set(NON_COMPLIANCE_REASON_LABELS.keys()) - set(NON_IMPUTABLE_REASONS)
-                    )
+                "score_rules": {
+                    "status_scores": {
+                        "cumple": 1.0,
+                        "conforme": 1.0,
+                        "nc_menor": 0.5,
+                        "nc_mayor": 0.0,
+                        "no_cumple": 0.0,
+                    },
+                    "non_imputable_note": "Si un ítem queda en No cumple con motivo sin impacto, se excluye del cálculo del score (no suma ni resta).",
+                    "weight_note": "El impacto exacto en el score final depende del peso de la sección y la cantidad de ítems imputables evaluados en esa sección.",
+                },
+                "reason_rows": [
+                    {
+                        "code": code,
+                        "label": NON_COMPLIANCE_REASON_LABELS.get(code, code),
+                        "counts_in_score": code not in NON_IMPUTABLE_REASONS,
+                        "item_score_value": (
+                            0.0 if code not in NON_IMPUTABLE_REASONS else None
+                        ),
+                        "impact": (
+                            "Impacta (imputable)"
+                            if code not in NON_IMPUTABLE_REASONS
+                            else "Sin impacto (no imputable)"
+                        ),
+                    }
+                    for code in sorted(NON_COMPLIANCE_REASON_LABELS.keys())
                 ],
                 "special_reasons": [
                     {
