@@ -329,6 +329,16 @@
                     </td>
                 </tr>
                 <tr>
+                    <td>Responsabilidad supervisor (detalle)</td>
+                    <td>Ítems No cumple con motivo No asignado / Vencido / No apta para el uso (con contexto completo).</td>
+                    <td>
+                        <div class="filter-actions">
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
                     <td>Desglose por centro</td>
                     <td>Auditorías, criticidad, tasa de aprobación y promedio por centro.</td>
                     <td>

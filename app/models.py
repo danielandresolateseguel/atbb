@@ -2798,6 +2798,56 @@ def fetch_audit_reports_missing_evidence(filters=None, auditor_user_id=None, lim
     return [dict(row) for row in rows]
 
 
+def fetch_audit_reports_supervisor_responsibility_detail(filters=None, auditor_user_id=None, limit=2000):
+    supervisor_reasons = ("no_asignado", "vencido", "no_apta_para_el_uso")
+    extra_clauses = [
+        "audit_items.status = 'no_cumple'",
+        "LOWER(COALESCE(audit_items.non_compliance_reason, '')) IN (?, ?, ?)",
+    ]
+    where_sql, params = build_audits_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        extra_clauses=extra_clauses,
+        extra_params=list(supervisor_reasons),
+    )
+
+    supervisor_expr = "COALESCE(technicians.supervisor_name, 'Sin supervisor')"
+    technician_name_expr = "COALESCE(technicians.name, audits.technician_display_name, 'Sin técnico')"
+    technician_employee_expr = "COALESCE(technicians.employee_code, audits.technician_employee_code, '')"
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audits.id AS audit_id,
+            audits.audit_date,
+            audits.auditor_name,
+            audits.installation_type,
+            audits.result_status,
+            audits.total_score,
+            {supervisor_expr} AS supervisor_name,
+            {technician_name_expr} AS technician_name,
+            {technician_employee_expr} AS technician_employee_code,
+            mobile_units.mobile_code,
+            vehicles.plate AS vehicle_plate,
+            audits.location,
+            audit_items.section_title,
+            audit_items.item_label,
+            audit_items.non_compliance_reason,
+            audit_items.notes
+        FROM audit_items
+        INNER JOIN audits ON audits.id = audit_items.audit_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        ORDER BY audits.audit_date DESC, audits.id DESC, audit_items.id ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def fetch_audit_reports_supply_requests_detail(filters=None, auditor_user_id=None, limit=2000):
     where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
     rows = get_db().execute(

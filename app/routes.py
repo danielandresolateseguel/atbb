@@ -38,6 +38,7 @@ from app.models import (
     fetch_audit_reports_status_breakdown,
     fetch_audit_reports_supply_requests_detail,
     fetch_audit_reports_supply_requests_summary,
+    fetch_audit_reports_supervisor_responsibility_detail,
     fetch_audit_reports_critical_findings,
     fetch_audit_reports_supervisor_breakdown,
     fetch_audit_reports_center_breakdown,
@@ -909,6 +910,26 @@ def build_reports_context(report_key, filters, auditor_user_id):
             {"key": "non_compliance_reason", "label": "Motivo"},
             {"key": "notes", "label": "Notas"},
         ]
+    elif report_key == "responsabilidad_supervisor":
+        title = "Responsabilidad supervisor (detalle)"
+        subtitle = "Ítems No cumple con motivo No asignado / Vencido / No apta para el uso."
+        rows = fetch_audit_reports_supervisor_responsibility_detail(filters, auditor_user_id=auditor_user_id)
+        columns = [
+            {"key": "audit_date", "label": "Fecha"},
+            {"key": "audit_id", "label": "ID"},
+            {"key": "supervisor_name", "label": "Supervisor"},
+            {"key": "technician_name", "label": "Técnico"},
+            {"key": "technician_employee_code", "label": "Legajo"},
+            {"key": "mobile_code", "label": "Móvil"},
+            {"key": "vehicle_plate", "label": "Vehículo"},
+            {"key": "location", "label": "Ubicación"},
+            {"key": "result_status", "label": "Resultado"},
+            {"key": "total_score", "label": "Score"},
+            {"key": "section_title", "label": "Sección"},
+            {"key": "item_label", "label": "Ítem"},
+            {"key": "non_compliance_reason", "label": "Motivo"},
+            {"key": "notes", "label": "Notas"},
+        ]
     elif report_key == "insumos_detalle":
         title = "Solicitudes de insumos (detalle)"
         subtitle = "Listado completo de solicitudes por auditoría."
@@ -1202,6 +1223,8 @@ def calculate_section_score(section, form_data, files):
 
     photo_optional_reasons = {"olvido", "perdida", "robo", "no_asignado"}
     photo_optional_items = {"seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
+    vencido_allowed_items = {"extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
+    no_apta_allowed_items = {"carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"}
     status_scores = {
         "cumple": 1.0,
         "conforme": 1.0,
@@ -1296,6 +1319,13 @@ def calculate_section_score(section, form_data, files):
 
         if status == "no_cumple" and not non_compliance_reason:
             raise ValueError(f"Debes seleccionar el motivo en: {item['label']}")
+
+        if status == "no_cumple":
+            normalized_reason = str(non_compliance_reason or "").strip().lower()
+            if normalized_reason == "vencido" and item["key"] not in vencido_allowed_items:
+                raise ValueError(f"El motivo 'Vencido' no aplica para el ítem: {item['label']}")
+            if normalized_reason == "no_apta_para_el_uso" and item["key"] not in no_apta_allowed_items:
+                raise ValueError(f"El motivo 'No apta para el uso' no aplica para el ítem: {item['label']}")
 
         requires_photo = (
             evidence_required
@@ -2307,6 +2337,31 @@ def export_report(report_key):
                 "auditor_name",
                 "mobile_code",
                 "technician_name",
+                "vehicle_plate",
+                "location",
+                "installation_type",
+                "result_status",
+                "total_score",
+                "section_title",
+                "item_label",
+                "non_compliance_reason",
+                "notes",
+            ],
+        )
+
+    if report_key == "responsabilidad_supervisor":
+        rows = fetch_audit_reports_supervisor_responsibility_detail(filters, auditor_user_id=auditor_user_id)
+        return build_csv_response(
+            rows,
+            filename,
+            fieldnames=[
+                "audit_id",
+                "audit_date",
+                "auditor_name",
+                "mobile_code",
+                "supervisor_name",
+                "technician_name",
+                "technician_employee_code",
                 "vehicle_plate",
                 "location",
                 "installation_type",
