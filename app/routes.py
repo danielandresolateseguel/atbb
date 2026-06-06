@@ -110,7 +110,7 @@ NON_COMPLIANCE_REASON_LABELS = {
     "otro": "Otro",
 }
 
-NON_IMPUTABLE_REASONS = {"danio", "reparacion", "robo"}
+NON_IMPUTABLE_REASONS = {"danio", "reparacion", "robo", "no_asignado"}
 
 
 def is_non_imputable_non_compliance(status, non_compliance_reason):
@@ -3004,9 +3004,13 @@ def new_audit():
             auditor_rules={
                 "impact_targets": [
                     {
+                        "who": "Técnico",
+                        "how": "El score de la auditoría se calcula sobre ítems imputables.",
+                    },
+                    {
                         "who": "Supervisor",
-                        "how": "A través del score/estado de la auditoría del técnico asociado al móvil.",
-                    }
+                        "how": "Los reportes por supervisor agregan las auditorías de sus técnicos.",
+                    },
                 ],
                 "score_rules": {
                     "status_scores": {
@@ -3019,6 +3023,19 @@ def new_audit():
                     "non_imputable_note": "Si un ítem queda en No cumple con motivo sin impacto, se excluye del cálculo del score (no suma ni resta).",
                     "weight_note": "El impacto exacto en el score final depende del peso de la sección y la cantidad de ítems imputables evaluados en esa sección.",
                 },
+                "safety_usage_items": [
+                    "casco",
+                    "lentes",
+                    "chaleco",
+                    "botas",
+                    "senalizacion",
+                    "orden_entorno",
+                    "guantes_fibra_sintetica_poliuretano",
+                    "guante_dielectrico_1000v",
+                    "arnes_completo_anticaidas",
+                    "cola_amarre_separada",
+                    "mentonera_libus_15mm_gancho_c",
+                ],
                 "reason_rows": [
                     {
                         "code": code,
@@ -3028,9 +3045,18 @@ def new_audit():
                             0.0 if code not in NON_IMPUTABLE_REASONS else None
                         ),
                         "impact": (
-                            "Impacta (imputable)"
-                            if code not in NON_IMPUTABLE_REASONS
-                            else "Sin impacto (no imputable)"
+                            "Sin impacto (resp. supervisor)"
+                            if code == "no_asignado"
+                            else (
+                                "Impacta (imputable)"
+                                if code not in NON_IMPUTABLE_REASONS
+                                else "Sin impacto (no imputable)"
+                            )
+                        ),
+                        "impacts_who": (
+                            "Supervisor"
+                            if code == "no_asignado"
+                            else ("Nadie" if code in NON_IMPUTABLE_REASONS else "Técnico")
                         ),
                     }
                     for code in sorted(NON_COMPLIANCE_REASON_LABELS.keys())

@@ -324,11 +324,13 @@
                                 {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
                                 <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
                                 {% endif %}
-                                <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                {% if not auditor_rules or item['key'] not in auditor_rules.get('safety_usage_items', []) %}
+                                    <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                {% endif %}
                                 <option value="no_solicitado" {% if request.form.get('reason__' + item['key']) == 'no_solicitado' %}selected{% endif %}>No solicitado</option>
                                 <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                             </select>
-                            <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>Robo</strong>, se registra como hallazgo sin impacto en el score.</small>
+                            <small><strong>Daño</strong> / <strong>En reparación</strong> / <strong>Robo</strong>: sin impacto. <strong>No asignado</strong>: responsabilidad del supervisor (se excluye del score del técnico).</small>
                         </label>
 
                         <label>
@@ -514,11 +516,13 @@
                                     {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
                                     <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
                                     {% endif %}
-                                    <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                    {% if not auditor_rules or item['key'] not in auditor_rules.get('safety_usage_items', []) %}
+                                        <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
+                                    {% endif %}
                                     <option value="no_solicitado" {% if request.form.get('reason__' + item['key']) == 'no_solicitado' %}selected{% endif %}>No solicitado</option>
                                     <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                                 </select>
-                                <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>Robo</strong>, se registra como hallazgo sin impacto en el score.</small>
+                                <small><strong>Daño</strong> / <strong>En reparación</strong> / <strong>Robo</strong>: sin impacto. <strong>No asignado</strong>: responsabilidad del supervisor (se excluye del score del técnico).</small>
                             </label>
 
                             <label>
@@ -714,13 +718,7 @@
                                 <tr>
                                     <td>{{ reason.label }}</td>
                                     <td>{{ reason.impact }}</td>
-                                    <td>
-                                        {% if reason.counts_in_score %}
-                                            Técnico y supervisor
-                                        {% else %}
-                                            Nadie
-                                        {% endif %}
-                                    </td>
+                                    <td>{{ reason.impacts_who }}</td>
                                     <td>{{ "Sí" if reason.counts_in_score else "No" }}</td>
                                     <td>
                                         {% if reason.counts_in_score %}
@@ -763,45 +761,45 @@
                             {% set scores = auditor_rules.get("score_rules", {}).get("status_scores", {}) %}
                             <tr>
                                 <td>Cumple</td>
-                                <td>Técnico y supervisor</td>
+                                <td>Técnico</td>
                                 <td>Sí</td>
                                 <td>{{ scores.get("cumple") }}</td>
                                 <td>Impacto positivo en la sección.</td>
                             </tr>
                             <tr>
                                 <td>Conforme (Calidad)</td>
-                                <td>Técnico y supervisor</td>
+                                <td>Técnico</td>
                                 <td>Sí</td>
                                 <td>{{ scores.get("conforme") }}</td>
                                 <td>Impacto positivo en la sección.</td>
                             </tr>
                             <tr>
                                 <td>No conformidad menor (Calidad)</td>
-                                <td>Técnico y supervisor</td>
+                                <td>Técnico</td>
                                 <td>Sí</td>
                                 <td>{{ scores.get("nc_menor") }}</td>
                                 <td>Impacto medio (50%).</td>
                             </tr>
                             <tr>
                                 <td>No conformidad mayor (Calidad)</td>
-                                <td>Técnico y supervisor</td>
+                                <td>Técnico</td>
                                 <td>Sí</td>
                                 <td>{{ scores.get("nc_mayor") }}</td>
                                 <td>Impacto negativo (0%). Puede activar criticidad si el ítem es crítico.</td>
                             </tr>
                             <tr>
                                 <td>No cumple (imputable)</td>
-                                <td>Técnico y supervisor</td>
+                                <td>Técnico</td>
                                 <td>Sí</td>
                                 <td>{{ scores.get("no_cumple") }}</td>
                                 <td>Impacto negativo (0%).</td>
                             </tr>
                             <tr>
                                 <td>No cumple (sin impacto)</td>
-                                <td>Nadie</td>
+                                <td>Depende</td>
                                 <td>No</td>
                                 <td>Excluido</td>
-                                <td>Aplica a motivos: Daño / En reparación / Robo.</td>
+                                <td>Daño / En reparación / Robo: Nadie. No asignado: Supervisor.</td>
                             </tr>
                             <tr>
                                 <td>No aplica</td>
@@ -828,6 +826,13 @@
                                 <td>
                                     En la sección <strong>Control de Calidad de Instalaciones</strong>, las no conformidades
                                     <strong>NC menor</strong> y <strong>NC mayor</strong> impactan el score (no usan motivo).
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Elementos de seguridad</td>
+                                <td>
+                                    En ítems de <strong>uso</strong> (casco, lentes, chaleco, botas, guantes, arnés, etc.),
+                                    la responsabilidad es del <strong>técnico</strong> independientemente del motivo.
                                 </td>
                             </tr>
                             <tr>
