@@ -110,7 +110,9 @@ NON_COMPLIANCE_REASON_LABELS = {
     "otro": "Otro",
 }
 
-NON_IMPUTABLE_REASONS = {"danio", "reparacion", "robo", "no_asignado"}
+NON_IMPUTABLE_REASONS = {"danio", "reparacion", "robo"}
+SUPERVISOR_RESPONSIBILITY_REASONS = {"no_asignado", "vencido", "no_apta_para_el_uso"}
+SCORE_EXCLUDED_REASONS = NON_IMPUTABLE_REASONS | SUPERVISOR_RESPONSIBILITY_REASONS
 
 
 def is_non_imputable_non_compliance(status, non_compliance_reason):
@@ -576,6 +578,12 @@ def build_reports_context(report_key, filters, auditor_user_id):
             {"key": "approval_rate", "label": "Tasa aprobación %"},
             {"key": "critical_rate", "label": "Tasa críticas %"},
             {"key": "rejected_rate", "label": "Tasa rechazo %"},
+            {"key": "no_asignado_audits", "label": "Auditorías con No asignado"},
+            {"key": "no_asignado_rate", "label": "Tasa No asignado %"},
+            {"key": "vencido_audits", "label": "Auditorías con Vencido"},
+            {"key": "vencido_rate", "label": "Tasa Vencido %"},
+            {"key": "no_apta_audits", "label": "Auditorías con No apta para el uso"},
+            {"key": "no_apta_rate", "label": "Tasa No apta %"},
             {"key": "risk_index", "label": "Índice riesgo"},
             {"key": "average_score", "label": "Promedio"},
             {"key": "last_audit_date", "label": "Última auditoría"},
@@ -1207,6 +1215,10 @@ def calculate_section_score(section, form_data, files):
         status = form_data.get(f"status__{item['key']}", "")
         non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
         non_imputable_non_compliance = is_non_imputable_non_compliance(status, non_compliance_reason)
+        score_excluded_non_compliance = (
+            str(status or "").strip().lower() == "no_cumple"
+            and str(non_compliance_reason or "").strip().lower() in SCORE_EXCLUDED_REASONS
+        )
         notes = form_data.get(f"notes__{item['key']}", "").strip().upper()
         file_photo = files.get(f"photo__{item['key']}")
         camera_photo = files.get(f"photo_camera__{item['key']}")
@@ -1302,7 +1314,7 @@ def calculate_section_score(section, form_data, files):
         if requires_photo and not has_uploaded_file(photo_file):
             raise ValueError(f"Debes adjuntar evidencia fotografica en: {item['label']}")
 
-        if status != "no_aplica" and not non_imputable_non_compliance:
+        if status != "no_aplica" and not score_excluded_non_compliance:
             valid_items += 1
             score_sum += status_scores.get(status, 0.0)
 
@@ -2126,6 +2138,15 @@ def export_report(report_key):
                 "approval_rate",
                 "critical_rate",
                 "rejected_rate",
+                "no_asignado_audits",
+                "no_asignado_rate",
+                "no_asignado_items_count",
+                "vencido_audits",
+                "vencido_rate",
+                "vencido_items_count",
+                "no_apta_audits",
+                "no_apta_rate",
+                "no_apta_items_count",
                 "risk_index",
                 "average_score",
                 "last_audit_date",
@@ -3040,22 +3061,22 @@ def new_audit():
                     {
                         "code": code,
                         "label": NON_COMPLIANCE_REASON_LABELS.get(code, code),
-                        "counts_in_score": code not in NON_IMPUTABLE_REASONS,
+                        "counts_in_score": code not in SCORE_EXCLUDED_REASONS,
                         "item_score_value": (
-                            0.0 if code not in NON_IMPUTABLE_REASONS else None
+                            0.0 if code not in SCORE_EXCLUDED_REASONS else None
                         ),
                         "impact": (
-                            "Sin impacto (resp. supervisor)"
-                            if code == "no_asignado"
+                            "Responsabilidad supervisor (excluido del score)"
+                            if code in SUPERVISOR_RESPONSIBILITY_REASONS
                             else (
-                                "Impacta (imputable)"
-                                if code not in NON_IMPUTABLE_REASONS
+                                "Impacta (responsabilidad técnico)"
+                                if code not in SCORE_EXCLUDED_REASONS
                                 else "Sin impacto (no imputable)"
                             )
                         ),
                         "impacts_who": (
                             "Supervisor"
-                            if code == "no_asignado"
+                            if code in SUPERVISOR_RESPONSIBILITY_REASONS
                             else ("Nadie" if code in NON_IMPUTABLE_REASONS else "Técnico")
                         ),
                     }

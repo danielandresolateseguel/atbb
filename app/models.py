@@ -2324,19 +2324,85 @@ def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None,
     label_expr = "COALESCE(technicians.supervisor_name, 'Sin supervisor')"
     rows = get_db().execute(
         f"""
+        WITH audits_base AS (
+            SELECT
+                audits.id AS audit_id,
+                audits.result_status,
+                audits.total_score,
+                audits.audit_date,
+                {label_expr} AS supervisor_name
+            FROM audits
+            LEFT JOIN technicians ON technicians.id = audits.technician_id
+            {where_sql}
+        ),
+        supervisor_reasons_per_audit AS (
+            SELECT
+                audit_items.audit_id,
+                SUM(
+                    CASE
+                        WHEN audit_items.status = 'no_cumple'
+                         AND LOWER(COALESCE(audit_items.non_compliance_reason, '')) = 'no_asignado'
+                        THEN 1 ELSE 0
+                    END
+                ) AS no_asignado_items_count,
+                MAX(
+                    CASE
+                        WHEN audit_items.status = 'no_cumple'
+                         AND LOWER(COALESCE(audit_items.non_compliance_reason, '')) = 'no_asignado'
+                        THEN 1 ELSE 0
+                    END
+                ) AS audits_with_no_asignado
+                ,
+                SUM(
+                    CASE
+                        WHEN audit_items.status = 'no_cumple'
+                         AND LOWER(COALESCE(audit_items.non_compliance_reason, '')) = 'vencido'
+                        THEN 1 ELSE 0
+                    END
+                ) AS vencido_items_count,
+                MAX(
+                    CASE
+                        WHEN audit_items.status = 'no_cumple'
+                         AND LOWER(COALESCE(audit_items.non_compliance_reason, '')) = 'vencido'
+                        THEN 1 ELSE 0
+                    END
+                ) AS audits_with_vencido
+                ,
+                SUM(
+                    CASE
+                        WHEN audit_items.status = 'no_cumple'
+                         AND LOWER(COALESCE(audit_items.non_compliance_reason, '')) = 'no_apta_para_el_uso'
+                        THEN 1 ELSE 0
+                    END
+                ) AS no_apta_items_count,
+                MAX(
+                    CASE
+                        WHEN audit_items.status = 'no_cumple'
+                         AND LOWER(COALESCE(audit_items.non_compliance_reason, '')) = 'no_apta_para_el_uso'
+                        THEN 1 ELSE 0
+                    END
+                ) AS audits_with_no_apta
+            FROM audit_items
+            GROUP BY audit_items.audit_id
+        )
         SELECT
-            {label_expr} AS supervisor_name,
+            audits_base.supervisor_name,
             COUNT(*) AS audits_count,
-            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
-            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
-            SUM(CASE WHEN audits.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
-            AVG(audits.total_score) AS average_score,
-            MAX(audits.audit_date) AS last_audit_date
-        FROM audits
-        LEFT JOIN technicians ON technicians.id = audits.technician_id
-        {where_sql}
-        GROUP BY {label_expr}
-        ORDER BY critical_count DESC, rejected_count DESC, audits_count DESC, {label_expr} ASC
+            SUM(CASE WHEN audits_base.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN audits_base.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+            SUM(CASE WHEN audits_base.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(audits_base.total_score) AS average_score,
+            MAX(audits_base.audit_date) AS last_audit_date,
+            SUM(COALESCE(supervisor_reasons_per_audit.no_asignado_items_count, 0)) AS no_asignado_items_count,
+            SUM(COALESCE(supervisor_reasons_per_audit.audits_with_no_asignado, 0)) AS audits_with_no_asignado,
+            SUM(COALESCE(supervisor_reasons_per_audit.vencido_items_count, 0)) AS vencido_items_count,
+            SUM(COALESCE(supervisor_reasons_per_audit.audits_with_vencido, 0)) AS audits_with_vencido,
+            SUM(COALESCE(supervisor_reasons_per_audit.no_apta_items_count, 0)) AS no_apta_items_count,
+            SUM(COALESCE(supervisor_reasons_per_audit.audits_with_no_apta, 0)) AS audits_with_no_apta
+        FROM audits_base
+        LEFT JOIN supervisor_reasons_per_audit ON supervisor_reasons_per_audit.audit_id = audits_base.audit_id
+        GROUP BY audits_base.supervisor_name
+        ORDER BY critical_count DESC, rejected_count DESC, audits_count DESC, audits_base.supervisor_name ASC
         LIMIT ?
         """,
         tuple(list(params) + [limit]),
@@ -2347,10 +2413,20 @@ def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None,
         approved = row["approved_count"] or 0
         critical = row["critical_count"] or 0
         rejected = row["rejected_count"] or 0
+        audits_with_no_asignado = row["audits_with_no_asignado"] or 0
+        no_asignado_items_count = row["no_asignado_items_count"] or 0
+        audits_with_vencido = row["audits_with_vencido"] or 0
+        vencido_items_count = row["vencido_items_count"] or 0
+        audits_with_no_apta = row["audits_with_no_apta"] or 0
+        no_apta_items_count = row["no_apta_items_count"] or 0
         risk_index = (
             0
             if total == 0
-            else round((((critical * 2) + rejected) / total) * 100, 1)
+            else round(
+                (((critical * 2) + rejected + audits_with_no_asignado + audits_with_vencido + audits_with_no_apta) / total)
+                * 100,
+                1,
+            )
         )
         breakdown.append(
             {
@@ -2362,6 +2438,15 @@ def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None,
                 "approval_rate": 0 if total == 0 else round((approved / total) * 100),
                 "critical_rate": 0 if total == 0 else round((critical / total) * 100),
                 "rejected_rate": 0 if total == 0 else round((rejected / total) * 100),
+                "no_asignado_audits": audits_with_no_asignado,
+                "no_asignado_rate": 0 if total == 0 else round((audits_with_no_asignado / total) * 100),
+                "no_asignado_items_count": no_asignado_items_count,
+                "vencido_audits": audits_with_vencido,
+                "vencido_rate": 0 if total == 0 else round((audits_with_vencido / total) * 100),
+                "vencido_items_count": vencido_items_count,
+                "no_apta_audits": audits_with_no_apta,
+                "no_apta_rate": 0 if total == 0 else round((audits_with_no_apta / total) * 100),
+                "no_apta_items_count": no_apta_items_count,
                 "risk_index": risk_index,
                 "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
                 "last_audit_date": row["last_audit_date"],

@@ -256,6 +256,9 @@
                                         <th>Aud.</th>
                                         <th>Crít.</th>
                                         <th>Rech.</th>
+                                        <th>No asig. %</th>
+                                        <th>Venc. %</th>
+                                        <th>No apta %</th>
                                         <th>Aprob. %</th>
                                         <th>Riesgo</th>
                                         <th>Prom.</th>
@@ -265,6 +268,12 @@
                                     {% for row in executive.top_supervisors %}
                                         {% set approval_rate = row.approval_rate or 0 %}
                                         {% set approval_class = "metric-ok" if approval_rate >= 85 else ("metric-warning" if approval_rate >= 70 else "metric-danger") %}
+                                        {% set no_asignado_rate = row.no_asignado_rate or 0 %}
+                                        {% set no_asignado_class = "metric-ok" if no_asignado_rate == 0 else ("metric-warning" if no_asignado_rate <= 10 else "metric-danger") %}
+                                        {% set vencido_rate = row.vencido_rate or 0 %}
+                                        {% set vencido_class = "metric-ok" if vencido_rate == 0 else ("metric-warning" if vencido_rate <= 10 else "metric-danger") %}
+                                        {% set no_apta_rate = row.no_apta_rate or 0 %}
+                                        {% set no_apta_class = "metric-ok" if no_apta_rate == 0 else ("metric-warning" if no_apta_rate <= 10 else "metric-danger") %}
                                         {% set risk = row.risk_index or 0 %}
                                         {% set risk_class = "metric-ok" if risk < 20 else ("metric-warning" if risk < 40 else "metric-danger") %}
                                         {% set avg = row.average_score or 0 %}
@@ -274,6 +283,9 @@
                                             <td>{{ row.audits_count }}</td>
                                             <td>{{ row.critical_count }}</td>
                                             <td>{{ row.rejected_count }}</td>
+                                            <td><span class="metric-pill {{ no_asignado_class }}">{{ no_asignado_rate }}%</span></td>
+                                            <td><span class="metric-pill {{ vencido_class }}">{{ vencido_rate }}%</span></td>
+                                            <td><span class="metric-pill {{ no_apta_class }}">{{ no_apta_rate }}%</span></td>
                                             <td><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
                                             <td><span class="metric-pill {{ risk_class }}">{{ risk }}</span></td>
                                             <td><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
@@ -681,6 +693,9 @@
                                             <th>Aprob. %</th>
                                             <th>Crít. %</th>
                                             <th>Rech. %</th>
+                                            <th>No asig. %</th>
+                                            <th>Venc. %</th>
+                                            <th>No apta %</th>
                                             <th>Riesgo</th>
                                             <th>Prom.</th>
                                             <th>Última</th>
@@ -690,6 +705,12 @@
                                         {% for row in rows %}
                                             {% set approval_rate = row.approval_rate or 0 %}
                                             {% set approval_class = "metric-ok" if approval_rate >= 85 else ("metric-warning" if approval_rate >= 70 else "metric-danger") %}
+                                            {% set no_asignado_rate = row.no_asignado_rate or 0 %}
+                                            {% set no_asignado_class = "metric-ok" if no_asignado_rate == 0 else ("metric-warning" if no_asignado_rate <= 10 else "metric-danger") %}
+                                            {% set vencido_rate = row.vencido_rate or 0 %}
+                                            {% set vencido_class = "metric-ok" if vencido_rate == 0 else ("metric-warning" if vencido_rate <= 10 else "metric-danger") %}
+                                            {% set no_apta_rate = row.no_apta_rate or 0 %}
+                                            {% set no_apta_class = "metric-ok" if no_apta_rate == 0 else ("metric-warning" if no_apta_rate <= 10 else "metric-danger") %}
                                             {% set risk = row.risk_index or 0 %}
                                             {% set risk_class = "metric-ok" if risk < 20 else ("metric-warning" if risk < 40 else "metric-danger") %}
                                             {% set avg = row.average_score or 0 %}
@@ -703,6 +724,9 @@
                                                 <td><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
                                                 <td>{{ row.critical_rate }}%</td>
                                                 <td>{{ row.rejected_rate }}%</td>
+                                                <td><span class="metric-pill {{ no_asignado_class }}">{{ no_asignado_rate }}%</span></td>
+                                                <td><span class="metric-pill {{ vencido_class }}">{{ vencido_rate }}%</span></td>
+                                                <td><span class="metric-pill {{ no_apta_class }}">{{ no_apta_rate }}%</span></td>
                                                 <td><span class="metric-pill {{ risk_class }}">{{ risk }}</span></td>
                                                 <td><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
                                                 <td>{{ row.last_audit_date }}</td>
