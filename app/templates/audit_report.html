@@ -155,6 +155,7 @@
                         <strong>{{ report["summary"]["findings_count"] }}</strong>
                         <small>
                             {{ report["summary"]["critical_findings_count"] }} críticos
+                            | {{ report["summary"]["non_compliant_count"] }} con impacto
                             {% if report["summary"]["non_imputable_findings_count"] %}
                                 | {{ report["summary"]["non_imputable_findings_count"] }} sin impacto
                             {% endif %}
@@ -207,6 +208,13 @@
                         <p><strong>Tipo de trabajo:</strong> {{ audit["installation_type"] }}</p>
                         <p><strong>Registro:</strong> {{ audit["created_at"] }}</p>
                         <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "Sin observación general registrada." }}</p>
+                        <p>
+                            <strong>Impacto supervisor:</strong>
+                            {{ report["summary"]["non_compliant_count"] }} hallazgos con impacto
+                            {% if report["summary"]["non_imputable_findings_count"] %}
+                                | {{ report["summary"]["non_imputable_findings_count"] }} sin impacto
+                            {% endif %}
+                        </p>
                         <p>
                             <strong>Serializados:</strong>
                             {% if audit["serialized_stock_status"] == "ok" %}

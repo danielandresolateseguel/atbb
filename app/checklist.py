@@ -188,6 +188,11 @@ CHECKLIST_SECTIONS = [
             {"key": "neumaticos", "label": "Neumaticos en buen estado", "critical": True},
             {"key": "luces", "label": "Luces operativas", "critical": True},
             {"key": "elementos_emergencia", "label": "Kit Elementos de Emergencia", "critical": True},
+            {"key": "rueda_auxilio", "label": "Rueda de auxilio", "critical": True},
+            {"key": "gato_hidraulico", "label": "Gato hidráulico", "critical": True},
+            {"key": "llave_fuerza", "label": "Llave de fuerza", "critical": True},
+            {"key": "orden_limpieza_habitaculo", "label": "Orden y limpieza de Habitáculo", "critical": False},
+            {"key": "orden_limpieza_zona_carga", "label": "Orden y limpieza de Zona de carga", "critical": False},
             {"key": "carga_segura", "label": "Escalera Plegable/ telescopica", "critical": False},
             {
                 "key": "escalera_aluminio_extensible",

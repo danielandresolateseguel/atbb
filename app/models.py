@@ -2336,7 +2336,7 @@ def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None,
         LEFT JOIN technicians ON technicians.id = audits.technician_id
         {where_sql}
         GROUP BY {label_expr}
-        ORDER BY audits_count DESC, {label_expr} ASC
+        ORDER BY critical_count DESC, rejected_count DESC, audits_count DESC, {label_expr} ASC
         LIMIT ?
         """,
         tuple(list(params) + [limit]),
@@ -2345,14 +2345,24 @@ def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None,
     for row in rows:
         total = row["audits_count"] or 0
         approved = row["approved_count"] or 0
+        critical = row["critical_count"] or 0
+        rejected = row["rejected_count"] or 0
+        risk_index = (
+            0
+            if total == 0
+            else round((((critical * 2) + rejected) / total) * 100, 1)
+        )
         breakdown.append(
             {
                 "supervisor_name": row["supervisor_name"] or "Sin supervisor",
                 "audits_count": total,
                 "approved_count": approved,
-                "critical_count": row["critical_count"] or 0,
-                "rejected_count": row["rejected_count"] or 0,
+                "critical_count": critical,
+                "rejected_count": rejected,
                 "approval_rate": 0 if total == 0 else round((approved / total) * 100),
+                "critical_rate": 0 if total == 0 else round((critical / total) * 100),
+                "rejected_rate": 0 if total == 0 else round((rejected / total) * 100),
+                "risk_index": risk_index,
                 "average_score": 0 if total == 0 else round((row["average_score"] or 0), 2),
                 "last_audit_date": row["last_audit_date"],
             }
@@ -2658,16 +2668,18 @@ def fetch_audit_reports_critical_findings(filters=None, auditor_user_id=None, li
 
 def fetch_audit_reports_missing_evidence(filters=None, auditor_user_id=None, limit=500):
     optional_reasons = ("olvido", "perdida", "robo", "no_asignado")
+    optional_items = ("seguro_vehicular", "oblea_gnc", "rto", "botiquin")
     extra_clauses = [
-        "audit_items.status = 'no_cumple'",
+        "audit_items.status IN ('no_cumple', 'nc_menor', 'nc_mayor')",
         "(audit_items.photo_path IS NULL OR COALESCE(audit_items.photo_path, '') = '')",
         "(audit_items.non_compliance_reason IS NULL OR audit_items.non_compliance_reason NOT IN (?, ?, ?, ?))",
+        "(audit_items.item_key NOT IN (?, ?, ?, ?))",
     ]
     where_sql, params = build_audits_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
         extra_clauses=extra_clauses,
-        extra_params=list(optional_reasons),
+        extra_params=list(optional_reasons) + list(optional_items),
     )
 
     rows = get_db().execute(

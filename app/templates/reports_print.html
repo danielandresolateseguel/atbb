@@ -243,6 +243,53 @@
                 <section class="card table-card">
                     <div class="section-heading">
                         <div>
+                            <p class="eyebrow">Supervisión</p>
+                            <h3>Supervisores en riesgo (top)</h3>
+                        </div>
+                    </div>
+                    {% if executive.top_supervisors %}
+                        <div class="table-wrap">
+                            <table class="compact-table">
+                                <thead>
+                                    <tr>
+                                        <th>Supervisor</th>
+                                        <th>Aud.</th>
+                                        <th>Crít.</th>
+                                        <th>Rech.</th>
+                                        <th>Aprob. %</th>
+                                        <th>Riesgo</th>
+                                        <th>Prom.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in executive.top_supervisors %}
+                                        {% set approval_rate = row.approval_rate or 0 %}
+                                        {% set approval_class = "metric-ok" if approval_rate >= 85 else ("metric-warning" if approval_rate >= 70 else "metric-danger") %}
+                                        {% set risk = row.risk_index or 0 %}
+                                        {% set risk_class = "metric-ok" if risk < 20 else ("metric-warning" if risk < 40 else "metric-danger") %}
+                                        {% set avg = row.average_score or 0 %}
+                                        {% set avg_class = "metric-ok" if avg >= 95 else ("metric-warning" if avg >= 90 else "metric-danger") %}
+                                        <tr>
+                                            <td>{{ row.supervisor_name }}</td>
+                                            <td>{{ row.audits_count }}</td>
+                                            <td>{{ row.critical_count }}</td>
+                                            <td>{{ row.rejected_count }}</td>
+                                            <td><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
+                                            <td><span class="metric-pill {{ risk_class }}">{{ risk }}</span></td>
+                                            <td><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="empty-state">No hay datos de supervisores para los filtros seleccionados.</p>
+                    {% endif %}
+                </section>
+
+                <section class="card table-card">
+                    <div class="section-heading">
+                        <div>
                             <p class="eyebrow">Vista rápida</p>
                             <h3>Tendencia semanal (últimas 8 semanas)</h3>
                         </div>
@@ -622,30 +669,73 @@
                 <section class="card table-card">
                     {% if rows %}
                         <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        {% for col in columns %}
-                                            <th>{{ col.label }}</th>
+                            {% if report_key == "supervisores" %}
+                                <table class="compact-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Supervisor</th>
+                                            <th>Aud.</th>
+                                            <th>Aprob.</th>
+                                            <th>Crít.</th>
+                                            <th>Rech.</th>
+                                            <th>Aprob. %</th>
+                                            <th>Crít. %</th>
+                                            <th>Rech. %</th>
+                                            <th>Riesgo</th>
+                                            <th>Prom.</th>
+                                            <th>Última</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in rows %}
+                                            {% set approval_rate = row.approval_rate or 0 %}
+                                            {% set approval_class = "metric-ok" if approval_rate >= 85 else ("metric-warning" if approval_rate >= 70 else "metric-danger") %}
+                                            {% set risk = row.risk_index or 0 %}
+                                            {% set risk_class = "metric-ok" if risk < 20 else ("metric-warning" if risk < 40 else "metric-danger") %}
+                                            {% set avg = row.average_score or 0 %}
+                                            {% set avg_class = "metric-ok" if avg >= 95 else ("metric-warning" if avg >= 90 else "metric-danger") %}
+                                            <tr>
+                                                <td>{{ row.supervisor_name }}</td>
+                                                <td>{{ row.audits_count }}</td>
+                                                <td>{{ row.approved_count }}</td>
+                                                <td>{{ row.critical_count }}</td>
+                                                <td>{{ row.rejected_count }}</td>
+                                                <td><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
+                                                <td>{{ row.critical_rate }}%</td>
+                                                <td>{{ row.rejected_rate }}%</td>
+                                                <td><span class="metric-pill {{ risk_class }}">{{ risk }}</span></td>
+                                                <td><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
+                                                <td>{{ row.last_audit_date }}</td>
+                                            </tr>
                                         {% endfor %}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for row in rows %}
+                                    </tbody>
+                                </table>
+                            {% else %}
+                                <table>
+                                    <thead>
                                         <tr>
                                             {% for col in columns %}
-                                                <td>
-                                                    {% if col.key == "non_compliance_reason" %}
-                                                        {{ row.get(col.key)|non_compliance_reason_label }}
-                                                    {% else %}
-                                                        {{ row.get(col.key, "") }}
-                                                    {% endif %}
-                                                </td>
+                                                <th>{{ col.label }}</th>
                                             {% endfor %}
                                         </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in rows %}
+                                            <tr>
+                                                {% for col in columns %}
+                                                    <td>
+                                                        {% if col.key == "non_compliance_reason" %}
+                                                            {{ row.get(col.key)|non_compliance_reason_label }}
+                                                        {% else %}
+                                                            {{ row.get(col.key, "") }}
+                                                        {% endif %}
+                                                    </td>
+                                                {% endfor %}
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            {% endif %}
                         </div>
                     {% else %}
                         <p class="empty-state">No hay datos para los filtros seleccionados.</p>

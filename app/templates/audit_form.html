@@ -290,6 +290,7 @@
                         data-item-key="{{ item['key'] }}"
                         data-item-label="{{ item['label'] }}"
                         data-section-title="{{ section['title'] }}"
+                        data-section-key="{{ section['key'] }}"
                         data-critical="{{ 1 if item['critical'] else 0 }}"
                         data-evidence-required="{{ 1 if item.get('evidence_required', True) else 0 }}"
                     >
@@ -317,11 +318,15 @@
                                 <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
                                 <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                 <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
+                                {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
+                                <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
+                                {% endif %}
                                 <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
                                 <option value="no_solicitado" {% if request.form.get('reason__' + item['key']) == 'no_solicitado' %}selected{% endif %}>No solicitado</option>
                                 <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                             </select>
-                            <small>Si el motivo es <strong>Daño</strong> o <strong>En reparación</strong>, se registra como hallazgo sin impacto en el score.</small>
+                            <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>Robo</strong>, se registra como hallazgo sin impacto en el score.</small>
                         </label>
 
                         <label>
@@ -363,7 +368,7 @@
                                 </button>
                             </div>
                             <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
-                            <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`.</small>
+                            <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`. En `Seguro vehicular`, `Oblea de GNC`, `RTO` y `Botiquín` no se exige foto.</small>
                         </label>
 
                         <small class="auto-hint tool-match-neutral" data-hand-tool-state="{{ item['key'] }}">Sin responder aún.</small>
@@ -375,6 +380,7 @@
                         data-item-key="{{ item['key'] }}"
                         data-item-label="{{ item['label'] }}"
                         data-section-title="{{ section['title'] }}"
+                        data-section-key="{{ section['key'] }}"
                         data-critical="{{ 1 if item['critical'] else 0 }}"
                         data-evidence-required="{{ 1 if item.get('evidence_required', True) else 0 }}"
                     >
@@ -454,6 +460,42 @@
                                 <span>Detalle</span>
                                 <textarea name="notes__{{ item['key'] }}" rows="3" placeholder="Obligatoria si hay no conformidad (menor o mayor)">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
                             </label>
+                            <label>
+                                <span>Evidencia fotográfica</span>
+                                <div class="evidence-upload-row">
+                                    <input
+                                        type="file"
+                                        id="photo__{{ item['key'] }}"
+                                        name="photo__{{ item['key'] }}"
+                                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                        tabindex="-1"
+                                        aria-hidden="true"
+                                    >
+                                    <input
+                                        type="file"
+                                        id="photo_camera__{{ item['key'] }}"
+                                        name="photo_camera__{{ item['key'] }}"
+                                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                        capture="environment"
+                                        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                        tabindex="-1"
+                                        aria-hidden="true"
+                                    >
+                                    <button type="button" class="button button-primary evidence-action" data-file-trigger="photo__{{ item['key'] }}" aria-label="Seleccionar archivo" title="Seleccionar archivo">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                            <path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm1 7V3.5L18.5 9H15zM8 13h8v2H8v-2zm0 4h6v2H8v-2z"/>
+                                        </svg>
+                                    </button>
+                                    <button type="button" class="button button-primary evidence-action" data-file-trigger="photo_camera__{{ item['key'] }}" aria-label="Abrir cámara" title="Abrir cámara">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                            <path fill="currentColor" d="M9 4l1.83 2H14l1.83-2H18a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3zm3 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
+                                <small>Obligatoria si hay no conformidad (menor o mayor).</small>
+                            </label>
                         {% else %}
                             <label>
                                 <span>Motivo (si no cumple)</span>
@@ -464,11 +506,15 @@
                                     <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
                                     <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                     <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                    <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
+                                    {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
+                                    <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
+                                    {% endif %}
                                     <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
                                     <option value="no_solicitado" {% if request.form.get('reason__' + item['key']) == 'no_solicitado' %}selected{% endif %}>No solicitado</option>
                                     <option value="otro" {% if request.form.get('reason__' + item['key']) == 'otro' %}selected{% endif %}>Otro</option>
                                 </select>
-                                <small>Si el motivo es <strong>Daño</strong> o <strong>En reparación</strong>, se registra como hallazgo sin impacto en el score.</small>
+                                <small>Si el motivo es <strong>Daño</strong>, <strong>En reparación</strong> o <strong>Robo</strong>, se registra como hallazgo sin impacto en el score.</small>
                             </label>
 
                             <label>
@@ -510,7 +556,7 @@
                                     </button>
                                 </div>
                                 <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
-                                <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`.</small>
+                                <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`. En `Seguro vehicular`, `Oblea de GNC`, `RTO` y `Botiquín` no se exige foto.</small>
                             </label>
                         {% endif %}
                     </article>
@@ -614,7 +660,7 @@
         <ul class="closure-issue-list" id="closure_issue_list">
             <li>Completa el checklist para ver el resumen de cierre.</li>
         </ul>
-        <small>Los items en `No cumple` deben tener observación y motivo. La evidencia fotográfica es obligatoria salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`.</small>
+        <small>Los items en `No cumple` deben tener observación y motivo. La evidencia fotográfica es obligatoria salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`. En `Seguro vehicular`, `Oblea de GNC`, `RTO` y `Botiquín` no se exige foto.</small>
     </section>
 
     <div class="signature-grid">
@@ -1362,6 +1408,7 @@
                 }
                 const itemLabel = item.dataset.itemLabel || itemKey;
                 const sectionTitle = item.dataset.sectionTitle || "";
+                const sectionKey = item.dataset.sectionKey || "";
                 const isCritical = item.dataset.critical === "1";
 
                 const statusInput = item.querySelector(`input[name="status__${itemKey}"]:checked`);
@@ -1424,7 +1471,9 @@
                         });
                     }
 
-                    const photoOptional = reasonValue === "olvido" || reasonValue === "perdida" || reasonValue === "robo" || reasonValue === "no_asignado";
+                    const photoOptionalItem = itemKey === "seguro_vehicular" || itemKey === "oblea_gnc" || itemKey === "rto" || itemKey === "botiquin";
+                    const photoOptionalReason = reasonValue === "olvido" || reasonValue === "perdida" || reasonValue === "robo" || reasonValue === "no_asignado";
+                    const photoOptional = photoOptionalItem || photoOptionalReason;
                     if (evidenceRequired && reasonValue && !photoOptional && !hasPhoto) {
                         missingPhotoCount += 1;
                         hasItemIssue = true;
@@ -1449,6 +1498,16 @@
                         issues.push({
                             kind: "missing_notes",
                             message: `${sectionTitle}: falta detalle en "${itemLabel}" (${statusValue === "nc_menor" ? "No conformidad menor" : "No conformidad mayor"}).`,
+                            targetId: item.id,
+                            isCritical: isCritical,
+                        });
+                    }
+                    if (sectionKey === "calidad_instalaciones" && evidenceRequired && !hasPhoto) {
+                        missingPhotoCount += 1;
+                        hasItemIssue = true;
+                        issues.push({
+                            kind: "missing_photo",
+                            message: `${sectionTitle}: falta evidencia fotográfica en "${itemLabel}" (${statusValue === "nc_menor" ? "No conformidad menor" : "No conformidad mayor"}).`,
                             targetId: item.id,
                             isCritical: isCritical,
                         });

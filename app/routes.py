@@ -103,6 +103,8 @@ NON_COMPLIANCE_REASON_LABELS = {
     "perdida": "Pérdida",
     "robo": "Robo",
     "reparacion": "En reparación",
+    "vencido": "Vencido",
+    "no_apta_para_el_uso": "No apta para el uso",
     "no_asignado": "No asignado",
     "no_solicitado": "No solicitado",
     "otro": "Otro",
@@ -514,12 +516,28 @@ def build_reports_context(report_key, filters, auditor_user_id):
             {"label": "Riesgo principal", "value": riesgo_value},
             {"label": "Acción sugerida", "value": accion_value},
         ]
+        supervisor_rows = fetch_audit_reports_supervisor_breakdown(filters, auditor_user_id=auditor_user_id, limit=200)
+        supervisor_focus = [row for row in supervisor_rows if (row.get("supervisor_name") or "") != "Sin supervisor"]
+        if not supervisor_focus:
+            supervisor_focus = list(supervisor_rows)
+        supervisor_focus = sorted(
+            supervisor_focus,
+            key=lambda row: (
+                -(row.get("risk_index") or 0),
+                -(row.get("critical_count") or 0),
+                -(row.get("rejected_count") or 0),
+                -(row.get("audits_count") or 0),
+                str(row.get("supervisor_name") or ""),
+            ),
+        )
+        top_supervisors = supervisor_focus[:10]
         executive = {
             "approval_ring": approval_ring,
             "donut_segments": donut_segments,
             "status_total": status_total,
             "top_sections": top_sections,
             "top_supplies": top_supplies,
+            "top_supervisors": top_supervisors,
             "health": health,
             "trend_weekly": trend_weekly,
             "insights": insights,
@@ -552,9 +570,13 @@ def build_reports_context(report_key, filters, auditor_user_id):
         columns = [
             {"key": "supervisor_name", "label": "Supervisor"},
             {"key": "audits_count", "label": "Auditorías"},
+            {"key": "approved_count", "label": "Aprobadas"},
             {"key": "critical_count", "label": "Críticas"},
             {"key": "rejected_count", "label": "Rechazadas"},
             {"key": "approval_rate", "label": "Tasa aprobación %"},
+            {"key": "critical_rate", "label": "Tasa críticas %"},
+            {"key": "rejected_rate", "label": "Tasa rechazo %"},
+            {"key": "risk_index", "label": "Índice riesgo"},
             {"key": "average_score", "label": "Promedio"},
             {"key": "last_audit_date", "label": "Última auditoría"},
         ]
@@ -1171,6 +1193,7 @@ def calculate_section_score(section, form_data, files):
     serialized_items = []
 
     photo_optional_reasons = {"olvido", "perdida", "robo", "no_asignado"}
+    photo_optional_items = {"seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
     status_scores = {
         "cumple": 1.0,
         "conforme": 1.0,
@@ -1264,8 +1287,17 @@ def calculate_section_score(section, form_data, files):
 
         requires_photo = (
             evidence_required
-            and status == "no_cumple"
-            and non_compliance_reason not in photo_optional_reasons
+            and item["key"] not in photo_optional_items
+            and (
+                (
+                    status == "no_cumple"
+                    and non_compliance_reason not in photo_optional_reasons
+                )
+                or (
+                    section["key"] == "calidad_instalaciones"
+                    and status in {"nc_menor", "nc_mayor"}
+                )
+            )
         )
         if requires_photo and not has_uploaded_file(photo_file):
             raise ValueError(f"Debes adjuntar evidencia fotografica en: {item['label']}")
@@ -1702,9 +1734,25 @@ def build_audit_report_metrics(audit, items):
     findings = [item for item in items if item["status"] in non_compliant_statuses]
 
     compliance_rate = 0 if applicable_count == 0 else round((compliant_count / applicable_count) * 100)
-    evidence_required_count = sum(1 for item in items if item["status"] == "no_cumple")
+    photo_optional_reasons = {"olvido", "perdida", "robo", "no_asignado"}
+    photo_optional_items = {"seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
+
+    def requires_photo(item):
+        item_key = str(item.get("item_key") or "").strip()
+        status = str(item.get("status") or "").strip()
+        section_key = str(item.get("section_key") or "").strip()
+        reason = str(item.get("non_compliance_reason") or "").strip().lower()
+        if item_key in photo_optional_items:
+            return False
+        if section_key == "calidad_instalaciones" and status in {"nc_menor", "nc_mayor"}:
+            return True
+        if status == "no_cumple" and reason not in photo_optional_reasons:
+            return True
+        return False
+
+    evidence_required_count = sum(1 for item in items if requires_photo(item))
     evidence_with_photo_count = sum(
-        1 for item in items if item["status"] == "no_cumple" and item.get("photo_path")
+        1 for item in items if requires_photo(item) and item.get("photo_path")
     )
     evidence_rate = (
         0
@@ -2076,6 +2124,9 @@ def export_report(report_key):
                 "critical_count",
                 "rejected_count",
                 "approval_rate",
+                "critical_rate",
+                "rejected_rate",
+                "risk_index",
                 "average_score",
                 "last_audit_date",
             ],
