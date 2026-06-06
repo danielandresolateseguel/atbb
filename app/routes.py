@@ -3001,6 +3001,49 @@ def new_audit():
             material_index=material_index,
             herramientas_section=herramientas_section,
             hand_tools=hand_tools,
+            auditor_rules={
+                "impact_targets": [
+                    {
+                        "who": "Supervisor",
+                        "how": "A través del score/estado de la auditoría del técnico asociado al móvil.",
+                    }
+                ],
+                "non_imputable_reasons": [
+                    {"code": code, "label": NON_COMPLIANCE_REASON_LABELS.get(code, code)}
+                    for code in sorted(NON_IMPUTABLE_REASONS)
+                ],
+                "imputable_reasons": [
+                    {"code": code, "label": NON_COMPLIANCE_REASON_LABELS.get(code, code)}
+                    for code in sorted(
+                        set(NON_COMPLIANCE_REASON_LABELS.keys()) - set(NON_IMPUTABLE_REASONS)
+                    )
+                ],
+                "special_reasons": [
+                    {
+                        "code": "vencido",
+                        "label": NON_COMPLIANCE_REASON_LABELS.get("vencido", "vencido"),
+                        "only_items": ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"],
+                    },
+                    {
+                        "code": "no_apta_para_el_uso",
+                        "label": NON_COMPLIANCE_REASON_LABELS.get("no_apta_para_el_uso", "no_apta_para_el_uso"),
+                        "only_items": ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"],
+                    },
+                ],
+                "quality_rules": {
+                    "section_key": "calidad_instalaciones",
+                    "impacts_statuses": ["nc_menor", "nc_mayor"],
+                },
+                "photo_rules": {
+                    "optional_reasons": ["olvido", "perdida", "robo", "no_asignado"],
+                    "optional_items": ["seguro_vehicular", "oblea_gnc", "rto", "botiquin"],
+                    "required_for_quality_statuses": ["nc_menor", "nc_mayor"],
+                },
+                "critical_rules": {
+                    "critical_statuses": ["no_cumple", "nc_mayor"],
+                    "note": "Una auditoría puede quedar Crítica si un ítem crítico falla con estado imputable.",
+                },
+            },
             today=datetime.today().strftime("%Y-%m-%d"),
         )
     )
