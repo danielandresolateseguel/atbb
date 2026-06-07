@@ -112,8 +112,8 @@
                         </div>
                     </div>
                     {% if executive.status_total %}
-                        <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
-                            <div style="width:240px;">
+                        <div class="executive-donut">
+                            <div class="executive-donut-chart">
                                 <svg viewBox="0 0 140 140" width="220" height="220" aria-hidden="true">
                                     <circle cx="70" cy="70" r="54" fill="none" stroke="#E5E7EB" stroke-width="14"></circle>
                                     {% for seg in executive.donut_segments %}
@@ -135,7 +135,7 @@
                                     <text x="70" y="88" text-anchor="middle" font-size="10" fill="#6B7280">auditorías</text>
                                 </svg>
                             </div>
-                            <div style="flex:1; min-width:260px;">
+                            <div class="executive-donut-table">
                                 <div class="table-wrap">
                                     <table>
                                         <thead>
@@ -149,7 +149,7 @@
                                             {% for seg in executive.donut_segments %}
                                                 <tr>
                                                     <td>
-                                                        <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:{{ seg.color }}; margin-right:8px;"></span>
+                                                        <span class="executive-donut-swatch" style="background:{{ seg.color }};"></span>
                                                         {{ seg.label }}
                                                     </td>
                                                     <td>{{ seg.count }}</td>
