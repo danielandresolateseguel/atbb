@@ -1845,10 +1845,21 @@ td {
     .report-hero,
     .report-score-card,
     .report-meta-card,
+    .photo-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
     .report-card,
     .table-card,
-    .photo-card,
-    .card {
+    .card,
+    .table-wrap,
+    table {
+        break-inside: auto;
+        page-break-inside: auto;
+    }
+
+    tr {
         break-inside: avoid;
         page-break-inside: avoid;
     }
