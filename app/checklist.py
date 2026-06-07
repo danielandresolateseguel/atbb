@@ -183,9 +183,9 @@ CHECKLIST_SECTIONS = [
         "weight": 20,
         "items": [
             {"key": "documentacion", "label": "Cédula de Identificación del Automotor", "critical": True},
-            {"key": "seguro_vehicular", "label": "Seguro vehicular vigente", "critical": True},
-            {"key": "oblea_gnc", "label": "Oblea de GNC vigente", "critical": True},
-            {"key": "rto", "label": "RTO vigente", "critical": True},
+            {"key": "seguro_vehicular", "label": "Seguro vehicular", "critical": True},
+            {"key": "oblea_gnc", "label": "Oblea de GNC", "critical": True},
+            {"key": "rto", "label": "RTO", "critical": True},
             {"key": "neumaticos", "label": "Neumáticos", "critical": True},
             {"key": "luces", "label": "Luces operativas", "critical": True},
             {"key": "elementos_emergencia", "label": "Kit Elementos de Emergencia", "critical": True},
