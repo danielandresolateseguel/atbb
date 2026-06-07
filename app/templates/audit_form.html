@@ -1688,7 +1688,7 @@
                         });
                     }
 
-                    const photoOptionalItem = itemKey === "seguro_vehicular" || itemKey === "oblea_gnc" || itemKey === "rto" || itemKey === "botiquin";
+                    const photoOptionalItem = itemKey === "extintor" || itemKey === "seguro_vehicular" || itemKey === "oblea_gnc" || itemKey === "rto" || itemKey === "botiquin";
                     const photoOptionalReason = reasonValue === "olvido" || reasonValue === "perdida" || reasonValue === "robo" || reasonValue === "no_asignado";
                     const photoOptional = photoOptionalItem || photoOptionalReason;
                     if (evidenceRequired && reasonValue && !photoOptional && !hasPhoto) {

@@ -2753,12 +2753,12 @@ def fetch_audit_reports_critical_findings(filters=None, auditor_user_id=None, li
 
 def fetch_audit_reports_missing_evidence(filters=None, auditor_user_id=None, limit=500):
     optional_reasons = ("olvido", "perdida", "robo", "no_asignado")
-    optional_items = ("seguro_vehicular", "oblea_gnc", "rto", "botiquin")
+    optional_items = ("extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin")
     extra_clauses = [
         "audit_items.status IN ('no_cumple', 'nc_menor', 'nc_mayor')",
         "(audit_items.photo_path IS NULL OR COALESCE(audit_items.photo_path, '') = '')",
         "(audit_items.non_compliance_reason IS NULL OR audit_items.non_compliance_reason NOT IN (?, ?, ?, ?))",
-        "(audit_items.item_key NOT IN (?, ?, ?, ?))",
+        "(audit_items.item_key NOT IN (?, ?, ?, ?, ?))",
     ]
     where_sql, params = build_audits_where_sql(
         filters,
@@ -4452,7 +4452,7 @@ def detect_tool_matches(source_names):
 def build_mobile_audit_alerts(mobile, summary, tool_matches):
     alerts = []
 
-    critical_tools = ("fusionadora", "cortadora", "medidor")
+    critical_tools = ("cortadora", "medidor")
     missing_critical_tools = [
         tool_matches[item_key]["label"]
         for item_key in critical_tools

@@ -1222,7 +1222,7 @@ def calculate_section_score(section, form_data, files):
     serialized_items = []
 
     photo_optional_reasons = {"olvido", "perdida", "robo", "no_asignado"}
-    photo_optional_items = {"seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
+    photo_optional_items = {"extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
     vencido_allowed_items = {"extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
     no_apta_allowed_items = {"carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"}
     status_scores = {
@@ -1777,7 +1777,7 @@ def build_audit_report_metrics(audit, items):
 
     compliance_rate = 0 if applicable_count == 0 else round((compliant_count / applicable_count) * 100)
     photo_optional_reasons = {"olvido", "perdida", "robo", "no_asignado"}
-    photo_optional_items = {"seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
+    photo_optional_items = {"extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
 
     def requires_photo(item):
         item_key = str(item.get("item_key") or "").strip()
@@ -3155,7 +3155,7 @@ def new_audit():
                 },
                 "photo_rules": {
                     "optional_reasons": ["olvido", "perdida", "robo", "no_asignado"],
-                    "optional_items": ["seguro_vehicular", "oblea_gnc", "rto", "botiquin"],
+                    "optional_items": ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"],
                     "required_for_quality_statuses": ["nc_menor", "nc_mayor"],
                 },
                 "critical_rules": {
