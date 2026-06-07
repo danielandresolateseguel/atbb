@@ -32,7 +32,7 @@ CHECKLIST_SECTIONS = [
             {"key": "arnes_completo_anticaidas", "label": "Arnés completo anticaídas", "critical": True},
             {"key": "cola_amarre_separada", "label": "Cola de amarre separada", "critical": True},
             {"key": "extintor", "label": "Extintor vigente", "critical": True},
-            {"key": "botiquin", "label": "Botiquín disponible", "critical": True},
+            {"key": "botiquin", "label": "Botiquín de primeros auxilios", "critical": True},
         ],
     },
     {
@@ -185,7 +185,7 @@ CHECKLIST_SECTIONS = [
             {"key": "seguro_vehicular", "label": "Seguro vehicular vigente", "critical": True},
             {"key": "oblea_gnc", "label": "Oblea de GNC vigente", "critical": True},
             {"key": "rto", "label": "RTO vigente", "critical": True},
-            {"key": "neumaticos", "label": "Neumaticos en buen estado", "critical": True},
+            {"key": "neumaticos", "label": "Neumáticos", "critical": True},
             {"key": "luces", "label": "Luces operativas", "critical": True},
             {"key": "elementos_emergencia", "label": "Kit Elementos de Emergencia", "critical": True},
             {"key": "rueda_auxilio", "label": "Rueda de auxilio", "critical": True},
