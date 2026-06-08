@@ -230,17 +230,19 @@
                         </p>
                     </div>
 
-                    {% if item["photo_path"] %}
+                    {% set photo_list = item["photo_path"]|audit_photo_paths %}
+                    {% if photo_list %}
                         <div class="evidence-block">
                             <strong>Evidencia</strong>
-                            {% set photo_src = item["photo_path"] %}
-                            {% if photo_src.startswith("http") %}
-                                <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto</a>
-                                <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
-                            {% else %}
-                                <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto</a>
-                                <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
-                            {% endif %}
+                            {% for photo_src in photo_list %}
+                                {% if photo_src.startswith("http") %}
+                                    <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                                    <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
+                                {% else %}
+                                    <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                                    <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}" class="evidence-image">
+                                {% endif %}
+                            {% endfor %}
                         </div>
                     {% else %}
                         <p class="empty-state">Sin evidencia fotográfica.</p>

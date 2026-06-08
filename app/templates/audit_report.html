@@ -381,19 +381,20 @@
                 {% if report["evidence_items"] %}
                     <div class="photo-gallery">
                         {% for item in report["evidence_items"] %}
-                            <article class="photo-card">
-                                {% set photo_src = item["photo_path"] %}
-                                {% if photo_src.startswith("http") %}
-                                    <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
-                                {% else %}
-                                    <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
-                                {% endif %}
-                                <div class="photo-meta">
-                                    <strong>{{ item["item_label"] }}</strong>
-                                    <span>{{ item["section_title"] }}</span>
-                                    <p>{{ item["notes"] or "Sin observación." }}</p>
-                                </div>
-                            </article>
+                            {% for photo_src in item["photo_path"]|audit_photo_paths %}
+                                <article class="photo-card">
+                                    {% if photo_src.startswith("http") %}
+                                        <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
+                                    {% else %}
+                                        <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
+                                    {% endif %}
+                                    <div class="photo-meta">
+                                        <strong>{{ item["item_label"] }}</strong>
+                                        <span>{{ item["section_title"] }}</span>
+                                        <p>{{ item["notes"] or "Sin observación." }}</p>
+                                    </div>
+                                </article>
+                            {% endfor %}
                         {% endfor %}
                     </div>
                 {% else %}

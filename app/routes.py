@@ -2,6 +2,7 @@ import base64
 import binascii
 import csv
 import io
+import json
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -105,6 +106,7 @@ NON_COMPLIANCE_REASON_LABELS = {
     "perdida": "Pérdida",
     "robo": "Robo",
     "reparacion": "En reparación",
+    "desorden_sucio": "Desorden/sucio",
     "vencido": "Vencido",
     "no_apta_para_el_uso": "No apta para el uso",
     "no_asignado": "No asignado",
@@ -139,6 +141,23 @@ def non_compliance_reason_label(value):
     if label:
         return label
     return raw.replace("_", " ").capitalize()
+
+
+@main.app_template_filter("audit_photo_paths")
+def audit_photo_paths(value):
+    if value is None:
+        return []
+    raw = str(value).strip()
+    if not raw or raw == "-":
+        return []
+    if raw.startswith("[") and raw.endswith("]"):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return [raw]
+        if isinstance(parsed, list):
+            return [str(entry) for entry in parsed if entry]
+    return [raw]
 
 
 
@@ -1245,6 +1264,8 @@ def calculate_section_score(section, form_data, files):
 
     for item in section["items"]:
         status = form_data.get(f"status__{item['key']}", "")
+        if not status and item.get("optional"):
+            status = "no_aplica"
         non_compliance_reason = form_data.get(f"reason__{item['key']}", "").strip()
         non_imputable_non_compliance = is_non_imputable_non_compliance(status, non_compliance_reason)
         score_excluded_non_compliance = (
@@ -1252,14 +1273,28 @@ def calculate_section_score(section, form_data, files):
             and str(non_compliance_reason or "").strip().lower() in SCORE_EXCLUDED_REASONS
         )
         notes = form_data.get(f"notes__{item['key']}", "").strip().upper()
-        file_photo = files.get(f"photo__{item['key']}")
-        camera_photo = files.get(f"photo_camera__{item['key']}")
-        if has_uploaded_file(file_photo):
-            photo_file = file_photo
-        elif has_uploaded_file(camera_photo):
-            photo_file = camera_photo
+        photo_file = None
+        photo_files = None
+        if item.get("multi_photo"):
+            collected = []
+            if hasattr(files, "getlist"):
+                collected.extend(files.getlist(f"photos__{item['key']}"))
+                collected.extend(files.getlist(f"photos_camera__{item['key']}"))
+            else:
+                candidate = files.get(f"photos__{item['key']}")
+                if candidate:
+                    collected.append(candidate)
+                candidate = files.get(f"photos_camera__{item['key']}")
+                if candidate:
+                    collected.append(candidate)
+            photo_files = [entry for entry in collected if has_uploaded_file(entry)]
         else:
-            photo_file = None
+            file_photo = files.get(f"photo__{item['key']}")
+            camera_photo = files.get(f"photo_camera__{item['key']}")
+            if has_uploaded_file(file_photo):
+                photo_file = file_photo
+            elif has_uploaded_file(camera_photo):
+                photo_file = camera_photo
         evidence_required = item.get("evidence_required", True)
         extinguisher_expiry = ""
         if item["key"] == "extintor":
@@ -1375,6 +1410,7 @@ def calculate_section_score(section, form_data, files):
                 "non_compliance_reason": non_compliance_reason or None,
                 "notes": notes or None,
                 "photo_file": photo_file if has_uploaded_file(photo_file) else None,
+                "photo_files": photo_files if photo_files else None,
             }
         )
 
@@ -1627,7 +1663,36 @@ def persist_item_evidence(items, audit_date):
         target_dir.mkdir(parents=True, exist_ok=True)
 
     for item in items:
+        photo_files = item.pop("photo_files", None)
         photo_file = item.pop("photo_file", None)
+
+        if photo_files:
+            photo_paths = []
+            for index, entry in enumerate(photo_files):
+                filename, extension = validate_photo_file(entry, item["item_label"])
+                safe_stem = secure_filename(item["item_key"]) or "evidencia"
+                generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
+
+                raw_bytes = entry.stream.read()
+                if not raw_bytes:
+                    raise ValueError(f"La evidencia de {item['item_label']} no contiene datos validos.")
+
+                optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+                if cloudinary_enabled():
+                    base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+                    folder = f"{base_folder}/audits/{date_folder}"
+                    uploaded_url = upload_image_to_cloudinary(optimized_bytes, folder=folder, public_id=generated_name)
+                    photo_paths.append(uploaded_url)
+                else:
+                    generated_filename = f"{generated_name}.{optimized_extension}"
+                    saved_path = target_dir / generated_filename
+                    saved_path.write_bytes(optimized_bytes)
+                    photo_paths.append(
+                        f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
+                    )
+            item["photo_path"] = json.dumps(photo_paths, ensure_ascii=False) if photo_paths else None
+            continue
+
         if not photo_file:
             item["photo_path"] = None
             continue

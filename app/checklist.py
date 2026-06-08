@@ -195,6 +195,7 @@ CHECKLIST_SECTIONS = [
             {"key": "orden_limpieza_habitaculo", "label": "Orden y limpieza de Habitáculo", "critical": False},
             {"key": "orden_limpieza_zona_carga", "label": "Orden y limpieza de Zona de carga", "critical": False},
             {"key": "carga_segura", "label": "Escalera Plegable/ telescopica", "critical": False},
+            {"key": "porta_escalera", "label": "Porta escalera", "critical": False},
             {
                 "key": "escalera_aluminio_extensible",
                 "label": "Escalera de aluminio extensible (11/13 peldaños)",
@@ -204,6 +205,14 @@ CHECKLIST_SECTIONS = [
                 "key": "escalera_fibra_tijera_doble",
                 "label": "Escalera de fibra de vidrio tipo tijera doble",
                 "critical": True,
+            },
+            {
+                "key": "edv",
+                "label": "+EDV (Estado del vehículo)",
+                "critical": False,
+                "optional": True,
+                "evidence_required": False,
+                "multi_photo": True,
             },
         ],
     },

@@ -335,6 +335,9 @@
                                 <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
                                 <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                 <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                {% if item["key"] in ["orden_limpieza_habitaculo", "orden_limpieza_zona_carga"] %}
+                                <option value="desorden_sucio" {% if request.form.get('reason__' + item['key']) == 'desorden_sucio' %}selected{% endif %}>Desorden/sucio</option>
+                                {% endif %}
                                 {% if item["key"] in ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"] %}
                                 <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
                                 {% endif %}
@@ -391,6 +394,69 @@
                         </label>
 
                         <small class="auto-hint tool-match-neutral" data-hand-tool-state="{{ item['key'] }}">Sin responder aún.</small>
+                    </article>
+                    {% else %}
+                    {% if item["key"] == "edv" %}
+                    <article
+                        class="checklist-item"
+                        id="item__{{ item['key'] }}"
+                        data-item-key="{{ item['key'] }}"
+                        data-item-label="{{ item['label'] }}"
+                        data-section-title="{{ section['title'] }}"
+                        data-section-key="{{ section['key'] }}"
+                        data-critical="0"
+                        data-evidence-required="0"
+                        data-multi-evidence="1"
+                    >
+                        <input type="radio" name="status__{{ item['key'] }}" value="no_aplica" checked style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" tabindex="-1" aria-hidden="true">
+                        <div class="checklist-header">
+                            <div>
+                                <strong>{{ item["label"] }}</strong>
+                            </div>
+                        </div>
+
+                        <label>
+                            <span>Detalle</span>
+                            <textarea name="notes__{{ item['key'] }}" rows="4" placeholder="Detalle del estado del vehículo (opcional)">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
+                        </label>
+
+                        <label>
+                            <span>Fotografías</span>
+                            <div class="evidence-upload-row">
+                                <input
+                                    type="file"
+                                    id="photos__{{ item['key'] }}"
+                                    name="photos__{{ item['key'] }}"
+                                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                    multiple
+                                    style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                >
+                                <input
+                                    type="file"
+                                    id="photos_camera__{{ item['key'] }}"
+                                    name="photos_camera__{{ item['key'] }}"
+                                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                    capture="environment"
+                                    multiple
+                                    style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                >
+                                <button type="button" class="button button-primary evidence-action" data-file-trigger="photos__{{ item['key'] }}" aria-label="Seleccionar archivos" title="Seleccionar archivos">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm1 7V3.5L18.5 9H15zM8 13h8v2H8v-2zm0 4h6v2H8v-2z"/>
+                                    </svg>
+                                </button>
+                                <button type="button" class="button button-primary evidence-action" data-file-trigger="photos_camera__{{ item['key'] }}" aria-label="Abrir cámara" title="Abrir cámara">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path fill="currentColor" d="M9 4l1.83 2H14l1.83-2H18a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h3zm3 5a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <small class="evidence-filename" data-evidence-filename="1">Sin archivos seleccionados.</small>
+                        </label>
                     </article>
                     {% else %}
                     <article
@@ -525,6 +591,9 @@
                                     <option value="perdida" {% if request.form.get('reason__' + item['key']) == 'perdida' %}selected{% endif %}>Pérdida</option>
                                     <option value="robo" {% if request.form.get('reason__' + item['key']) == 'robo' %}selected{% endif %}>Robo</option>
                                     <option value="reparacion" {% if request.form.get('reason__' + item['key']) == 'reparacion' %}selected{% endif %}>En reparación</option>
+                                    {% if item["key"] in ["orden_limpieza_habitaculo", "orden_limpieza_zona_carga"] %}
+                                    <option value="desorden_sucio" {% if request.form.get('reason__' + item['key']) == 'desorden_sucio' %}selected{% endif %}>Desorden/sucio</option>
+                                    {% endif %}
                                     {% if item["key"] in ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"] %}
                                     <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
                                     {% endif %}
@@ -581,6 +650,7 @@
                             </label>
                         {% endif %}
                     </article>
+                    {% endif %}
                     {% endif %}
                     {% endfor %}
                 </div>
@@ -1111,15 +1181,18 @@
                 const input = document.getElementById(inputId);
                 const checklistItem = button.closest(".checklist-item");
                 if (checklistItem) {
-                    const fileInput = checklistItem.querySelector('input[name^="photo__"]');
-                    const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"]');
-                    if (fileInput && fileInput.id !== inputId) {
-                        fileInput.value = "";
-                        delete fileInput.dataset.lastEvidenceIdentity;
-                    }
-                    if (cameraInput && cameraInput.id !== inputId) {
-                        cameraInput.value = "";
-                        delete cameraInput.dataset.lastEvidenceIdentity;
+                    const isMultiEvidence = checklistItem.dataset.multiEvidence === "1";
+                    const fileInput = checklistItem.querySelector('input[name^="photo__"], input[name^="photos__"]');
+                    const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"], input[name^="photos_camera__"]');
+                    if (!isMultiEvidence) {
+                        if (fileInput && fileInput.id !== inputId) {
+                            fileInput.value = "";
+                            delete fileInput.dataset.lastEvidenceIdentity;
+                        }
+                        if (cameraInput && cameraInput.id !== inputId) {
+                            cameraInput.value = "";
+                            delete cameraInput.dataset.lastEvidenceIdentity;
+                        }
                     }
                     syncEvidenceFilename(checklistItem);
                 }
@@ -1137,19 +1210,34 @@
             if (!filenameTarget) {
                 return;
             }
-            const fileInput = checklistItem.querySelector('input[name^="photo__"]');
-            const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"]');
-            const file = (fileInput && fileInput.files && fileInput.files.length > 0) ? fileInput.files[0] : null;
-            const cameraFile = (cameraInput && cameraInput.files && cameraInput.files.length > 0) ? cameraInput.files[0] : null;
-            const selected = cameraFile || file;
-            if (!selected) {
-                filenameTarget.textContent = "Sin archivo seleccionado.";
+            const fileInput = checklistItem.querySelector('input[name^="photo__"], input[name^="photos__"]');
+            const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"], input[name^="photos_camera__"]');
+            const files = [];
+            if (fileInput && fileInput.files && fileInput.files.length > 0) {
+                Array.from(fileInput.files).forEach((entry) => files.push(entry));
+            }
+            if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+                Array.from(cameraInput.files).forEach((entry) => files.push(entry));
+            }
+            if (files.length === 0) {
+                filenameTarget.textContent = checklistItem.dataset.multiEvidence === "1"
+                    ? "Sin archivos seleccionados."
+                    : "Sin archivo seleccionado.";
                 return;
             }
-            const type = String(selected.type || "").toLowerCase();
-            const typeLabel = type.includes("webp") ? "WEBP" : (type.includes("jpeg") ? "JPG" : (type.includes("png") ? "PNG" : ""));
-            const sizeKb = Math.max(1, Math.round((selected.size || 0) / 1024));
-            filenameTarget.textContent = `${selected.name}${typeLabel ? ` · ${typeLabel}` : ""} · ${sizeKb} KB`;
+            if (files.length === 1) {
+                const selected = files[0];
+                const type = String(selected.type || "").toLowerCase();
+                const typeLabel = type.includes("webp") ? "WEBP" : (type.includes("jpeg") ? "JPG" : (type.includes("png") ? "PNG" : ""));
+                const sizeKb = Math.max(1, Math.round((selected.size || 0) / 1024));
+                filenameTarget.textContent = `${selected.name}${typeLabel ? ` · ${typeLabel}` : ""} · ${sizeKb} KB`;
+                return;
+            }
+            const totalKb = Math.max(
+                1,
+                Math.round(files.reduce((sum, entry) => sum + (entry.size || 0), 0) / 1024)
+            );
+            filenameTarget.textContent = `${files.length} archivos seleccionados · ${totalKb} KB`;
         }
 
         function parseMaterialCode(rawValue) {
@@ -2231,13 +2319,19 @@
             }
             if (
                 target.name
-                && (target.name.startsWith("photo__") || target.name.startsWith("photo_camera__"))
+                && (
+                    target.name.startsWith("photo__")
+                    || target.name.startsWith("photo_camera__")
+                    || target.name.startsWith("photos__")
+                    || target.name.startsWith("photos_camera__")
+                )
                 && target instanceof HTMLInputElement
             ) {
                 const checklistItem = target.closest(".checklist-item");
-                if (checklistItem) {
-                    const fileInput = checklistItem.querySelector('input[name^="photo__"]');
-                    const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"]');
+                const isMultiEvidence = checklistItem && checklistItem.dataset.multiEvidence === "1";
+                if (checklistItem && !isMultiEvidence) {
+                    const fileInput = checklistItem.querySelector('input[name^="photo__"], input[name^="photos__"]');
+                    const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"], input[name^="photos_camera__"]');
                     if (target.name.startsWith("photo_camera__") && fileInput && fileInput !== target) {
                         fileInput.value = "";
                         delete fileInput.dataset.lastEvidenceIdentity;
@@ -2247,11 +2341,15 @@
                         delete cameraInput.dataset.lastEvidenceIdentity;
                     }
                 }
-                syncEvidenceFilename(target.closest(".checklist-item"));
-                void maybeCompressEvidenceInput(target).then(() => {
-                    syncEvidenceFilename(target.closest(".checklist-item"));
+                syncEvidenceFilename(checklistItem);
+                if (isMultiEvidence) {
                     evaluateClosure();
-                });
+                } else {
+                    void maybeCompressEvidenceInput(target).then(() => {
+                        syncEvidenceFilename(target.closest(".checklist-item"));
+                        evaluateClosure();
+                    });
+                }
             }
             if (
                 target.name
@@ -2259,6 +2357,8 @@
                     target.name.startsWith("status__")
                     || target.name.startsWith("photo__")
                     || target.name.startsWith("photo_camera__")
+                    || target.name.startsWith("photos__")
+                    || target.name.startsWith("photos_camera__")
                     || target.name.startsWith("reason__")
                     || target.name.startsWith("expiry__")
                 )
