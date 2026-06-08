@@ -466,8 +466,6 @@ def build_reports_context(report_key, filters, auditor_user_id):
             health = {"class": "status-ok", "label": "OK"}
 
         trend_weekly = fetch_audit_reports_time_series(filters, auditor_user_id=auditor_user_id, granularity="week", limit=8)
-
-        critical_preview = fetch_audit_reports_critical_findings(filters, auditor_user_id=auditor_user_id, limit=30)[:12]
         target_approval_rate = current_app.config.get("REPORT_TARGET_APPROVAL_RATE", 85)
         target_average_score = current_app.config.get("REPORT_TARGET_AVERAGE_SCORE", 95.0)
         try:
@@ -505,28 +503,10 @@ def build_reports_context(report_key, filters, auditor_user_id):
                 f"({top_section.get('non_compliant_count') or 0} NC, {top_section.get('critical_non_compliant_count') or 0} críticas)."
             )
 
-        reason_counts = {}
-        for row in critical_preview:
-            raw_reason = (row.get("non_compliance_reason") or "").strip().lower()
-            if not raw_reason:
-                continue
-            reason_counts[raw_reason] = reason_counts.get(raw_reason, 0) + 1
-        top_reason_raw = ""
-        top_reason_count = 0
-        for key, count in reason_counts.items():
-            if count > top_reason_count:
-                top_reason_raw = key
-                top_reason_count = count
-        top_reason_label = non_compliance_reason_label(top_reason_raw)
-        if top_reason_raw and top_reason_label != "-":
-            riesgo_value = f"{riesgo_value} Motivo crítico más frecuente: {top_reason_label} ({top_reason_count})."
-
         top_supply = top_supplies[0] if top_supplies else None
         action_parts = []
         if top_section:
             action_parts.append(f"Plan de acción en {top_section.get('section_title') or '-'}: repasar estándar y reforzar control en terreno.")
-        if top_reason_raw and top_reason_label != "-":
-            action_parts.append(f"Atacar causa '{top_reason_label}' con checklist específico y validación de evidencia.")
         if top_supply:
             action_parts.append(
                 f"Priorizar abastecimiento: {str(top_supply.get('request_type') or '').capitalize()} {top_supply.get('material_code') or '-'} "
@@ -566,7 +546,6 @@ def build_reports_context(report_key, filters, auditor_user_id):
             "health": health,
             "trend_weekly": trend_weekly,
             "insights": insights,
-            "critical_preview": critical_preview,
         }
     elif report_key == "estados":
         title = "Desglose por estado"
