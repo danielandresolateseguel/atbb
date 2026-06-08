@@ -1150,6 +1150,66 @@ td {
     .report-body.report-key-hallazgos_criticos .report-table .col-notes {
         width: auto;
     }
+
+    .report-body.report-key-insumos_detalle .report-table {
+        table-layout: auto;
+        font-size: 0.68rem;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table th,
+    .report-body.report-key-insumos_detalle .report-table td {
+        padding: 0.22rem 0.28rem;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table th {
+        white-space: normal;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-audit_date {
+        width: 4.6rem;
+        white-space: nowrap;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-audit_id {
+        width: 3.2rem;
+        white-space: nowrap;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-mobile_code {
+        width: 3.8rem;
+        white-space: nowrap;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-quantity {
+        width: 3.2rem;
+        white-space: nowrap;
+        text-align: right;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-technician_name {
+        width: 9rem;
+        overflow-wrap: anywhere;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-request_type {
+        width: 6rem;
+        overflow-wrap: anywhere;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-material_code {
+        width: 7.2rem;
+        overflow-wrap: anywhere;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-section_title {
+        width: 10rem;
+        overflow-wrap: anywhere;
+    }
+
+    .report-body.report-key-insumos_detalle .report-table .col-item_label {
+        width: 10rem;
+        overflow-wrap: anywhere;
+    }
 }
 
 .sticky-actions {
