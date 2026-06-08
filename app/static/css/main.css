@@ -1055,6 +1055,9 @@ td {
 
     .report-table th {
         position: static;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
     }
 
     .report-table thead {
@@ -1090,6 +1093,14 @@ td {
 
     .report-table .col-vehicle_plate {
         width: 5rem;
+    }
+
+    .report-body.report-key-hallazgos_criticos .report-table .col-result_status {
+        width: 6rem;
+    }
+
+    .report-body.report-key-hallazgos_criticos .report-table .col-non_compliance_reason {
+        width: 6.8rem;
     }
 
     .report-table .col-total_score {
