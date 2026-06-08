@@ -258,6 +258,9 @@
         </article>
     </section>
 
+    {% set no_apta_allowed_sections = ["seguridad", "herramientas", "herramientas_mano", "vehiculo"] %}
+    {% set no_apta_excluded_items = ["documentacion", "seguro_vehicular", "oblea_gnc", "rto"] %}
+
     {% for section in checklist_sections %}
         <section class="card checklist-section" id="section__{{ section['key'] }}" data-checklist-section="1">
             <div class="section-heading">
@@ -335,7 +338,7 @@
                                 {% if item["key"] in ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"] %}
                                 <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
                                 {% endif %}
-                                {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
+                                {% if section["key"] in no_apta_allowed_sections and item["key"] not in no_apta_excluded_items %}
                                 <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
                                 {% endif %}
                                 <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>
@@ -525,7 +528,7 @@
                                     {% if item["key"] in ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"] %}
                                     <option value="vencido" {% if request.form.get('reason__' + item['key']) == 'vencido' %}selected{% endif %}>Vencido</option>
                                     {% endif %}
-                                    {% if item["key"] in ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"] %}
+                                    {% if section["key"] in no_apta_allowed_sections and item["key"] not in no_apta_excluded_items %}
                                     <option value="no_apta_para_el_uso" {% if request.form.get('reason__' + item['key']) == 'no_apta_para_el_uso' %}selected{% endif %}>No apta para el uso</option>
                                     {% endif %}
                                     <option value="no_asignado" {% if request.form.get('reason__' + item['key']) == 'no_asignado' %}selected{% endif %}>No asignado</option>

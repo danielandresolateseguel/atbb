@@ -1225,7 +1225,15 @@ def calculate_section_score(section, form_data, files):
     photo_optional_reasons = {"olvido", "perdida", "robo", "no_asignado"}
     photo_optional_items = {"extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
     vencido_allowed_items = {"extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"}
-    no_apta_allowed_items = {"carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"}
+    no_apta_allowed_sections = {"seguridad", "herramientas", "herramientas_mano", "vehiculo"}
+    no_apta_excluded_items = {"documentacion", "seguro_vehicular", "oblea_gnc", "rto"}
+    no_apta_allowed_items = {
+        str(it.get("key"))
+        for sec in CHECKLIST_SECTIONS
+        if str(sec.get("key")) in no_apta_allowed_sections
+        for it in (sec.get("items") or [])
+        if str(it.get("key")) and str(it.get("key")) not in no_apta_excluded_items
+    }
     status_scores = {
         "cumple": 1.0,
         "conforme": 1.0,
