@@ -1107,6 +1107,23 @@ td {
         width: 3.4rem;
         white-space: nowrap;
     }
+
+    .report-body.report-key-hallazgos_criticos .report-table {
+        table-layout: auto;
+    }
+
+    .report-body.report-key-hallazgos_criticos .report-table th,
+    .report-body.report-key-hallazgos_criticos .report-table td {
+        padding: 0.22rem 0.28rem;
+    }
+
+    .report-body.report-key-hallazgos_criticos .report-table .col-technician_name,
+    .report-body.report-key-hallazgos_criticos .report-table .col-location,
+    .report-body.report-key-hallazgos_criticos .report-table .col-section_title,
+    .report-body.report-key-hallazgos_criticos .report-table .col-item_label,
+    .report-body.report-key-hallazgos_criticos .report-table .col-notes {
+        width: auto;
+    }
 }
 
 .sticky-actions {
