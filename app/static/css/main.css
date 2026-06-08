@@ -976,6 +976,84 @@ td {
     text-align: left;
 }
 
+.report-table {
+    table-layout: fixed;
+    min-width: 1600px;
+}
+
+.report-table th,
+.report-table td {
+    vertical-align: top;
+}
+
+.report-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+}
+
+.report-table .col-audit_date,
+.report-table .col-audit_id,
+.report-table .col-mobile_code,
+.report-table .col-vehicle_plate,
+.report-table .col-result_status,
+.report-table .col-total_score,
+.report-table .col-status {
+    white-space: nowrap;
+}
+
+.report-table .col-total_score {
+    text-align: right;
+}
+
+.report-table .col-technician_name {
+    width: 12rem;
+    overflow-wrap: anywhere;
+}
+
+.report-table .col-location {
+    width: 9rem;
+    overflow-wrap: anywhere;
+}
+
+.report-table .col-section_title {
+    width: 13rem;
+    overflow-wrap: anywhere;
+}
+
+.report-table .col-item_label {
+    width: 13rem;
+    overflow-wrap: anywhere;
+}
+
+.report-table .col-non_compliance_reason {
+    width: 9rem;
+    overflow-wrap: anywhere;
+}
+
+.report-table .col-notes {
+    width: 16rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+@media print {
+    .report-table {
+        min-width: 0;
+        font-size: 0.8rem;
+    }
+
+    .report-table th,
+    .report-table td {
+        padding: 0.55rem 0.5rem;
+    }
+
+    .report-table th {
+        position: static;
+    }
+}
+
 .sticky-actions {
     position: sticky;
     bottom: 1rem;

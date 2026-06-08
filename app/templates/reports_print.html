@@ -4,13 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
+    {% set wide_table_reports = ["hallazgos_criticos", "responsabilidad_supervisor", "evidencias_faltantes", "insumos_detalle"] %}
+    {% if print_mode and report_key in wide_table_reports %}
+        <style>@page { size: A4 landscape; margin: 10mm; }</style>
+    {% endif %}
     {% if inline_css %}
         <style>{{ inline_css|safe }}</style>
     {% else %}
         <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     {% endif %}
 </head>
-<body class="report-body">
+<body class="report-body report-key-{{ report_key }}">
     <main class="report-page">
         <section class="report-shell">
             <header class="report-header">
@@ -735,11 +739,11 @@
                                     </tbody>
                                 </table>
                             {% else %}
-                                <table>
+                                <table class="report-table report-table-{{ report_key }}">
                                     <thead>
                                         <tr>
                                             {% for col in columns %}
-                                                <th>{{ col.label }}</th>
+                                                <th class="col-{{ col.key }}">{{ col.label }}</th>
                                             {% endfor %}
                                         </tr>
                                     </thead>
@@ -747,11 +751,13 @@
                                         {% for row in rows %}
                                             <tr>
                                                 {% for col in columns %}
-                                                    <td>
+                                                    <td class="col-{{ col.key }}">
                                                         {% if col.key == "non_compliance_reason" %}
                                                             {{ row.get(col.key)|non_compliance_reason_label }}
+                                                        {% elif col.key == "notes" %}
+                                                            {{ row.get(col.key) or "-" }}
                                                         {% else %}
-                                                            {{ row.get(col.key, "") }}
+                                                            {{ row.get(col.key) or "" }}
                                                         {% endif %}
                                                     </td>
                                                 {% endfor %}
