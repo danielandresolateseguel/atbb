@@ -60,6 +60,12 @@
                 </select>
             </label>
         {% endif %}
+        {% if audit_official_from_date %}
+            <label class="checkbox-field">
+                <span>Incluir pruebas (antes del corte {{ audit_official_from_date }})</span>
+                <input type="checkbox" name="include_pruebas" value="1" {% if filters.include_pruebas %}checked{% endif %}>
+            </label>
+        {% endif %}
         <div class="filter-actions">
             <button class="button button-primary" type="submit">Aplicar</button>
             <a class="button button-secondary" href="{{ url_for('main.reports') }}">Limpiar</a>
@@ -74,8 +80,8 @@
             <h3>Estados</h3>
         </div>
         <div class="filter-actions">
-            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='estados', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='estados', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='estados', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='estados', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
         </div>
     </div>
     {% if status_breakdown %}
@@ -111,8 +117,8 @@
             <h3>Secciones con más no conformidades</h3>
         </div>
         <div class="filter-actions">
-            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='secciones', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='secciones', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='secciones', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='secciones', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
         </div>
     </div>
     {% if section_breakdown %}
@@ -148,8 +154,8 @@
             <h3>Tendencia semanal</h3>
         </div>
         <div class="filter-actions">
-            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
         </div>
     </div>
     {% if trend_weekly %}
@@ -193,8 +199,8 @@
             <h3>Tendencia mensual</h3>
         </div>
         <div class="filter-actions">
-            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
         </div>
     </div>
     {% if trend_monthly %}
@@ -253,8 +259,8 @@
                     <td>KPIs (auditorías, aprobadas, críticas, rechazadas, tasa de aprobación, promedio).</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -263,8 +269,8 @@
                     <td>Evolución por semana: auditorías, criticidad, tasa de aprobación y promedio.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_semanal', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -273,8 +279,8 @@
                     <td>Evolución por mes: auditorías, criticidad, tasa de aprobación y promedio.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='tendencia_mensual', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -283,8 +289,8 @@
                     <td>Ítems no conformes críticos con contexto de auditoría (móvil/técnico/vehículo).</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='hallazgos_criticos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='hallazgos_criticos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='hallazgos_criticos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='hallazgos_criticos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -293,8 +299,8 @@
                     <td>No conformidades sin evidencia fotográfica (según reglas actuales).</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='evidencias_faltantes', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='evidencias_faltantes', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='evidencias_faltantes', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='evidencias_faltantes', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -303,8 +309,8 @@
                     <td>Listado completo de solicitudes (reponer/cambiar) por auditoría.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='insumos_detalle', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='insumos_detalle', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='insumos_detalle', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='insumos_detalle', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -313,8 +319,8 @@
                     <td>Totales por material y tipo de solicitud.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='insumos_resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='insumos_resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='insumos_resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='insumos_resumen', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -323,8 +329,8 @@
                     <td>Auditorías, criticidad, tasa de aprobación y promedio por supervisor.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='supervisores', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='supervisores', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='supervisores', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='supervisores', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -333,8 +339,8 @@
                     <td>Ítems No cumple con motivo No asignado / Vencido / No apta para el uso (con contexto completo).</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -343,8 +349,8 @@
                     <td>Auditorías, criticidad, tasa de aprobación y promedio por centro.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='centros', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='centros', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='centros', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='centros', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -353,8 +359,8 @@
                     <td>Auditorías, criticidad, tasa de aprobación y promedio por empresa.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='empresas', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='empresas', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='empresas', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='empresas', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -363,8 +369,8 @@
                     <td>Ordenado por casos críticos y volumen (incluye supervisor/centro/empresa).</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='ranking_tecnicos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='ranking_tecnicos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='ranking_tecnicos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='ranking_tecnicos', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>
@@ -373,8 +379,8 @@
                     <td>Ordenado por casos críticos y volumen.</td>
                     <td>
                         <div class="filter-actions">
-                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='ranking_moviles', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">CSV</a>
-                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='ranking_moviles', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">PDF</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report', report_key='ranking_moviles', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">CSV</a>
+                            <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key='ranking_moviles', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">PDF</a>
                         </div>
                     </td>
                 </tr>

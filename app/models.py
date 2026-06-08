@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
@@ -12,6 +13,25 @@ def is_postgres():
 
 def _postgres_sql(sql):
     return sql.replace("?", "%s")
+
+
+def _normalize_bool(value):
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    return normalized in {"1", "true", "yes", "y", "on"}
+
+
+def get_audit_official_from_date():
+    raw = (current_app.config.get("AUDIT_OFFICIAL_FROM_DATE") or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return None
 
 
 class PostgresConnection:
@@ -1360,6 +1380,13 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
         auditor_filter_sql = " AND audits.auditor_user_id = ?"
         auditor_filter_params = (auditor_user_id,)
 
+    cutoff_sql = ""
+    cutoff_params = ()
+    official_from_date = get_audit_official_from_date()
+    if official_from_date:
+        cutoff_sql = " AND audits.audit_date >= ?"
+        cutoff_params = (official_from_date,)
+
     if technician_id is None:
         rows = get_db().execute(
             f"""
@@ -1377,12 +1404,13 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
             LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
             LEFT JOIN technicians ON technicians.id = audits.technician_id
             INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-            WHERE audits.mobile_unit_id = ?{auditor_filter_sql}
+            WHERE audits.mobile_unit_id = ?{cutoff_sql}{auditor_filter_sql}
             ORDER BY audits.created_at DESC
             LIMIT ?
             """,
             (
                 mobile_unit_id,
+                *cutoff_params,
                 *auditor_filter_params,
                 limit,
             ),
@@ -1404,13 +1432,14 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
             LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
             LEFT JOIN technicians ON technicians.id = audits.technician_id
             INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-            WHERE (audits.mobile_unit_id = ? OR audits.technician_id = ?){auditor_filter_sql}
+            WHERE (audits.mobile_unit_id = ? OR audits.technician_id = ?){cutoff_sql}{auditor_filter_sql}
             ORDER BY audits.created_at DESC
             LIMIT ?
             """,
             (
                 mobile_unit_id,
                 technician_id,
+                *cutoff_params,
                 *auditor_filter_params,
                 limit,
             ),
@@ -1841,11 +1870,21 @@ def fetch_stock_stats():
 
 
 def fetch_dashboard_stats(auditor_user_id=None):
-    where_sql = ""
-    params = ()
+    where_clauses = []
+    params = []
+
+    official_from_date = get_audit_official_from_date()
+    if official_from_date:
+        where_clauses.append("audits.audit_date >= ?")
+        params.append(official_from_date)
+
     if auditor_user_id is not None:
-        where_sql = "WHERE audits.auditor_user_id = ?"
-        params = (auditor_user_id,)
+        where_clauses.append("audits.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
 
     row = get_db().execute(
         f"""
@@ -1856,7 +1895,7 @@ def fetch_dashboard_stats(auditor_user_id=None):
         FROM audits
         {where_sql}
         """,
-        params,
+        tuple(params),
     ).fetchone()
 
     total_audits = row["total_audits"] or 0
@@ -2109,11 +2148,21 @@ def fetch_tnps_response_for_audit(audit_id):
 
 
 def fetch_recent_audits(limit=5, auditor_user_id=None):
-    where_sql = ""
+    where_clauses = []
     params = []
+
+    official_from_date = get_audit_official_from_date()
+    if official_from_date:
+        where_clauses.append("audits.audit_date >= ?")
+        params.append(official_from_date)
+
     if auditor_user_id is not None:
-        where_sql = "WHERE audits.auditor_user_id = ?"
+        where_clauses.append("audits.auditor_user_id = ?")
         params.append(auditor_user_id)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
 
     params.append(limit)
     rows = get_db().execute(
@@ -2143,44 +2192,7 @@ def fetch_recent_audits(limit=5, auditor_user_id=None):
 
 
 def fetch_all_audits(filters=None, auditor_user_id=None):
-    filters = filters or {}
-    where_clauses = []
-    params = []
-
-    from_date = (filters.get("from_date") or "").strip()
-    to_date = (filters.get("to_date") or "").strip()
-    status = (filters.get("status") or "").strip()
-    auditor = (filters.get("auditor") or "").strip()
-
-    if from_date:
-        where_clauses.append("audits.audit_date >= ?")
-        params.append(from_date)
-
-    if to_date:
-        where_clauses.append("audits.audit_date <= ?")
-        params.append(to_date)
-
-    if status:
-        where_clauses.append("audits.result_status = ?")
-        params.append(status)
-
-    if auditor:
-        like_value = f"%{auditor}%"
-        if is_postgres():
-            where_clauses.append("COALESCE(audits.auditor_name, '') ILIKE ?")
-            params.append(like_value)
-        else:
-            where_clauses.append("LOWER(COALESCE(audits.auditor_name, '')) LIKE ?")
-            params.append(like_value.lower())
-
-    if auditor_user_id is not None:
-        where_clauses.append("audits.auditor_user_id = ?")
-        params.append(auditor_user_id)
-
-    where_sql = ""
-    if where_clauses:
-        where_sql = "WHERE " + " AND ".join(where_clauses)
-
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
     rows = get_db().execute(
         f"""
         SELECT
@@ -2203,7 +2215,7 @@ def fetch_all_audits(filters=None, auditor_user_id=None):
         {where_sql}
         ORDER BY audits.created_at DESC
         """,
-        tuple(params),
+        params,
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -2220,6 +2232,12 @@ def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=Non
     to_date = (filters.get("to_date") or "").strip()
     status = (filters.get("status") or "").strip()
     auditor = (filters.get("auditor") or "").strip()
+
+    include_pruebas = _normalize_bool(filters.get("include_pruebas"))
+    official_from_date = get_audit_official_from_date()
+    if official_from_date and not include_pruebas:
+        where_clauses.append("audits.audit_date >= ?")
+        params.append(official_from_date)
 
     if from_date:
         where_clauses.append("audits.audit_date >= ?")

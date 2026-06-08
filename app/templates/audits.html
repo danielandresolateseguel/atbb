@@ -39,6 +39,12 @@
                 <input type="text" name="auditor" value="{{ filters.auditor }}" placeholder="Nombre del auditor">
             </label>
         {% endif %}
+        {% if audit_official_from_date %}
+            <label class="checkbox-field">
+                <span>Incluir pruebas (antes del corte {{ audit_official_from_date }})</span>
+                <input type="checkbox" name="include_pruebas" value="1" {% if filters.include_pruebas %}checked{% endif %}>
+            </label>
+        {% endif %}
         <div class="filter-actions">
             <button class="button button-primary" type="submit">Filtrar</button>
             <a class="button button-secondary" href="{{ url_for('main.audit_list') }}">Limpiar</a>

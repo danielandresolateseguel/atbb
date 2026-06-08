@@ -24,6 +24,7 @@ from app.models import (
     create_audit,
     create_user,
     create_tnps_response,
+    get_audit_official_from_date,
     update_user,
     fetch_user_by_id,
     fetch_user_by_username,
@@ -2030,6 +2031,7 @@ def audit_list():
         "to_date": request.args.get("to_date", "").strip(),
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
+        "include_pruebas": request.args.get("include_pruebas", "").strip(),
     }
 
     if auditor_user_id is not None:
@@ -2042,6 +2044,7 @@ def audit_list():
             filters["to_date"],
             filters["status"],
             filters["auditor"],
+            filters["include_pruebas"],
         ]
     )
     return render_template(
@@ -2049,6 +2052,7 @@ def audit_list():
         audits=audits,
         filters=filters,
         filter_active=filter_active,
+        audit_official_from_date=get_audit_official_from_date(),
     )
 
 
@@ -2065,6 +2069,7 @@ def reports():
         "to_date": request.args.get("to_date", "").strip(),
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
+        "include_pruebas": request.args.get("include_pruebas", "").strip(),
     }
     if auditor_user_id is not None:
         filters["auditor"] = ""
@@ -2085,6 +2090,7 @@ def reports():
         trend_monthly=trend_monthly,
         trend_weekly=trend_weekly,
         auditors=auditors,
+        audit_official_from_date=get_audit_official_from_date(),
     )
 
 
@@ -2101,6 +2107,7 @@ def export_report(report_key):
         "to_date": request.args.get("to_date", "").strip(),
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
+        "include_pruebas": request.args.get("include_pruebas", "").strip(),
     }
     if auditor_user_id is not None:
         filters["auditor"] = ""
@@ -2425,6 +2432,7 @@ def export_report_pdf(report_key):
         "to_date": request.args.get("to_date", "").strip(),
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
+        "include_pruebas": request.args.get("include_pruebas", "").strip(),
     }
     if auditor_user_id is not None:
         filters["auditor"] = ""
@@ -2461,6 +2469,7 @@ def export_report_pdf(report_key):
                 to_date=filters.get("to_date", ""),
                 status=filters.get("status", ""),
                 auditor=filters.get("auditor", ""),
+                include_pruebas=filters.get("include_pruebas", ""),
                 print=1,
             )
         )
@@ -2479,6 +2488,7 @@ def reports_print(report_key):
         "to_date": request.args.get("to_date", "").strip(),
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
+        "include_pruebas": request.args.get("include_pruebas", "").strip(),
     }
     if auditor_user_id is not None:
         filters["auditor"] = ""
