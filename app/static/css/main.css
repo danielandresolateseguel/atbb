@@ -1041,16 +1041,60 @@ td {
 @media print {
     .report-table {
         min-width: 0;
-        font-size: 0.8rem;
+        font-size: 0.72rem;
     }
 
     .report-table th,
     .report-table td {
-        padding: 0.55rem 0.5rem;
+        padding: 0.4rem 0.45rem;
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
 
     .report-table th {
         position: static;
+    }
+
+    .report-table thead {
+        display: table-header-group;
+    }
+
+    .report-table tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .report-table .col-audit_date,
+    .report-table .col-audit_id,
+    .report-table .col-mobile_code,
+    .report-table .col-vehicle_plate,
+    .report-table .col-result_status,
+    .report-table .col-total_score,
+    .report-table .col-status {
+        white-space: normal;
+    }
+
+    .report-table .col-audit_date {
+        width: 4.8rem;
+    }
+
+    .report-table .col-audit_id {
+        width: 3.8rem;
+    }
+
+    .report-table .col-mobile_code {
+        width: 4.2rem;
+    }
+
+    .report-table .col-vehicle_plate {
+        width: 5rem;
+    }
+
+    .report-table .col-total_score {
+        width: 3.4rem;
+        white-space: nowrap;
     }
 }
 
