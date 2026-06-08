@@ -29,8 +29,10 @@
                     {% endif %}
                 </div>
                 <div class="report-actions no-print">
-                    <a class="button button-secondary" href="{{ url_for('main.reports', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor) }}">Volver a reportes</a>
-                    <a class="button button-primary" href="{{ url_for('main.reports_print', report_key=report_key, from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
+                    <a class="button button-secondary" href="{{ url_for('main.reports', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas) }}">Volver a reportes</a>
+                    <a class="button button-secondary" href="{{ url_for('main.export_report', report_key=report_key, from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas, supervisor=filters.supervisor) }}">CSV</a>
+                    <a class="button button-secondary" href="{{ url_for('main.export_report_pdf', report_key=report_key, from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas, supervisor=filters.supervisor) }}">PDF</a>
+                    <a class="button button-primary" href="{{ url_for('main.reports_print', report_key=report_key, from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas, supervisor=filters.supervisor, print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
                 </div>
             </header>
 
@@ -719,8 +721,15 @@
                                             {% set risk_class = "metric-ok" if risk < 20 else ("metric-warning" if risk < 40 else "metric-danger") %}
                                             {% set avg = row.average_score or 0 %}
                                             {% set avg_class = "metric-ok" if avg >= 95 else ("metric-warning" if avg >= 90 else "metric-danger") %}
+                                            {% set total_audits = row.audits_count or 0 %}
                                             <tr>
-                                                <td>{{ row.supervisor_name }}</td>
+                                                <td>
+                                                    <a
+                                                        class="report-link"
+                                                        href="{{ url_for('main.reports_print', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas, supervisor=row.supervisor_name) }}"
+                                                        title="Ver detalle de responsabilidad del supervisor"
+                                                    >{{ row.supervisor_name }}</a>
+                                                </td>
                                                 <td>{{ row.audits_count }}</td>
                                                 <td>{{ row.approved_count }}</td>
                                                 <td>{{ row.critical_count }}</td>
@@ -728,9 +737,9 @@
                                                 <td><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
                                                 <td>{{ row.critical_rate }}%</td>
                                                 <td>{{ row.rejected_rate }}%</td>
-                                                <td><span class="metric-pill {{ no_asignado_class }}">{{ no_asignado_rate }}%</span></td>
-                                                <td><span class="metric-pill {{ vencido_class }}">{{ vencido_rate }}%</span></td>
-                                                <td><span class="metric-pill {{ no_apta_class }}">{{ no_apta_rate }}%</span></td>
+                                                <td><span class="metric-pill {{ no_asignado_class }}">{{ no_asignado_rate }}% ({{ row.no_asignado_audits or 0 }}/{{ total_audits }})</span></td>
+                                                <td><span class="metric-pill {{ vencido_class }}">{{ vencido_rate }}% ({{ row.vencido_audits or 0 }}/{{ total_audits }})</span></td>
+                                                <td><span class="metric-pill {{ no_apta_class }}">{{ no_apta_rate }}% ({{ row.no_apta_audits or 0 }}/{{ total_audits }})</span></td>
                                                 <td><span class="metric-pill {{ risk_class }}">{{ risk }}</span></td>
                                                 <td><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
                                                 <td>{{ row.last_audit_date }}</td>

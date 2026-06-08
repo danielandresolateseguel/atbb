@@ -39,6 +39,16 @@ a {
     text-decoration: none;
 }
 
+.report-link {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.report-link:hover {
+    text-decoration-thickness: 2px;
+}
+
 .topbar {
     position: sticky;
     top: 0;

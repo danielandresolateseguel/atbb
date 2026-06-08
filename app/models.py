@@ -2275,6 +2275,28 @@ def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=Non
     return where_sql, tuple(params)
 
 
+def build_audits_where_sql_with_technicians(filters=None, auditor_user_id=None, extra_clauses=None, extra_params=None):
+    filters = filters or {}
+    extra_clauses = list(extra_clauses or [])
+    extra_params = list(extra_params or [])
+
+    supervisor = (filters.get("supervisor") or "").strip()
+    if supervisor:
+        if is_postgres():
+            extra_clauses.append("COALESCE(technicians.supervisor_name, 'Sin supervisor') ILIKE ?")
+            extra_params.append(supervisor)
+        else:
+            extra_clauses.append("LOWER(COALESCE(technicians.supervisor_name, 'Sin supervisor')) = ?")
+            extra_params.append(supervisor.lower())
+
+    return build_audits_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        extra_clauses=extra_clauses,
+        extra_params=extra_params,
+    )
+
+
 def fetch_distinct_auditors():
     rows = get_db().execute(
         """
@@ -2351,7 +2373,7 @@ def fetch_audit_reports_status_breakdown(filters=None, auditor_user_id=None):
 
 
 def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None, limit=500):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql_with_technicians(filters, auditor_user_id=auditor_user_id)
     label_expr = "COALESCE(technicians.supervisor_name, 'Sin supervisor')"
     rows = get_db().execute(
         f"""
@@ -2835,7 +2857,7 @@ def fetch_audit_reports_supervisor_responsibility_detail(filters=None, auditor_u
         "audit_items.status = 'no_cumple'",
         "LOWER(COALESCE(audit_items.non_compliance_reason, '')) IN (?, ?, ?)",
     ]
-    where_sql, params = build_audits_where_sql(
+    where_sql, params = build_audits_where_sql_with_technicians(
         filters,
         auditor_user_id=auditor_user_id,
         extra_clauses=extra_clauses,

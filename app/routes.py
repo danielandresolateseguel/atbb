@@ -386,6 +386,8 @@ def build_reports_context(report_key, filters, auditor_user_id):
         title_filter.append(f"Estado {filters['status']}")
     if (filters.get("auditor") or "").strip():
         title_filter.append(f"Auditor {filters['auditor']}")
+    if (filters.get("supervisor") or "").strip():
+        title_filter.append(f"Supervisor {filters['supervisor']}")
     filter_suffix = " | ".join(title_filter)
 
     if report_key == "resumen":
@@ -2181,6 +2183,7 @@ def export_report(report_key):
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
         "include_pruebas": request.args.get("include_pruebas", "").strip(),
+        "supervisor": request.args.get("supervisor", "").strip(),
     }
     if auditor_user_id is not None:
         filters["auditor"] = ""
@@ -2506,6 +2509,7 @@ def export_report_pdf(report_key):
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
         "include_pruebas": request.args.get("include_pruebas", "").strip(),
+        "supervisor": request.args.get("supervisor", "").strip(),
     }
     if auditor_user_id is not None:
         filters["auditor"] = ""
@@ -2562,6 +2566,7 @@ def reports_print(report_key):
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
         "include_pruebas": request.args.get("include_pruebas", "").strip(),
+        "supervisor": request.args.get("supervisor", "").strip(),
     }
     if auditor_user_id is not None:
         filters["auditor"] = ""
