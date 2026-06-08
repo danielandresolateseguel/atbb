@@ -42,6 +42,7 @@
         </div>
         <div class="info-list">
             <p><strong>Auditor:</strong> {{ audit["auditor_name"] }}</p>
+            <p><strong>SA:</strong> {{ audit["sa_number"] or "-" }}</p>
             <p><strong>Móvil técnico:</strong> {% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}{% if audit["employee_code"] %} | {{ audit["employee_code"] }}{% endif %}</p>
             <p><strong>Empresa:</strong> {{ audit["technician_company"] or "-" }}</p>
             <p><strong>Supervisor:</strong> {{ audit["technician_supervisor"] or "-" }}</p>

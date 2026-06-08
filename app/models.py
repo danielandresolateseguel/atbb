@@ -166,6 +166,7 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             audit_date TEXT NOT NULL,
             auditor_name TEXT NOT NULL,
+            sa_number TEXT,
             auditor_user_id INTEGER,
             auditor_signature_path TEXT,
             technician_signature_path TEXT,
@@ -381,6 +382,7 @@ def init_db_postgres():
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             audit_date TEXT NOT NULL,
             auditor_name TEXT NOT NULL,
+            sa_number TEXT,
             auditor_user_id INTEGER REFERENCES users (id),
             auditor_signature_path TEXT,
             technician_signature_path TEXT,
@@ -458,6 +460,7 @@ def init_db_postgres():
     )
 
     ensure_technicians_columns_postgres(cursor)
+    ensure_audits_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
     connection.commit()
     connection.close()
@@ -637,6 +640,7 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "materials", "material_code", "TEXT")
     add_column_if_missing(connection, "audits", "mobile_unit_id", "INTEGER")
     add_column_if_missing(connection, "audits", "auditor_user_id", "INTEGER")
+    add_column_if_missing(connection, "audits", "sa_number", "TEXT")
     add_column_if_missing(connection, "audits", "auditor_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_display_name", "TEXT")
@@ -702,6 +706,7 @@ def ensure_audits_nullable_technician(connection):
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             audit_date TEXT NOT NULL,
             auditor_name TEXT NOT NULL,
+            sa_number TEXT,
             auditor_user_id INTEGER,
             auditor_signature_path TEXT,
             technician_signature_path TEXT,
@@ -734,6 +739,7 @@ def ensure_audits_nullable_technician(connection):
             created_at,
             audit_date,
             auditor_name,
+            sa_number,
             auditor_user_id,
             auditor_signature_path,
             technician_signature_path,
@@ -757,6 +763,7 @@ def ensure_audits_nullable_technician(connection):
             created_at,
             audit_date,
             auditor_name,
+            sa_number,
             auditor_user_id,
             auditor_signature_path,
             technician_signature_path,
@@ -815,6 +822,10 @@ def ensure_technicians_columns_postgres(cursor):
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS union_name TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS supervisor_name TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS center_name TEXT")
+
+
+def ensure_audits_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS sa_number TEXT")
 
 
 def ensure_mobile_unit_codes_normalized_sqlite(connection):
@@ -2110,6 +2121,7 @@ def fetch_recent_audits(limit=5, auditor_user_id=None):
         SELECT
             audits.id,
             audits.audit_date,
+            audits.sa_number,
             audits.location,
             audits.installation_type,
             audits.total_score,
@@ -2176,6 +2188,7 @@ def fetch_all_audits(filters=None, auditor_user_id=None):
             audits.audit_date,
             audits.auditor_name,
             audits.auditor_user_id,
+            audits.sa_number,
             audits.location,
             audits.installation_type,
             audits.total_score,
@@ -2920,6 +2933,7 @@ def fetch_audit_detail(audit_id):
             audits.audit_date,
             audits.auditor_name,
             audits.auditor_user_id,
+            audits.sa_number,
             audits.auditor_signature_path,
             audits.technician_signature_path,
             audits.technician_display_name,
@@ -3014,6 +3028,7 @@ def create_audit(audit_data, items, supply_requests=None):
             audit_date,
             auditor_name,
             auditor_user_id,
+            sa_number,
             auditor_signature_path,
             technician_signature_path,
             technician_display_name,
@@ -3030,12 +3045,13 @@ def create_audit(audit_data, items, supply_requests=None):
             mobile_unit_id,
             technician_id,
             vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         audit_data["audit_date"],
         audit_data["auditor_name"],
         audit_data.get("auditor_user_id"),
+        audit_data.get("sa_number"),
         audit_data.get("auditor_signature_path"),
         audit_data.get("technician_signature_path"),
         audit_data.get("technician_display_name"),

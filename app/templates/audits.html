@@ -54,6 +54,7 @@
                     <tr>
                         <th>Fecha</th>
                         <th>Auditor</th>
+                        <th>SA</th>
                         <th>Móvil técnico</th>
                         <th>Vehículo</th>
                         <th>Ubicación</th>
@@ -67,6 +68,7 @@
                         <tr>
                             <td>{{ audit.audit_date }}</td>
                             <td>{{ audit.auditor_name or "-" }}</td>
+                            <td>{{ audit.sa_number or "-" }}</td>
                             <td>{% if audit.mobile_code %}{{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}</td>
                             <td>{{ audit.vehicle_plate }}</td>
                             <td>{{ audit.location }}</td>

@@ -86,6 +86,10 @@
                             <strong>{{ audit["auditor_name"] }}</strong>
                         </article>
                         <article>
+                            <span>SA</span>
+                            <strong>{{ audit["sa_number"] or "-" }}</strong>
+                        </article>
+                        <article>
                             <span>Móvil técnico</span>
                             <strong>{% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}</strong>
                         </article>
