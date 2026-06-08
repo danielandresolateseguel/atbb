@@ -1048,6 +1048,22 @@ td {
     overflow-wrap: anywhere;
 }
 
+.report-body.report-key-supervisores .report-table .col-supervisor_name {
+    width: 14rem;
+    overflow-wrap: anywhere;
+}
+
+.report-body.report-key-supervisores .report-table .col-last_audit_date {
+    width: 5.2rem;
+    white-space: nowrap;
+}
+
+.report-body.report-key-supervisores .report-table .col-risk_index,
+.report-body.report-key-supervisores .report-table .col-average_score {
+    width: 4.2rem;
+    white-space: nowrap;
+}
+
 @media print {
     .report-table {
         min-width: 0;
@@ -2060,6 +2076,27 @@ td {
 
     .report-body .stat-value {
         font-size: 1.45rem;
+    }
+
+    .compact-table {
+        table-layout: fixed;
+        width: 100%;
+        font-size: 0.72rem;
+    }
+
+    .compact-table th,
+    .compact-table td {
+        padding: 0.4rem 0.45rem;
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .metric-pill {
+        padding: 0.12rem 0.28rem;
+        font-size: 0.72rem;
+        white-space: normal;
     }
 }
 

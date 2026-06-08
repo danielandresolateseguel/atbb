@@ -376,6 +376,7 @@ def build_reports_context(report_key, filters, auditor_user_id):
     columns = []
     executive = None
     trend = None
+    analysis = None
 
     title_filter = []
     if (filters.get("from_date") or "").strip():
@@ -590,6 +591,110 @@ def build_reports_context(report_key, filters, auditor_user_id):
             {"key": "average_score", "label": "Promedio"},
             {"key": "last_audit_date", "label": "Última auditoría"},
         ]
+
+        def safe_float(value, default=0.0):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float(default)
+
+        def safe_int(value, default=0):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return int(default)
+
+        def median(values):
+            values = sorted(values)
+            if not values:
+                return 0
+            mid = len(values) // 2
+            if len(values) % 2 == 1:
+                return values[mid]
+            return (values[mid - 1] + values[mid]) / 2
+
+        def std(values):
+            if not values:
+                return 0.0
+            mean_value = sum(values) / len(values)
+            return (sum((value - mean_value) ** 2 for value in values) / len(values)) ** 0.5
+
+        normalized_rows = [dict(row) for row in (rows or [])]
+        focus_rows = [
+            row
+            for row in normalized_rows
+            if (row.get("supervisor_name") or "").strip() and (row.get("supervisor_name") or "") != "Sin supervisor"
+        ]
+        if not focus_rows:
+            focus_rows = list(normalized_rows)
+
+        total_audits = sum(safe_int(row.get("audits_count")) for row in focus_rows)
+        total_approved = sum(safe_int(row.get("approved_count")) for row in focus_rows)
+        weighted_approval_rate = 0 if total_audits == 0 else round((total_approved / total_audits) * 100)
+        weighted_average_score = 0 if total_audits == 0 else round(
+            sum(safe_float(row.get("average_score")) * safe_int(row.get("audits_count")) for row in focus_rows) / total_audits, 2
+        )
+
+        approval_values = [safe_float(row.get("approval_rate")) for row in focus_rows]
+        average_values = [safe_float(row.get("average_score")) for row in focus_rows]
+        risk_values = [safe_float(row.get("risk_index")) for row in focus_rows]
+
+        def distribution(values, round_to=2):
+            if not values:
+                return {"mean": 0, "median": 0, "std": 0, "min": 0, "max": 0}
+            mean_value = sum(values) / len(values)
+            median_value = median(values)
+            std_value = std(values)
+            return {
+                "mean": round(mean_value, round_to),
+                "median": round(median_value, round_to),
+                "std": round(std_value, round_to),
+                "min": round(min(values), round_to),
+                "max": round(max(values), round_to),
+            }
+
+        min_audits_threshold = current_app.config.get("REPORT_SUPERVISOR_MIN_AUDITS", 5)
+        min_audits_threshold = safe_int(min_audits_threshold, default=5)
+        if min_audits_threshold < 1:
+            min_audits_threshold = 1
+
+        low_approval_count = sum(
+            1
+            for row in focus_rows
+            if safe_int(row.get("audits_count")) >= min_audits_threshold and safe_float(row.get("approval_rate")) < 70
+        )
+
+        def to_analysis_row(row):
+            return {
+                "supervisor_name": (row.get("supervisor_name") or "").strip() or "-",
+                "audits_count": safe_int(row.get("audits_count")),
+                "approval_rate": safe_int(row.get("approval_rate")),
+                "risk_index": round(safe_float(row.get("risk_index")), 2),
+                "average_score": round(safe_float(row.get("average_score")), 2),
+            }
+
+        top_risk = sorted(
+            focus_rows,
+            key=lambda row: (
+                -safe_float(row.get("risk_index")),
+                -safe_int(row.get("audits_count")),
+                safe_float(row.get("approval_rate")),
+                str(row.get("supervisor_name") or ""),
+            ),
+        )[:5]
+
+        analysis = {
+            "counts": {"supervisors": len(focus_rows), "audits": int(total_audits)},
+            "weighted": {"approval_rate": int(weighted_approval_rate), "average_score": weighted_average_score},
+            "distribution": {
+                "approval_rate": distribution(approval_values, round_to=1),
+                "average_score": distribution(average_values, round_to=2),
+                "risk_index": distribution(risk_values, round_to=2),
+            },
+            "top_risk": [to_analysis_row(row) for row in top_risk],
+            "thresholds": {"min_audits": int(min_audits_threshold)},
+            "flags": {"low_approval_count": int(low_approval_count)},
+        }
     elif report_key == "centros":
         title = "Desglose por centro"
         subtitle = "Auditorías, criticidad y promedio por centro."
@@ -971,6 +1076,7 @@ def build_reports_context(report_key, filters, auditor_user_id):
         "summary": rows[0] if report_key == "resumen" and rows else None,
         "executive": executive if report_key == "resumen" else None,
         "trend": trend,
+        "analysis": analysis,
     }
 
 

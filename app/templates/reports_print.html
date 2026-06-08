@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
-    {% set wide_table_reports = ["hallazgos_criticos", "responsabilidad_supervisor", "evidencias_faltantes", "insumos_detalle"] %}
+    {% set wide_table_reports = ["hallazgos_criticos", "responsabilidad_supervisor", "evidencias_faltantes", "insumos_detalle", "supervisores"] %}
     {% if print_mode and report_key in wide_table_reports %}
         <style>@page { size: A4 landscape; margin: 10mm; }</style>
     {% endif %}
@@ -648,25 +648,103 @@
             {% else %}
                 <section class="card table-card">
                     {% if rows %}
+                        {% if report_key == "supervisores" and analysis %}
+                            <section class="stats-grid">
+                                <article class="card stat-card">
+                                    <span class="stat-label">Supervisores</span>
+                                    <strong class="stat-value">{{ analysis.counts.supervisors }}</strong>
+                                </article>
+                                <article class="card stat-card">
+                                    <span class="stat-label">Auditorías</span>
+                                    <strong class="stat-value">{{ analysis.counts.audits }}</strong>
+                                </article>
+                                <article class="card stat-card">
+                                    <span class="stat-label">Aprobación (pond.)</span>
+                                    <strong class="stat-value">{{ analysis.weighted.approval_rate }}%</strong>
+                                </article>
+                                <article class="card stat-card">
+                                    <span class="stat-label">Promedio (pond.)</span>
+                                    <strong class="stat-value">{{ analysis.weighted.average_score }}</strong>
+                                </article>
+                                <article class="card stat-card">
+                                    <span class="stat-label">Riesgo (prom.)</span>
+                                    <strong class="stat-value">{{ analysis.distribution.risk_index.mean }}</strong>
+                                </article>
+                            </section>
+                            <section class="card table-card">
+                                <div class="section-heading">
+                                    <div>
+                                        <p class="eyebrow">Análisis</p>
+                                        <h3>Análisis estadístico</h3>
+                                    </div>
+                                </div>
+                                <div class="executive-list">
+                                    <p>
+                                        <strong>Rango aprobación:</strong>
+                                        {{ analysis.distribution.approval_rate.min }}% – {{ analysis.distribution.approval_rate.max }}%
+                                        (mediana {{ analysis.distribution.approval_rate.median }}%, desvío {{ analysis.distribution.approval_rate.std }}).
+                                    </p>
+                                    <p>
+                                        <strong>Rango promedio:</strong>
+                                        {{ analysis.distribution.average_score.min }} – {{ analysis.distribution.average_score.max }}
+                                        (mediana {{ analysis.distribution.average_score.median }}, desvío {{ analysis.distribution.average_score.std }}).
+                                    </p>
+                                    <p>
+                                        <strong>Riesgo:</strong>
+                                        {{ analysis.distribution.risk_index.min }} – {{ analysis.distribution.risk_index.max }}
+                                        (mediana {{ analysis.distribution.risk_index.median }}, desvío {{ analysis.distribution.risk_index.std }}).
+                                    </p>
+                                    {% if analysis.flags.low_approval_count %}
+                                        <p><strong>Supervisores con aprobación &lt; 70% (con mínimo {{ analysis.thresholds.min_audits }} auditorías):</strong> {{ analysis.flags.low_approval_count }}</p>
+                                    {% endif %}
+                                </div>
+                                {% if analysis.top_risk %}
+                                    <div class="table-wrap">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Top riesgo</th>
+                                                    <th>Aud.</th>
+                                                    <th>Aprob. %</th>
+                                                    <th>Riesgo</th>
+                                                    <th>Prom.</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for row in analysis.top_risk %}
+                                                    <tr>
+                                                        <td>{{ row.supervisor_name }}</td>
+                                                        <td>{{ row.audits_count }}</td>
+                                                        <td>{{ row.approval_rate }}%</td>
+                                                        <td>{{ row.risk_index }}</td>
+                                                        <td>{{ row.average_score }}</td>
+                                                    </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                {% endif %}
+                            </section>
+                        {% endif %}
                         <div class="table-wrap">
                             {% if report_key == "supervisores" %}
-                                <table class="compact-table">
+                                <table class="report-table report-table-supervisores">
                                     <thead>
                                         <tr>
-                                            <th>Supervisor</th>
-                                            <th>Aud.</th>
-                                            <th>Aprob.</th>
-                                            <th>Crít.</th>
-                                            <th>Rech.</th>
-                                            <th>Aprob. %</th>
-                                            <th>Crít. %</th>
-                                            <th>Rech. %</th>
-                                            <th>No asig. %</th>
-                                            <th>Venc. %</th>
-                                            <th>No apta %</th>
-                                            <th>Riesgo</th>
-                                            <th>Prom.</th>
-                                            <th>Última</th>
+                                            <th class="col-supervisor_name">Supervisor</th>
+                                            <th class="col-audits_count">Aud.</th>
+                                            <th class="col-approved_count">Aprob.</th>
+                                            <th class="col-critical_count">Crít.</th>
+                                            <th class="col-rejected_count">Rech.</th>
+                                            <th class="col-approval_rate">Aprob. %</th>
+                                            <th class="col-critical_rate">Crít. %</th>
+                                            <th class="col-rejected_rate">Rech. %</th>
+                                            <th class="col-no_asignado_rate">No asig. %</th>
+                                            <th class="col-vencido_rate">Venc. %</th>
+                                            <th class="col-no_apta_rate">No apta %</th>
+                                            <th class="col-risk_index">Riesgo</th>
+                                            <th class="col-average_score">Prom.</th>
+                                            <th class="col-last_audit_date">Última</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -685,26 +763,26 @@
                                             {% set avg_class = "metric-ok" if avg >= 95 else ("metric-warning" if avg >= 90 else "metric-danger") %}
                                             {% set total_audits = row.audits_count or 0 %}
                                             <tr>
-                                                <td>
+                                                <td class="col-supervisor_name">
                                                     <a
                                                         class="report-link"
                                                         href="{{ url_for('main.reports_print', report_key='responsabilidad_supervisor', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, auditor=filters.auditor, include_pruebas=filters.include_pruebas, supervisor=row.supervisor_name) }}"
                                                         title="Ver detalle de responsabilidad del supervisor"
                                                     >{{ row.supervisor_name }}</a>
                                                 </td>
-                                                <td>{{ row.audits_count }}</td>
-                                                <td>{{ row.approved_count }}</td>
-                                                <td>{{ row.critical_count }}</td>
-                                                <td>{{ row.rejected_count }}</td>
-                                                <td><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
-                                                <td>{{ row.critical_rate }}%</td>
-                                                <td>{{ row.rejected_rate }}%</td>
-                                                <td><span class="metric-pill {{ no_asignado_class }}">{{ no_asignado_rate }}% ({{ row.no_asignado_audits or 0 }}/{{ total_audits }})</span></td>
-                                                <td><span class="metric-pill {{ vencido_class }}">{{ vencido_rate }}% ({{ row.vencido_audits or 0 }}/{{ total_audits }})</span></td>
-                                                <td><span class="metric-pill {{ no_apta_class }}">{{ no_apta_rate }}% ({{ row.no_apta_audits or 0 }}/{{ total_audits }})</span></td>
-                                                <td><span class="metric-pill {{ risk_class }}">{{ risk }}</span></td>
-                                                <td><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
-                                                <td>{{ row.last_audit_date }}</td>
+                                                <td class="col-audits_count">{{ row.audits_count }}</td>
+                                                <td class="col-approved_count">{{ row.approved_count }}</td>
+                                                <td class="col-critical_count">{{ row.critical_count }}</td>
+                                                <td class="col-rejected_count">{{ row.rejected_count }}</td>
+                                                <td class="col-approval_rate"><span class="metric-pill {{ approval_class }}">{{ approval_rate }}%</span></td>
+                                                <td class="col-critical_rate">{{ row.critical_rate }}%</td>
+                                                <td class="col-rejected_rate">{{ row.rejected_rate }}%</td>
+                                                <td class="col-no_asignado_rate"><span class="metric-pill {{ no_asignado_class }}">{{ no_asignado_rate }}% ({{ row.no_asignado_audits or 0 }}/{{ total_audits }})</span></td>
+                                                <td class="col-vencido_rate"><span class="metric-pill {{ vencido_class }}">{{ vencido_rate }}% ({{ row.vencido_audits or 0 }}/{{ total_audits }})</span></td>
+                                                <td class="col-no_apta_rate"><span class="metric-pill {{ no_apta_class }}">{{ no_apta_rate }}% ({{ row.no_apta_audits or 0 }}/{{ total_audits }})</span></td>
+                                                <td class="col-risk_index"><span class="metric-pill {{ risk_class }}">{{ risk }}</span></td>
+                                                <td class="col-average_score"><span class="metric-pill {{ avg_class }}">{{ avg }}</span></td>
+                                                <td class="col-last_audit_date">{{ row.last_audit_date }}</td>
                                             </tr>
                                         {% endfor %}
                                     </tbody>
