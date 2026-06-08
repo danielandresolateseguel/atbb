@@ -3061,12 +3061,6 @@ def new_audit():
                     except (IndexError, ValueError):
                         continue
 
-            if indices:
-                if not material_index:
-                    raise ValueError(
-                        "No hay materiales importados para validar codigos. Importa Stock de materiales primero."
-                    )
-
             herramientas_item_map = {}
             if herramientas_section:
                 herramientas_item_map = {
@@ -3086,11 +3080,19 @@ def new_audit():
                     raise ValueError("Debes indicar el codigo del material en la solicitud.")
 
                 material_code = material_code_raw.split(" - ", 1)[0].strip()
-                material = fetch_material_by_code(material_code)
-                if not material:
-                    raise ValueError(
-                        f"El codigo {material_code} no existe en materiales importados."
-                    )
+                normalized_material_code = material_code.upper()
+                if normalized_material_code != "SIN CODIGO":
+                    if not material_index:
+                        raise ValueError(
+                            "No hay materiales importados para validar codigos. Importa Stock de materiales primero."
+                        )
+                    material = fetch_material_by_code(material_code)
+                    if not material:
+                        raise ValueError(
+                            f"El codigo {material_code} no existe en materiales importados."
+                        )
+                else:
+                    material = None
 
                 quantity_raw = (request.form.get(f"supply_request_qty__{index}") or "").strip()
                 quantity = None
@@ -3103,15 +3105,17 @@ def new_audit():
                 notes = (request.form.get(f"supply_request_notes__{index}") or "").strip().upper() or None
                 related_item_key = (request.form.get(f"supply_request_item__{index}") or "").strip()
                 related_label = herramientas_item_map.get(related_item_key)
+                if normalized_material_code == "SIN CODIGO" and not notes:
+                    raise ValueError("Si seleccionas SIN CODIGO, debes completar la nota.")
 
                 supply_requests.append(
                     {
                         "section_key": "herramientas",
                         "section_title": herramientas_title,
                         "item_key": related_item_key or f"material_{material_code}",
-                        "item_label": related_label or material["material_name"],
+                        "item_label": related_label or (material["material_name"] if material else "SIN CODIGO"),
                         "request_type": request_type,
-                        "material_code": material_code,
+                        "material_code": normalized_material_code if normalized_material_code == "SIN CODIGO" else material_code,
                         "quantity": quantity,
                         "notes": notes,
                     }

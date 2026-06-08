@@ -685,6 +685,7 @@
         <div id="supply_requests_list"></div>
 
         <datalist id="materials_datalist">
+            <option value="SIN CODIGO"></option>
             {% for code, name in (material_index or {}).items() %}
                 <option value="{{ code }} - {{ name }}"></option>
             {% endfor %}
@@ -1267,6 +1268,10 @@
                 return;
             }
             const code = parseMaterialCode(codeInput.value);
+            if (code && code.toUpperCase() === "SIN CODIGO") {
+                hint.textContent = "Sin código";
+                return;
+            }
             const name = code ? materialIndex[code] : "";
             hint.textContent = name ? name : "-";
         }
@@ -1307,7 +1312,7 @@
             const codeInput = document.createElement("input");
             codeInput.type = "text";
             codeInput.name = `supply_request_code__${index}`;
-            codeInput.placeholder = "Ej: 320700029";
+            codeInput.placeholder = "Ej: 320700029 o SIN CODIGO";
             codeInput.setAttribute("list", "materials_datalist");
             codeLabel.appendChild(codeSpan);
             codeLabel.appendChild(codeInput);
