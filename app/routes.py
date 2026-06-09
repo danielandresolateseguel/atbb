@@ -1360,6 +1360,8 @@ def calculate_section_score(section, form_data, files):
             and str(non_compliance_reason or "").strip().lower() in SCORE_EXCLUDED_REASONS
         )
         notes = form_data.get(f"notes__{item['key']}", "").strip().upper()
+        uploaded_photo_path_raw = (form_data.get(f"uploaded_photo_path__{item['key']}") or "").strip()
+        uploaded_photo_path = uploaded_photo_path_raw if uploaded_photo_path_raw and uploaded_photo_path_raw != "-" else None
         photo_file = None
         photo_files = None
         if item.get("multi_photo"):
@@ -1472,7 +1474,7 @@ def calculate_section_score(section, form_data, files):
                 )
             )
         )
-        if requires_photo and not has_uploaded_file(photo_file):
+        if requires_photo and not (has_uploaded_file(photo_file) or uploaded_photo_path):
             raise ValueError(f"Debes adjuntar evidencia fotografica en: {item['label']}")
 
         if status != "no_aplica" and not score_excluded_non_compliance:
@@ -1498,6 +1500,7 @@ def calculate_section_score(section, form_data, files):
                 "notes": notes or None,
                 "photo_file": photo_file if has_uploaded_file(photo_file) else None,
                 "photo_files": photo_files if photo_files else None,
+                "photo_path": uploaded_photo_path,
             }
         )
 
@@ -1750,6 +1753,7 @@ def persist_item_evidence(items, audit_date):
         target_dir.mkdir(parents=True, exist_ok=True)
 
     for item in items:
+        existing_photo_path = item.get("photo_path")
         photo_files = item.pop("photo_files", None)
         photo_file = item.pop("photo_file", None)
 
@@ -1781,7 +1785,7 @@ def persist_item_evidence(items, audit_date):
             continue
 
         if not photo_file:
-            item["photo_path"] = None
+            item["photo_path"] = existing_photo_path or None
             continue
 
         filename, extension = validate_photo_file(photo_file, item["item_label"])
@@ -1803,6 +1807,70 @@ def persist_item_evidence(items, audit_date):
             saved_path = target_dir / generated_filename
             saved_path.write_bytes(optimized_bytes)
             item["photo_path"] = f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
+
+
+@main.route("/api/audits/upload-evidence", methods=["POST"])
+def upload_audit_evidence():
+    if not can_create_audit():
+        abort(403)
+
+    item_key = (request.form.get("item_key") or "").strip()
+    item_label = (request.form.get("item_label") or "evidencia").strip() or "evidencia"
+    audit_date = (request.form.get("audit_date") or "").strip()
+    if not audit_date:
+        audit_date = datetime.today().strftime("%Y-%m-%d")
+
+    try:
+        datetime.fromisoformat(audit_date)
+    except ValueError:
+        return jsonify({"error": "audit_date invalida."}), 400
+
+    files = request.files.getlist("file") if hasattr(request.files, "getlist") else []
+    if not files:
+        single = request.files.get("file")
+        if single:
+            files = [single]
+
+    files = [entry for entry in files if has_uploaded_file(entry)]
+    if not files:
+        return jsonify({"error": "Debes adjuntar al menos un archivo."}), 400
+
+    date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
+    if not cloudinary_enabled():
+        target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / date_folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_stem = secure_filename(item_key) or "evidencia"
+    base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+    cloud_folder = f"{base_folder}/audits/{date_folder}"
+
+    saved_paths = []
+    for index, entry in enumerate(files):
+        filename, extension = validate_photo_file(entry, item_label)
+        generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
+        raw_bytes = entry.stream.read()
+        if not raw_bytes:
+            return jsonify({"error": f"La evidencia de {item_label} no contiene datos validos."}), 400
+
+        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+        if cloudinary_enabled():
+            uploaded_url = upload_image_to_cloudinary(
+                optimized_bytes,
+                folder=cloud_folder,
+                public_id=generated_name,
+            )
+            saved_paths.append(uploaded_url)
+        else:
+            generated_filename = f"{generated_name}.{optimized_extension}"
+            saved_path = target_dir / generated_filename
+            saved_path.write_bytes(optimized_bytes)
+            saved_paths.append(
+                f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
+            )
+
+    if len(saved_paths) == 1:
+        return jsonify({"photo_path": saved_paths[0]})
+    return jsonify({"photo_paths": saved_paths})
 
 
 def persist_auditor_signature(signature_data, audit_date):
