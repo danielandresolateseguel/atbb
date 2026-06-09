@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Solicitudes{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Acción</p>
+        <h2>Solicitudes de reposición / cambio</h2>
+        <p class="hero-copy">
+            Registra solicitudes asociadas a una auditoría. Se verán reflejadas en el detalle y en los reportes.
+        </p>
+    </div>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.supply_requests') }}">
+        <label>
+            <span>Buscar</span>
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="ID, SA, móvil, técnico o patente">
+        </label>
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+        </label>
+        <label>
+            <span>Abrir por ID</span>
+            <input type="number" name="audit_id" min="1" step="1" value="{{ audit_id or '' }}" placeholder="Ej: 123">
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Buscar</button>
+            <a class="button button-secondary" href="{{ url_for('main.supply_requests') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="card table-card">
+    {% set filter_active = filters.from_date or filters.to_date or filters.q %}
+    {% if audits %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>SA</th>
+                        <th>Móvil técnico</th>
+                        <th>Vehículo</th>
+                        <th>Ubicación</th>
+                        <th>Resultado</th>
+                        <th>Abrir</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in audits %}
+                        <tr>
+                            <td>{{ row["audit_date"] }}</td>
+                            <td>{{ row["sa_number"] or "-" }}</td>
+                            <td>{% if row.get("mobile_code") %}{{ row["mobile_code"] }} | {% endif %}{{ row["technician_name"] or "-" }}</td>
+                            <td>{{ row["vehicle_plate"] }}</td>
+                            <td>{{ row["location"] }}</td>
+                            <td><span class="badge badge-{{ row.result_status|lower|replace(' ', '-') }}">{{ row["result_status"] }}</span></td>
+                            <td><a class="table-link" href="{{ url_for('main.supply_requests', audit_id=row['id'], q=filters.q, from_date=filters.from_date, to_date=filters.to_date, page=page) }}">Abrir</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if audits_total > page_size %}
+            <div class="button-row">
+                {% if has_prev_page %}
+                    <a class="button button-secondary" href="{{ url_for('main.supply_requests', q=filters.q, from_date=filters.from_date, to_date=filters.to_date, audit_id=audit_id, page=page-1) }}">Anterior</a>
+                {% endif %}
+                {% if has_next_page %}
+                    <a class="button button-secondary" href="{{ url_for('main.supply_requests', q=filters.q, from_date=filters.from_date, to_date=filters.to_date, audit_id=audit_id, page=page+1) }}">Siguiente</a>
+                {% endif %}
+                <span class="helper-text">Mostrando {{ audits|length }} de {{ audits_total }}</span>
+            </div>
+        {% endif %}
+    {% else %}
+        {% if filter_active %}
+            <p class="empty-state">No hay resultados para los filtros aplicados.</p>
+        {% else %}
+            <p class="empty-state">Todavía no hay auditorías para seleccionar.</p>
+        {% endif %}
+    {% endif %}
+</section>
+
+{% if audit %}
+    <section class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Auditoría</p>
+                <h3>{{ audit["id"] }} · {{ audit["audit_date"] }}</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Técnico:</strong> {{ audit.get("technician_name") or audit.get("technician_display_name") or "-" }}</p>
+            <p><strong>Móvil:</strong> {{ audit.get("mobile_code") or "-" }}</p>
+            <p><strong>Patente:</strong> {{ audit.get("vehicle_plate") or "-" }}</p>
+            <p><a class="table-link" href="{{ url_for('main.audit_detail', audit_id=audit['id']) }}">Ver detalle</a></p>
+        </div>
+    </section>
+
+    <section class="card">
+        <form method="post" class="import-form">
+            <input type="hidden" name="audit_id" value="{{ audit['id'] }}">
+
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Registro</p>
+                    <h3>Nueva solicitud</h3>
+                </div>
+            </div>
+
+            <label>
+                <span>Tipo</span>
+                <select name="request_type" required>
+                    <option value="">Selecciona</option>
+                    <option value="reponer">Reponer</option>
+                    <option value="cambiar">Cambiar</option>
+                </select>
+            </label>
+
+            <label>
+                <span>Relacionado a ítem (opcional)</span>
+                <select name="audit_item_id">
+                    <option value="">Sin ítem asociado</option>
+                    {% for section_title, items in grouped_items.items() %}
+                        <optgroup label="{{ section_title }}">
+                            {% for item in items %}
+                                <option value="{{ item['id'] }}">{{ item["item_label"] }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label>
+                <span>Código</span>
+                <input
+                    type="text"
+                    name="material_code"
+                    placeholder="Ej: 320700029 o SIN CODIGO"
+                    list="materials_datalist"
+                    required
+                >
+            </label>
+
+            <datalist id="materials_datalist">
+                <option value="SIN CODIGO"></option>
+                {% for code, name in (material_index or {}).items() %}
+                    <option value="{{ code }} - {{ name }}"></option>
+                {% endfor %}
+            </datalist>
+
+            <label>
+                <span>Cantidad (opcional)</span>
+                <input type="number" name="quantity" min="0" step="1">
+            </label>
+
+            <label>
+                <span>Nota (opcional)</span>
+                <input type="text" name="notes" placeholder="Obligatoria si el código es SIN CODIGO">
+            </label>
+
+            <div class="button-row">
+                <button class="button button-primary" type="submit">Registrar</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Registradas</p>
+                <h3>Solicitudes</h3>
+            </div>
+        </div>
+        {% if supply_requests %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Tipo</th>
+                            <th>Item</th>
+                            <th>Código</th>
+                            <th>Cantidad</th>
+                            <th>Nota</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for req in supply_requests %}
+                            <tr>
+                                <td>{{ req["created_at"] }}</td>
+                                <td>{{ req["request_type"]|capitalize }}</td>
+                                <td>{{ req["item_label"] }}</td>
+                                <td>{{ req["material_code"] }}</td>
+                                <td>{{ req["quantity"] if req["quantity"] is not none else "-" }}</td>
+                                <td>{{ req["notes"] or "-" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">No se registraron solicitudes.</p>
+        {% endif %}
+    </section>
+{% endif %}
+{% endblock %}

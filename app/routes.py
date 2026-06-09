@@ -25,6 +25,7 @@ from app.models import (
     count_active_admins,
     count_users,
     create_audit,
+    create_audit_supply_requests,
     create_user,
     create_tnps_response,
     get_audit_official_from_date,
@@ -36,6 +37,7 @@ from app.models import (
     fetch_audit_items,
     fetch_audit_supply_requests,
     fetch_all_audits,
+    fetch_audit_picker_audits,
     fetch_audit_reports_management_summary,
     fetch_audit_reports_missing_evidence,
     fetch_audit_reports_section_breakdown,
@@ -81,6 +83,7 @@ from app.models import (
     fetch_technicians,
     fetch_vehicles,
     fetch_mobile_units,
+    count_audit_picker_audits,
     import_checklist_del_dia,
     import_equipment_inventory,
     import_material_stock,
@@ -2323,6 +2326,163 @@ def tnps():
         responses=responses,
         audit_context=audit_context,
         today=datetime.now().date().isoformat(),
+        page_class="page-wide",
+    )
+
+
+@main.route("/supply-requests", methods=["GET", "POST"])
+def supply_requests():
+    if not can_create_audit():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "q": request.args.get("q", "").strip(),
+    }
+    page_raw = (request.args.get("page") or "").strip()
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw))
+        except ValueError:
+            page = 1
+    page_size = 25
+    offset = (page - 1) * page_size
+    audits_total = count_audit_picker_audits(filters, auditor_user_id=auditor_user_id)
+    audits = fetch_audit_picker_audits(
+        filters,
+        auditor_user_id=auditor_user_id,
+        limit=page_size,
+        offset=offset,
+    )
+    has_prev_page = page > 1
+    has_next_page = (offset + page_size) < audits_total
+
+    material_catalog = fetch_material_catalog()
+    material_index = {row["material_code"]: row["material_name"] for row in material_catalog}
+
+    audit_context = None
+    audit_id = None
+    audit_id_raw = (request.args.get("audit_id") or request.form.get("audit_id") or "").strip()
+    if audit_id_raw:
+        try:
+            audit_id = int(audit_id_raw)
+        except ValueError:
+            flash("El ID de auditoría no es válido.", "error")
+            audit_id = None
+
+    if audit_id is not None:
+        audit_context = fetch_audit_detail(audit_id)
+        if audit_context and is_auditor():
+            current = current_user()
+            if audit_context.get("auditor_user_id") != current["id"] and (audit_context.get("auditor_name") or "") != current["username"]:
+                audit_context = None
+        if not audit_context:
+            flash("No se encontró la auditoría seleccionada.", "error")
+
+    items = fetch_audit_items(audit_id) if audit_context else []
+    grouped_items = build_grouped_audit_items(items) if items else {}
+    supply_requests_rows = fetch_audit_supply_requests(audit_id) if audit_context else []
+
+    if request.method == "POST":
+        try:
+            if not audit_context or audit_id is None:
+                raise ValueError("Debes seleccionar una auditoría para registrar la solicitud.")
+
+            request_type = (request.form.get("request_type") or "").strip()
+            if request_type not in {"reponer", "cambiar"}:
+                raise ValueError("Solicitud inválida. Usa reponer o cambiar.")
+
+            material_code_raw = (request.form.get("material_code") or "").strip()
+            if not material_code_raw:
+                raise ValueError("Debes indicar el código del material en la solicitud.")
+
+            material_code = material_code_raw.split(" - ", 1)[0].strip()
+            normalized_material_code = material_code.upper()
+            if normalized_material_code != "SIN CODIGO":
+                if not material_index:
+                    raise ValueError(
+                        "No hay materiales importados para validar códigos. Importa Stock de materiales primero."
+                    )
+                material = fetch_material_by_code(material_code)
+                if not material:
+                    raise ValueError(f"El código {material_code} no existe en materiales importados.")
+            else:
+                material = None
+
+            quantity_raw = (request.form.get("quantity") or "").strip()
+            quantity = None
+            if quantity_raw:
+                try:
+                    quantity = int(quantity_raw)
+                except ValueError as exc:
+                    raise ValueError("La cantidad solicitada no es válida.") from exc
+
+            notes = (request.form.get("notes") or "").strip().upper() or None
+            if normalized_material_code == "SIN CODIGO" and not notes:
+                raise ValueError("Si seleccionas SIN CODIGO, debes completar la nota.")
+
+            audit_item_id_raw = (request.form.get("audit_item_id") or "").strip()
+            selected_item = None
+            if audit_item_id_raw:
+                try:
+                    audit_item_id = int(audit_item_id_raw)
+                except ValueError as exc:
+                    raise ValueError("El ítem seleccionado no es válido.") from exc
+                selected_item = next((it for it in items if it.get("id") == audit_item_id), None)
+                if not selected_item:
+                    raise ValueError("El ítem seleccionado no pertenece a la auditoría.")
+
+            if selected_item:
+                section_key = selected_item.get("section_key") or "accion"
+                section_title = selected_item.get("section_title") or "Acción"
+                item_key = selected_item.get("item_key") or f"material_{material_code}"
+                item_label = selected_item.get("item_label") or (material["material_name"] if material else "SIN CODIGO")
+            else:
+                section_key = "accion"
+                section_title = "Acción"
+                item_key = f"material_{material_code}" if normalized_material_code != "SIN CODIGO" else "sin_codigo"
+                item_label = material["material_name"] if material else "SIN CODIGO"
+
+            create_audit_supply_requests(
+                audit_id,
+                [
+                    {
+                        "section_key": section_key,
+                        "section_title": section_title,
+                        "item_key": item_key,
+                        "item_label": item_label,
+                        "request_type": request_type,
+                        "material_code": normalized_material_code
+                        if normalized_material_code == "SIN CODIGO"
+                        else material_code,
+                        "quantity": quantity,
+                        "notes": notes,
+                    }
+                ],
+            )
+            flash("Solicitud registrada.", "success")
+            return redirect(url_for("main.supply_requests", audit_id=audit_id))
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+    return render_template(
+        "supply_requests.html",
+        audits=audits,
+        audits_total=audits_total,
+        audit=audit_context,
+        audit_id=audit_id,
+        filters=filters,
+        page=page,
+        page_size=page_size,
+        has_prev_page=has_prev_page,
+        has_next_page=has_next_page,
+        grouped_items=grouped_items,
+        supply_requests=supply_requests_rows,
+        material_index=material_index,
         page_class="page-wide",
     )
 

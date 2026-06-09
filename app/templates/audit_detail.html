@@ -165,6 +165,7 @@
             <p class="eyebrow">Acción</p>
             <h3>Solicitudes de reposición / cambio</h3>
         </div>
+        <a class="button button-secondary" href="{{ url_for('main.supply_requests', audit_id=audit['id']) }}">Nueva solicitud</a>
     </div>
     {% if supply_requests %}
         <div class="table-wrap">

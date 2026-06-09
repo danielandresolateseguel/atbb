@@ -2220,6 +2220,98 @@ def fetch_all_audits(filters=None, auditor_user_id=None):
     return [dict(row) for row in rows]
 
 
+def build_audit_picker_where_sql(filters=None, auditor_user_id=None):
+    filters = filters or {}
+    extra_clauses = []
+    extra_params = []
+
+    audit_id_raw = (filters.get("audit_id") or "").strip()
+    if audit_id_raw:
+        extra_clauses.append("audits.id = ?")
+        extra_params.append(audit_id_raw)
+
+    query = (filters.get("q") or "").strip()
+    if query:
+        like_value = f"%{query}%"
+        if is_postgres():
+            extra_clauses.append(
+                "("
+                "COALESCE(audits.sa_number, '') ILIKE ? OR "
+                "CAST(audits.id AS TEXT) ILIKE ? OR "
+                "COALESCE(mobile_units.mobile_code, '') ILIKE ? OR "
+                "COALESCE(technicians.name, audits.technician_display_name, '') ILIKE ? OR "
+                "COALESCE(vehicles.plate, '') ILIKE ? OR "
+                "COALESCE(audits.location, '') ILIKE ?"
+                ")"
+            )
+            extra_params.extend([like_value] * 6)
+        else:
+            extra_clauses.append(
+                "("
+                "LOWER(COALESCE(audits.sa_number, '')) LIKE ? OR "
+                "LOWER(CAST(audits.id AS TEXT)) LIKE ? OR "
+                "LOWER(COALESCE(mobile_units.mobile_code, '')) LIKE ? OR "
+                "LOWER(COALESCE(technicians.name, audits.technician_display_name, '')) LIKE ? OR "
+                "LOWER(COALESCE(vehicles.plate, '')) LIKE ? OR "
+                "LOWER(COALESCE(audits.location, '')) LIKE ?"
+                ")"
+            )
+            extra_params.extend([like_value.lower()] * 6)
+
+    return build_audits_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        extra_clauses=extra_clauses,
+        extra_params=extra_params,
+    )
+
+
+def count_audit_picker_audits(filters=None, auditor_user_id=None):
+    where_sql, params = build_audit_picker_where_sql(filters, auditor_user_id=auditor_user_id)
+    row = get_db().execute(
+        f"""
+        SELECT COUNT(*) AS audits_count
+        FROM audits
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+    if not row:
+        return 0
+    return row["audits_count"] if isinstance(row, dict) else row[0]
+
+
+def fetch_audit_picker_audits(filters=None, auditor_user_id=None, limit=25, offset=0):
+    where_sql, params = build_audit_picker_where_sql(filters, auditor_user_id=auditor_user_id)
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audits.id,
+            audits.audit_date,
+            audits.sa_number,
+            audits.location,
+            audits.installation_type,
+            audits.total_score,
+            audits.result_status,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            vehicles.plate AS vehicle_plate
+        FROM audits
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        ORDER BY audits.created_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        tuple(list(params) + [limit, offset]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=None, extra_params=None):
     filters = filters or {}
     extra_clauses = extra_clauses or []
@@ -3059,6 +3151,43 @@ def fetch_audit_supply_requests(audit_id):
         (audit_id,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def create_audit_supply_requests(audit_id, supply_requests):
+    if not supply_requests:
+        return 0
+    connection = get_db()
+    connection.executemany(
+        """
+        INSERT INTO audit_supply_requests (
+            audit_id,
+            section_key,
+            section_title,
+            item_key,
+            item_label,
+            request_type,
+            material_code,
+            quantity,
+            notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                audit_id,
+                req["section_key"],
+                req["section_title"],
+                req["item_key"],
+                req["item_label"],
+                req["request_type"],
+                req["material_code"],
+                req.get("quantity"),
+                req.get("notes"),
+            )
+            for req in supply_requests
+        ],
+    )
+    connection.commit()
+    return len(supply_requests)
 
 
 def create_audit(audit_data, items, supply_requests=None):

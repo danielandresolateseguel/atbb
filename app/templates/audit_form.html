@@ -669,38 +669,6 @@
         </label>
     </section>
 
-    <section class="card" id="supply_requests_card">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Acción</p>
-                <h3>Solicitudes de reposición / cambio</h3>
-            </div>
-            <button class="button button-secondary" type="button" id="add_supply_request_button">Agregar</button>
-        </div>
-
-        {% if not material_index %}
-            <p class="empty-state">Importa Stock de materiales para habilitar la selección de códigos.</p>
-        {% endif %}
-
-        <div id="supply_requests_list"></div>
-
-        <datalist id="materials_datalist">
-            <option value="SIN CODIGO"></option>
-            {% for code, name in (material_index or {}).items() %}
-                <option value="{{ code }} - {{ name }}"></option>
-            {% endfor %}
-        </datalist>
-
-        <select id="supply_item_options_source" style="display:none">
-            <option value="">Sin item asociado</option>
-            {% if herramientas_section %}
-                {% for item in herramientas_section["items"] %}
-                    <option value="{{ item['key'] }}">{{ item["label"] }}</option>
-                {% endfor %}
-            {% endif %}
-        </select>
-    </section>
-
     <section class="card closure-card" id="closure_check_card">
         <div class="section-heading">
             <div>

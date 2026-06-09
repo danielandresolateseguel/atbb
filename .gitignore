@@ -5,3 +5,5 @@ venv/
 audit_app.db
 .vscode/
 app/static/uploads/
+.dbg/
+debug-*.md

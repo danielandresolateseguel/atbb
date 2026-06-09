@@ -20,6 +20,7 @@
                     {% if can_create_audit %}
                         <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
                     {% endif %}
+                    <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
                     <a href="{{ url_for('main.audit_list') }}">Historial</a>
                     {% if can_view_reports %}
                         <a href="{{ url_for('main.reports') }}">Reportes</a>
