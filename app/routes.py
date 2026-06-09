@@ -3,7 +3,9 @@ import binascii
 import csv
 import io
 import json
+import os
 import time
+import traceback
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
@@ -98,6 +100,26 @@ from app.spreadsheets import parse_tabular_upload
 
 
 main = Blueprint("main", __name__)
+
+#region debug-point audit-evidence-500
+def _dbg_audit_evidence_500(event_name, payload=None):
+    try:
+        if os.environ.get("DEBUG_AUDIT_EVIDENCE_500") != "1":
+            return
+        outdir = os.path.join(os.getcwd(), ".dbg")
+        os.makedirs(outdir, exist_ok=True)
+        out_path = os.path.join(outdir, "trae-debug-log-audit-evidence-500.ndjson")
+        entry = {
+            "ts": int(time.time() * 1000),
+            "sessionId": "audit-evidence-500",
+            "event": event_name,
+            "payload": payload or {},
+        }
+        with open(out_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        return
+#endregion debug-point audit-evidence-500
 
 
 NON_COMPLIANCE_REASON_LABELS = {
@@ -1567,7 +1589,19 @@ def validate_photo_file(photo_file, item_label):
 
 def cloudinary_enabled():
     raw = (current_app.config.get("CLOUDINARY_URL") or "").strip()
-    return raw.startswith("cloudinary://")
+    if not raw.startswith("cloudinary://"):
+        return False
+    payload = raw[len("cloudinary://"):]
+    if "@" not in payload:
+        return False
+    creds, cloud_name = payload.split("@", 1)
+    if ":" not in creds:
+        return False
+    api_key, api_secret = creds.split(":", 1)
+    api_key = (api_key or "").strip()
+    api_secret = (api_secret or "").strip()
+    cloud_name = (cloud_name or "").strip()
+    return bool(api_key and api_secret and cloud_name)
 
 
 def optimize_photo_bytes(content_bytes, extension, max_dim=2400):
@@ -1811,66 +1845,101 @@ def persist_item_evidence(items, audit_date):
 
 @main.route("/api/audits/upload-evidence", methods=["POST"])
 def upload_audit_evidence():
-    if not can_create_audit():
-        abort(403)
-
-    item_key = (request.form.get("item_key") or "").strip()
-    item_label = (request.form.get("item_label") or "evidencia").strip() or "evidencia"
-    audit_date = (request.form.get("audit_date") or "").strip()
-    if not audit_date:
-        audit_date = datetime.today().strftime("%Y-%m-%d")
-
     try:
-        datetime.fromisoformat(audit_date)
-    except ValueError:
-        return jsonify({"error": "audit_date invalida."}), 400
+        if not can_create_audit():
+            abort(403)
 
-    files = request.files.getlist("file") if hasattr(request.files, "getlist") else []
-    if not files:
-        single = request.files.get("file")
-        if single:
-            files = [single]
+        item_key = (request.form.get("item_key") or "").strip()
+        item_label = (request.form.get("item_label") or "evidencia").strip() or "evidencia"
+        audit_date = (request.form.get("audit_date") or "").strip()
+        if not audit_date:
+            audit_date = datetime.today().strftime("%Y-%m-%d")
 
-    files = [entry for entry in files if has_uploaded_file(entry)]
-    if not files:
-        return jsonify({"error": "Debes adjuntar al menos un archivo."}), 400
+        try:
+            datetime.fromisoformat(audit_date)
+        except ValueError:
+            return jsonify({"error": "audit_date invalida."}), 400
 
-    date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
-    if not cloudinary_enabled():
-        target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / date_folder
-        target_dir.mkdir(parents=True, exist_ok=True)
+        files = request.files.getlist("file") if hasattr(request.files, "getlist") else []
+        if not files:
+            single = request.files.get("file")
+            if single:
+                files = [single]
 
-    safe_stem = secure_filename(item_key) or "evidencia"
-    base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
-    cloud_folder = f"{base_folder}/audits/{date_folder}"
+        files = [entry for entry in files if has_uploaded_file(entry)]
+        _dbg_audit_evidence_500(
+            "upload-evidence.request",
+            {
+                "item_key": item_key,
+                "audit_date": audit_date,
+                "cloudinary_enabled": cloudinary_enabled(),
+                "files_count": len(files),
+                "files_meta": [
+                    {
+                        "filename": getattr(f, "filename", None),
+                        "content_type": getattr(f, "content_type", None),
+                        "mimetype": getattr(f, "mimetype", None),
+                    }
+                    for f in files
+                ],
+            },
+        )
+        if not files:
+            return jsonify({"error": "Debes adjuntar al menos un archivo."}), 400
 
-    saved_paths = []
-    for index, entry in enumerate(files):
-        filename, extension = validate_photo_file(entry, item_label)
-        generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
-        raw_bytes = entry.stream.read()
-        if not raw_bytes:
-            return jsonify({"error": f"La evidencia de {item_label} no contiene datos validos."}), 400
+        date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
+        if not cloudinary_enabled():
+            target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / date_folder
+            target_dir.mkdir(parents=True, exist_ok=True)
 
-        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
-        if cloudinary_enabled():
-            uploaded_url = upload_image_to_cloudinary(
-                optimized_bytes,
-                folder=cloud_folder,
-                public_id=generated_name,
-            )
-            saved_paths.append(uploaded_url)
-        else:
-            generated_filename = f"{generated_name}.{optimized_extension}"
-            saved_path = target_dir / generated_filename
-            saved_path.write_bytes(optimized_bytes)
-            saved_paths.append(
-                f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
-            )
+        safe_stem = secure_filename(item_key) or "evidencia"
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        cloud_folder = f"{base_folder}/audits/{date_folder}"
 
-    if len(saved_paths) == 1:
-        return jsonify({"photo_path": saved_paths[0]})
-    return jsonify({"photo_paths": saved_paths})
+        saved_paths = []
+        for index, entry in enumerate(files):
+            filename, extension = validate_photo_file(entry, item_label)
+            generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
+            raw_bytes = entry.stream.read()
+            if not raw_bytes:
+                return jsonify({"error": f"La evidencia de {item_label} no contiene datos validos."}), 400
+
+            optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+            if cloudinary_enabled():
+                uploaded_url = upload_image_to_cloudinary(
+                    optimized_bytes,
+                    folder=cloud_folder,
+                    public_id=generated_name,
+                )
+                saved_paths.append(uploaded_url)
+            else:
+                generated_filename = f"{generated_name}.{optimized_extension}"
+                saved_path = target_dir / generated_filename
+                saved_path.write_bytes(optimized_bytes)
+                saved_paths.append(
+                    f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
+                )
+
+        _dbg_audit_evidence_500(
+            "upload-evidence.success",
+            {
+                "item_key": item_key,
+                "saved_count": len(saved_paths),
+                "saved_paths_sample": saved_paths[:3],
+            },
+        )
+        if len(saved_paths) == 1:
+            return jsonify({"photo_path": saved_paths[0]})
+        return jsonify({"photo_paths": saved_paths})
+    except Exception as exc:
+        _dbg_audit_evidence_500(
+            "upload-evidence.exception",
+            {
+                "error": repr(exc),
+                "traceback": traceback.format_exc(),
+            },
+        )
+        raise
 
 
 def persist_auditor_signature(signature_data, audit_date):
