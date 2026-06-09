@@ -3237,6 +3237,29 @@
         evaluateClosure();
         void processEvidenceQueue();
 
+        let keepAliveTimer = null;
+        function startKeepAlive() {
+            if (keepAliveTimer) {
+                return;
+            }
+            keepAliveTimer = window.setInterval(async function () {
+                if (!navigator.onLine) {
+                    return;
+                }
+                if (document.visibilityState !== "visible") {
+                    return;
+                }
+                try {
+                    const response = await fetch("/api/ping", { credentials: "same-origin" });
+                    if (response.status === 401 || response.status === 403) {
+                        void processEvidenceQueue();
+                    }
+                } catch (_err) {
+                }
+            }, 120000);
+        }
+        startKeepAlive();
+
         window.addEventListener("online", function () {
             void processEvidenceQueue();
         });

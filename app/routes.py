@@ -1198,10 +1198,18 @@ def login():
             return render_template("login.html", next=next_url)
 
         session.clear()
+        session.permanent = True
         session["user_id"] = user["id"]
         return redirect(next_url or url_for("main.dashboard"))
 
     return render_template("login.html", next=next_url)
+
+
+@main.route("/api/ping")
+def api_ping():
+    if not current_user():
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({"ok": True})
 
 
 @main.route("/logout")
