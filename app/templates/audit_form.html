@@ -1533,7 +1533,9 @@
                         if (checklistItem) {
                             const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
                             if (filenameTarget) {
-                                filenameTarget.textContent = "Evidencia pendiente de subir.";
+                                filenameTarget.textContent = (response.status === 401 || response.status === 403)
+                                    ? "Sesión expirada. Vuelve a ingresar."
+                                    : "Evidencia pendiente de subir.";
                             }
                         }
                         break;
@@ -1595,6 +1597,12 @@
                 });
                 const data = await response.json().catch(() => null);
                 if (!response.ok || !data) {
+                    if (response.status === 401 || response.status === 403) {
+                        if (filenameTarget) {
+                            filenameTarget.textContent = "Sesión expirada. Vuelve a ingresar y reintenta la evidencia.";
+                        }
+                        return;
+                    }
                     const queued = await queueEvidenceFromInput(input, checklistItem, itemKey, itemLabel);
                     if (!queued) {
                         const message = data && data.error ? data.error : "No se pudo subir la evidencia. Revisa tu conexión e intenta nuevamente.";
@@ -3137,9 +3145,12 @@
             }
             const pendingEvidence = await evidenceQueueCount();
             if (pendingEvidence > 0) {
-                window.alert("Hay evidencias pendientes de subir. Revisa tu conexión y espera a que se sincronicen antes de guardar la auditoría.");
-                void processEvidenceQueue();
-                return;
+                await processEvidenceQueue();
+                const remaining = await evidenceQueueCount();
+                if (remaining > 0) {
+                    window.alert(`Hay ${remaining} evidencia(s) pendiente(s) de subir. Revisa tu conexión (o vuelve a iniciar sesión) y espera a que se sincronicen antes de guardar la auditoría.`);
+                    return;
+                }
             }
             isSavingAudit = true;
             if (draftTimer) {
