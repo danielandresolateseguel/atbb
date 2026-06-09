@@ -1342,6 +1342,10 @@
             }
         }
 
+        async function evidenceQueueUpdate(record) {
+            return await evidenceQueueAdd(record);
+        }
+
         async function evidenceQueueGetAll() {
             try {
                 const db = await openEvidenceDb();
@@ -1398,36 +1402,104 @@
             return JSON.stringify(merged);
         }
 
-        async function queueEvidenceFromInput(input, checklistItem, itemKey, itemLabel) {
+        function countUploadedPaths(rawValue) {
+            const raw = String(rawValue || "").trim();
+            if (!raw) {
+                return 0;
+            }
+            if (raw.startsWith("[") && raw.endsWith("]")) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    return Array.isArray(parsed) ? parsed.length : 1;
+                } catch (_err) {
+                    return 1;
+                }
+            }
+            return 1;
+        }
+
+        async function queueEvidenceFiles(checklistItem, itemKey, itemLabel, files, inputName) {
             const auditDateInput = document.querySelector('input[name="audit_date"]');
             const auditDate = auditDateInput ? String(auditDateInput.value || "").trim() : "";
-            const files = input && input.files ? Array.from(input.files).filter((f) => f) : [];
             if (files.length === 0) {
                 return false;
             }
-            const record = {
-                id: generateClientId(),
-                created_at: new Date().toISOString(),
-                item_key: itemKey,
-                item_label: itemLabel,
-                audit_date: auditDate || "",
-                multi: checklistItem && checklistItem.dataset.multiEvidence === "1",
-                files: files,
-            };
-            const saved = await evidenceQueueAdd(record);
-            if (!saved) {
-                return false;
+            const isMulti = Boolean(checklistItem && checklistItem.dataset.multiEvidence === "1");
+            for (const file of files) {
+                const record = {
+                    id: generateClientId(),
+                    created_at: new Date().toISOString(),
+                    item_key: itemKey,
+                    item_label: itemLabel,
+                    audit_date: auditDate || "",
+                    multi: isMulti,
+                    input_name: inputName || "",
+                    files: [file],
+                };
+                const saved = await evidenceQueueAdd(record);
+                if (!saved) {
+                    return false;
+                }
             }
             checklistItem.dataset.evidencePending = "1";
             const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
             if (filenameTarget) {
                 filenameTarget.textContent = "Evidencia pendiente de subir.";
             }
-            input.value = "";
-            delete input.dataset.lastEvidenceIdentity;
             evaluateClosure();
             scheduleDraftSave();
             return true;
+        }
+
+        async function queueEvidenceFromInput(input, checklistItem, itemKey, itemLabel) {
+            const files = input && input.files ? Array.from(input.files).filter((f) => f) : [];
+            const inputName = input && input.name ? String(input.name) : "";
+            const saved = await queueEvidenceFiles(checklistItem, itemKey, itemLabel, files, inputName);
+            if (!saved) {
+                return false;
+            }
+            input.value = "";
+            delete input.dataset.lastEvidenceIdentity;
+            return true;
+        }
+
+        async function compressEvidenceFileForUpload(file, isCameraEvidence) {
+            if (!file) {
+                return file;
+            }
+            if (!String(file.type || "").toLowerCase().startsWith("image/")) {
+                return file;
+            }
+            const thresholdBytes = isCameraEvidence ? (220 * 1024) : (900 * 1024);
+            const compressOptions = isCameraEvidence
+                ? { maxDim: 1280, quality: 0.6 }
+                : { maxDim: 1600, quality: 0.72 };
+            if ((file.size || 0) <= thresholdBytes) {
+                return file;
+            }
+            try {
+                return await compressImageFile(file, compressOptions);
+            } catch (_err) {
+                return file;
+            }
+        }
+
+        async function uploadEvidenceFile(itemKey, itemLabel, auditDate, file) {
+            const payload = new FormData();
+            payload.append("item_key", itemKey);
+            payload.append("item_label", itemLabel);
+            if (auditDate) {
+                payload.append("audit_date", auditDate);
+            }
+            payload.append("file", file, file && file.name ? file.name : "evidencia.webp");
+            const response = await fetch("/api/audits/upload-evidence", {
+                method: "POST",
+                body: payload,
+                credentials: "same-origin",
+                headers: { "Accept": "application/json" },
+            });
+            const data = await response.json().catch(() => null);
+            return { response, data };
         }
 
         async function applyUploadResultToForm(itemKey, paths, isMulti) {
@@ -1498,7 +1570,7 @@
                     }
                     const itemLabel = String(entry.item_label || itemKey || "evidencia");
                     const auditDate = String(entry.audit_date || "").trim();
-                    const files = Array.isArray(entry.files) ? entry.files : [];
+                    const files = Array.isArray(entry.files) ? entry.files.filter((f) => f) : [];
                     if (files.length === 0) {
                         await evidenceQueueDelete(entry.id);
                         continue;
@@ -1511,40 +1583,44 @@
                             filenameTarget.textContent = "Subiendo evidencia...";
                         }
                     }
-
-                    const payload = new FormData();
-                    payload.append("item_key", itemKey);
-                    payload.append("item_label", itemLabel);
-                    if (auditDate) {
-                        payload.append("audit_date", auditDate);
-                    }
-                    files.forEach((file) => {
-                        const name = file && file.name ? file.name : "evidencia.webp";
-                        payload.append("file", file, name);
-                    });
-
-                    const response = await fetch("/api/audits/upload-evidence", {
-                        method: "POST",
-                        body: payload,
-                        credentials: "same-origin",
-                    });
-                    const data = await response.json().catch(() => null);
-                    if (!response.ok || !data) {
-                        if (checklistItem) {
-                            const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
-                            if (filenameTarget) {
-                                filenameTarget.textContent = (response.status === 401 || response.status === 403)
-                                    ? "Sesión expirada. Vuelve a ingresar."
-                                    : "Evidencia pendiente de subir.";
+                    const isCameraEvidence = Boolean(String(entry.input_name || "").startsWith("photo_camera__") || String(entry.input_name || "").startsWith("photos_camera__"));
+                    const remainingFiles = [];
+                    for (const rawFile of files) {
+                        const compressed = await compressEvidenceFileForUpload(rawFile, isCameraEvidence);
+                        const { response, data } = await uploadEvidenceFile(itemKey, itemLabel, auditDate, compressed);
+                        if (response.status === 401 || response.status === 403) {
+                            if (checklistItem) {
+                                const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
+                                if (filenameTarget) {
+                                    filenameTarget.textContent = "Sesión expirada. Vuelve a ingresar.";
+                                }
                             }
+                            remainingFiles.push(rawFile);
+                            break;
                         }
+                        if (response.status === 413) {
+                            if (checklistItem) {
+                                const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
+                                if (filenameTarget) {
+                                    filenameTarget.textContent = "Evidencia muy pesada. Sube menos fotos o en menor resolución.";
+                                }
+                            }
+                            remainingFiles.push(rawFile);
+                            break;
+                        }
+                        if (!response.ok || !data) {
+                            remainingFiles.push(rawFile);
+                            break;
+                        }
+                        const paths = (data.photo_paths && Array.isArray(data.photo_paths))
+                            ? data.photo_paths
+                            : (data.photo_path ? [data.photo_path] : []);
+                        await applyUploadResultToForm(itemKey, paths, Boolean(entry.multi));
+                    }
+                    if (remainingFiles.length > 0) {
+                        await evidenceQueueUpdate({ ...entry, files: remainingFiles });
                         break;
                     }
-
-                    const paths = (data.photo_paths && Array.isArray(data.photo_paths))
-                        ? data.photo_paths
-                        : (data.photo_path ? [data.photo_path] : []);
-                    await applyUploadResultToForm(itemKey, paths, Boolean(entry.multi));
                     await evidenceQueueDelete(entry.id);
                 }
             } catch (_err) {
@@ -1574,70 +1650,87 @@
 
             const auditDateInput = document.querySelector('input[name="audit_date"]');
             const auditDate = auditDateInput ? String(auditDateInput.value || "").trim() : "";
-
-            const payload = new FormData();
-            payload.append("item_key", itemKey);
-            payload.append("item_label", itemLabel);
-            if (auditDate) {
-                payload.append("audit_date", auditDate);
-            }
-            Array.from(input.files).forEach((file) => {
-                payload.append("file", file, file.name);
-            });
+            const selectedFiles = Array.from(input.files).filter((f) => f);
+            const isMultiEvidence = checklistItem.dataset.multiEvidence === "1" || input.multiple;
+            const isCameraEvidence = Boolean(input.name && (input.name.startsWith("photo_camera__") || input.name.startsWith("photos_camera__")));
 
             try {
                 if (!navigator.onLine) {
                     await queueEvidenceFromInput(input, checklistItem, itemKey, itemLabel);
                     return;
                 }
-                const response = await fetch("/api/audits/upload-evidence", {
-                    method: "POST",
-                    body: payload,
-                    credentials: "same-origin",
-                });
-                const data = await response.json().catch(() => null);
-                if (!response.ok || !data) {
-                    if (response.status === 401 || response.status === 403) {
-                        if (filenameTarget) {
-                            filenameTarget.textContent = "Sesión expirada. Vuelve a ingresar y reintenta la evidencia.";
-                        }
-                        return;
-                    }
-                    const queued = await queueEvidenceFromInput(input, checklistItem, itemKey, itemLabel);
-                    if (!queued) {
-                        const message = data && data.error ? data.error : "No se pudo subir la evidencia. Revisa tu conexión e intenta nuevamente.";
-                        if (filenameTarget) {
-                            filenameTarget.textContent = message;
-                        }
-                    }
-                    return;
-                }
-
                 const uploadedInput = ensureUploadedPhotoField(checklistItem, itemKey);
                 if (!uploadedInput) {
                     return;
                 }
-
-                if (data.photo_paths && Array.isArray(data.photo_paths)) {
-                    if (checklistItem.dataset.multiEvidence === "1") {
-                        uploadedInput.value = mergeUploadedPaths(uploadedInput.value, data.photo_paths);
-                    } else {
-                        uploadedInput.value = JSON.stringify(data.photo_paths);
+                if (!isMultiEvidence) {
+                    const file = await compressEvidenceFileForUpload(selectedFiles[0], isCameraEvidence);
+                    const { response, data } = await uploadEvidenceFile(itemKey, itemLabel, auditDate, file);
+                    if (!response.ok || !data) {
+                        if (response.status === 401 || response.status === 403) {
+                            if (filenameTarget) {
+                                filenameTarget.textContent = "Sesión expirada. Vuelve a ingresar y reintenta la evidencia.";
+                            }
+                            return;
+                        }
+                        if (response.status === 413) {
+                            if (filenameTarget) {
+                                filenameTarget.textContent = "Evidencia muy pesada. Intenta nuevamente con menor resolución.";
+                            }
+                            return;
+                        }
+                        const queued = await queueEvidenceFromInput(input, checklistItem, itemKey, itemLabel);
+                        if (!queued) {
+                            const message = data && data.error ? data.error : "No se pudo subir la evidencia. Revisa tu conexión e intenta nuevamente.";
+                            if (filenameTarget) {
+                                filenameTarget.textContent = message;
+                            }
+                        }
+                        return;
                     }
-                    if (filenameTarget) {
-                        filenameTarget.textContent = `${data.photo_paths.length} evidencias subidas.`;
-                    }
-                } else if (data.photo_path) {
-                    if (checklistItem.dataset.multiEvidence === "1") {
-                        uploadedInput.value = mergeUploadedPaths(uploadedInput.value, [data.photo_path]);
-                    } else {
-                        uploadedInput.value = String(data.photo_path);
-                    }
+                    const paths = (data.photo_paths && Array.isArray(data.photo_paths))
+                        ? data.photo_paths
+                        : (data.photo_path ? [data.photo_path] : []);
+                    uploadedInput.value = mergeUploadedPaths(uploadedInput.value, paths);
                     if (filenameTarget) {
                         filenameTarget.textContent = "Evidencia subida.";
                     }
+                    delete checklistItem.dataset.evidencePending;
+                } else {
+                    for (let idx = 0; idx < selectedFiles.length; idx += 1) {
+                        const compressed = await compressEvidenceFileForUpload(selectedFiles[idx], isCameraEvidence);
+                        const { response, data } = await uploadEvidenceFile(itemKey, itemLabel, auditDate, compressed);
+                        if (!response.ok || !data) {
+                            if (response.status === 401 || response.status === 403) {
+                                if (filenameTarget) {
+                                    filenameTarget.textContent = "Sesión expirada. Vuelve a ingresar y reintenta la evidencia.";
+                                }
+                                return;
+                            }
+                            const remaining = selectedFiles.slice(idx);
+                            if (response.status === 413) {
+                                if (filenameTarget) {
+                                    filenameTarget.textContent = "Evidencia muy pesada. Sube menos fotos o en menor resolución.";
+                                }
+                            }
+                            const queued = await queueEvidenceFiles(checklistItem, itemKey, itemLabel, remaining, input.name || "");
+                            if (!queued && filenameTarget) {
+                                filenameTarget.textContent = "No se pudo subir la evidencia. Revisa tu conexión e intenta nuevamente.";
+                            }
+                            input.value = "";
+                            delete input.dataset.lastEvidenceIdentity;
+                            return;
+                        }
+                        const paths = (data.photo_paths && Array.isArray(data.photo_paths))
+                            ? data.photo_paths
+                            : (data.photo_path ? [data.photo_path] : []);
+                        uploadedInput.value = mergeUploadedPaths(uploadedInput.value, paths);
+                        if (filenameTarget) {
+                            filenameTarget.textContent = `${countUploadedPaths(uploadedInput.value)} evidencias subidas.`;
+                        }
+                    }
+                    delete checklistItem.dataset.evidencePending;
                 }
-                delete checklistItem.dataset.evidencePending;
 
                 const fileInput = checklistItem.querySelector('input[name^="photo__"], input[name^="photos__"]');
                 const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"], input[name^="photos_camera__"]');
