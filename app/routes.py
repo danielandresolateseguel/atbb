@@ -368,6 +368,7 @@ def build_pdf_from_html_response(html, filename):
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(
+                headless=True,
                 args=[
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
@@ -375,7 +376,11 @@ def build_pdf_from_html_response(html, filename):
                 ]
             )
             page = browser.new_page(viewport={"width": 794, "height": 1123})
-            page.set_content(html, wait_until="networkidle", timeout=60000)
+            page.set_content(html, wait_until="domcontentloaded", timeout=60000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                pass
             page.emulate_media(media="print")
             pdf_bytes = page.pdf(
                 format="A4",

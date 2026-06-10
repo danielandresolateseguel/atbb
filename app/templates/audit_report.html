@@ -446,17 +446,16 @@
                                                 {% if item["status"] == "no_cumple" %}
                                                     <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|non_compliance_reason_label }}</p>
                                                 {% endif %}
-                                                {% if pdf_detail_mode %}
+                                                {% if pdf_detail_mode and item["status"] != "cumple" %}
                                                     {% set photo_list = item["photo_path"]|audit_photo_paths %}
                                                     {% if photo_list %}
                                                         <div class="report-item-evidence">
-                                                            {% for photo_src in photo_list %}
-                                                                {% if photo_src.startswith("http") %}
-                                                                    <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}">
-                                                                {% else %}
-                                                                    <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}">
-                                                                {% endif %}
-                                                            {% endfor %}
+                                                            {% set photo_src = photo_list[0] %}
+                                                            {% if photo_src.startswith("http") %}
+                                                                <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}">
+                                                            {% else %}
+                                                                <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}">
+                                                            {% endif %}
                                                         </div>
                                                     {% endif %}
                                                 {% endif %}
