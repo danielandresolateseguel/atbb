@@ -394,6 +394,76 @@ def build_pdf_from_html_response(html, filename):
     return response
 
 
+def build_audit_items_fallback_pdf(audit, items, filename, title_suffix="Detalle"):
+    def status_label(value, reason=None):
+        raw = (value or "").strip().lower()
+        reason_raw = (reason or "").strip().lower()
+        if raw == "cumple":
+            return "Cumple"
+        if raw == "conforme":
+            return "Conforme"
+        if raw == "no_cumple":
+            if reason_raw in NON_IMPUTABLE_REASONS:
+                return "No cumple (sin impacto)"
+            if reason_raw in SUPERVISOR_RESPONSIBILITY_REASONS:
+                return "No cumple (resp. supervisor)"
+            return "No cumple"
+        if raw == "nc_menor":
+            return "No conformidad menor"
+        if raw == "nc_mayor":
+            return "No conformidad mayor"
+        return "No aplica"
+
+    normalized_items = []
+    for item in items or []:
+        row = {} if item is None else dict(item)
+        photos = audit_photo_paths(row.get("photo_path"))
+        normalized_items.append(
+            {
+                "section_title": row.get("section_title") or "-",
+                "item_label": row.get("item_label") or "-",
+                "status_label": status_label(row.get("status"), row.get("non_compliance_reason")),
+                "critical_label": "Sí" if row.get("is_critical") else "No",
+                "non_compliance_reason": non_compliance_reason_label(row.get("non_compliance_reason")),
+                "notes": row.get("notes") or "-",
+                "evidence_count": str(len(photos)) if photos else "0",
+            }
+        )
+
+    title = f"Auditoría {audit.get('id')} - {title_suffix}"
+    audit_meta = [
+        {
+            "section_title": "Meta",
+            "item_label": f"Fecha: {audit.get('audit_date') or '-'} | Auditor: {audit.get('auditor_name') or '-'} | SA: {audit.get('sa_number') or '-'}",
+            "status_label": "",
+            "critical_label": "",
+            "non_compliance_reason": "",
+            "notes": f"Móvil: {audit.get('mobile_code') or '-'} | Técnico: {audit.get('technician_name') or '-'} | Legajo: {audit.get('employee_code') or '-'}",
+            "evidence_count": "",
+        },
+        {
+            "section_title": "Meta",
+            "item_label": f"Resultado: {audit.get('result_status') or '-'} | Puntaje: {audit.get('total_score') or '-'}% | Ubicación: {audit.get('location') or '-'}",
+            "status_label": "",
+            "critical_label": "",
+            "non_compliance_reason": "",
+            "notes": f"Tipo: {audit.get('installation_type') or '-'} | Registro: {audit.get('created_at') or '-'}",
+            "evidence_count": "",
+        },
+    ]
+    rows = audit_meta + normalized_items
+    columns = [
+        {"key": "section_title", "label": "Sección"},
+        {"key": "item_label", "label": "Ítem"},
+        {"key": "status_label", "label": "Estado"},
+        {"key": "critical_label", "label": "Crítico"},
+        {"key": "non_compliance_reason", "label": "Motivo"},
+        {"key": "notes", "label": "Notas"},
+        {"key": "evidence_count", "label": "Evid."},
+    ]
+    return build_pdf_response(rows, filename, title, columns)
+
+
 def build_reports_context(report_key, filters, auditor_user_id):
     title = ""
     subtitle = ""
@@ -3155,7 +3225,11 @@ def audit_report_pdf(audit_id):
         detail_filter_active=False,
         detail_filter={},
     )
-    return build_pdf_from_html_response(html, filename)
+    try:
+        return build_pdf_from_html_response(html, filename)
+    except Exception as exc:
+        current_app.logger.exception("Error generando PDF auditoría %s (informe)", audit_id)
+        return build_audit_items_fallback_pdf(audit, items, filename, title_suffix="Informe")
 
 
 @main.route("/audits/<int:audit_id>/detail.pdf")
@@ -3206,7 +3280,11 @@ def audit_detail_pdf(audit_id):
         detail_filter_active=False,
         detail_filter={},
     )
-    return build_pdf_from_html_response(html, filename)
+    try:
+        return build_pdf_from_html_response(html, filename)
+    except Exception as exc:
+        current_app.logger.exception("Error generando PDF auditoría %s (detalle)", audit_id)
+        return build_audit_items_fallback_pdf(audit, items, filename, title_suffix="Detalle")
 
 
 @main.route("/imports", methods=["GET", "POST"])

@@ -141,7 +141,13 @@
                 try {
                     const response = await fetch(withCacheBust(url), { credentials: "same-origin", cache: "no-store" });
                     if (!response.ok) {
-                        throw new Error("No fue posible descargar el PDF.");
+                        let detail = "";
+                        try {
+                            detail = (await response.text()).trim();
+                        } catch (e) {
+                            detail = "";
+                        }
+                        throw new Error(detail || "No fue posible descargar el PDF.");
                     }
                     const blob = await response.blob();
                     const file = typeof File === "function" ? new File([blob], filename || "reporte.pdf", { type: "application/pdf" }) : null;
