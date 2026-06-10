@@ -3216,6 +3216,12 @@ def audit_report_pdf(audit_id):
 
     date_suffix = (audit.get("audit_date") or "sin_fecha").strip().replace("/", "-")
     filename = secure_filename(f"auditoria_{audit_id}_{date_suffix}.pdf") or f"auditoria_{audit_id}.pdf"
+    filename_override = (request.args.get("filename") or "").strip()
+    if filename_override:
+        normalized_override = secure_filename(filename_override) or filename
+        if not normalized_override.lower().endswith(".pdf"):
+            normalized_override = f"{normalized_override}.pdf"
+        filename = normalized_override
 
     html = render_template(
         "audit_report.html",
@@ -3248,15 +3254,8 @@ def audit_detail_pdf(audit_id):
             abort(404)
 
     date_suffix = (audit.get("audit_date") or "sin_fecha").strip().replace("/", "-")
-    filename = (
-        secure_filename(f"auditoria_{audit_id}_{date_suffix}_detalle.pdf")
-        or f"auditoria_{audit_id}_detalle.pdf"
-    )
-
-    response = audit_report_pdf(audit_id)
-    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    filename = secure_filename(f"auditoria_{audit_id}_{date_suffix}_detalle.pdf") or f"auditoria_{audit_id}_detalle.pdf"
+    return redirect(url_for("main.audit_report_pdf", audit_id=audit_id, filename=filename))
 
 
 @main.route("/imports", methods=["GET", "POST"])

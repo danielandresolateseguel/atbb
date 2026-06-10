@@ -18,7 +18,7 @@
             class="button button-secondary"
             type="button"
             data-share-pdf="1"
-            data-pdf-url="{{ url_for('main.audit_detail_pdf', audit_id=audit['id']) }}"
+            data-pdf-url="{{ url_for('main.audit_report_pdf', audit_id=audit['id'], filename='auditoria_' ~ audit['id'] ~ '_detalle.pdf') }}"
             data-filename="auditoria_{{ audit['id'] }}_detalle.pdf"
             data-title="Auditoría {{ audit['id'] }} (Detalle)"
         >Compartir PDF</button>
