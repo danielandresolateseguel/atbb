@@ -79,7 +79,7 @@ a {
 }
 
 .brand h1 {
-    font-size: 1.65rem;
+    font-size: 1.5rem;
     line-height: 1.15;
 }
 
@@ -189,6 +189,20 @@ a {
     border-radius: 999px;
     background: var(--surface-alt);
     font-weight: 700;
+}
+
+@media (min-width: 721px) {
+    .nav {
+        flex-wrap: nowrap;
+        gap: 0.55rem;
+        overflow-x: auto;
+    }
+
+    .nav a {
+        padding: 0.55rem 0.8rem;
+        font-size: 0.9rem;
+        white-space: nowrap;
+    }
 }
 
 .page {

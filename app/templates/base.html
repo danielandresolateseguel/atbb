@@ -16,21 +16,21 @@
             <nav class="nav" id="main_nav">
                 {% if current_user %}
                     <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
-                    <a href="{{ url_for('main.tnps') }}">tNPS</a>
                     {% if can_create_audit %}
                         <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
                     {% endif %}
-                    <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
                     <a href="{{ url_for('main.audit_list') }}">Historial</a>
+                    <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
+                    <a href="{{ url_for('main.tnps') }}">tNPS</a>
                     {% if can_view_reports %}
                         <a href="{{ url_for('main.reports') }}">Reportes</a>
                     {% endif %}
+                    <a href="{{ url_for('main.equipment') }}">Equipos</a>
+                    <a href="{{ url_for('main.materials_stock') }}">Stock</a>
+                    <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
                     {% if can_import %}
                         <a href="{{ url_for('main.imports') }}">Importar datos</a>
                     {% endif %}
-                    <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
-                    <a href="{{ url_for('main.equipment') }}">Equipos</a>
-                    <a href="{{ url_for('main.materials_stock') }}">Stock</a>
                 {% else %}
                     <a href="{{ url_for('main.login') }}">Ingresar</a>
                 {% endif %}
