@@ -3281,7 +3281,7 @@ def audit_detail_pdf(audit_id):
         supply_requests=supply_requests,
         inline_css=inline_css,
         print_mode=True,
-        pdf_detail_mode=True,
+        pdf_detail_mode=False,
         detail_filter_active=False,
         detail_filter={},
     )
