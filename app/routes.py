@@ -3099,6 +3099,7 @@ def audit_report(audit_id):
             tnps_response=tnps_response,
             supply_requests=supply_requests,
             print_mode=request.args.get("print") == "1",
+            pdf_detail_mode=False,
             detail_filter_active=detail_filter_active,
             detail_filter=detail_filter,
         )
@@ -3150,6 +3151,58 @@ def audit_report_pdf(audit_id):
         supply_requests=supply_requests,
         inline_css=inline_css,
         print_mode=True,
+        pdf_detail_mode=False,
+        detail_filter_active=False,
+        detail_filter={},
+    )
+    return build_pdf_from_html_response(html, filename)
+
+
+@main.route("/audits/<int:audit_id>/detail.pdf")
+def audit_detail_pdf(audit_id):
+    audit = fetch_audit_detail(audit_id)
+    if not audit:
+        abort(404)
+    if is_auditor():
+        user = current_user()
+        if audit.get("auditor_user_id") != user["id"] and (audit.get("auditor_name") or "") != user["username"]:
+            abort(404)
+
+    expires_in_seconds = 3600
+    audit["auditor_signature_path"] = build_cloudinary_signed_url(
+        audit.get("auditor_signature_path"),
+        expires_in_seconds=expires_in_seconds,
+    )
+    audit["technician_signature_path"] = build_cloudinary_signed_url(
+        audit.get("technician_signature_path"),
+        expires_in_seconds=expires_in_seconds,
+    )
+
+    items = fetch_audit_items(audit_id)
+    report = build_audit_report_metrics(audit, items)
+    grouped_items_all = build_grouped_audit_items(items)
+    tnps_response = fetch_tnps_response_for_audit(audit_id)
+    supply_requests = fetch_audit_supply_requests(audit_id)
+
+    css_path = Path(current_app.root_path) / "static" / "css" / "main.css"
+    inline_css = css_path.read_text(encoding="utf-8") if css_path.exists() else ""
+
+    date_suffix = (audit.get("audit_date") or "sin_fecha").strip().replace("/", "-")
+    filename = (
+        secure_filename(f"auditoria_{audit_id}_{date_suffix}_detalle.pdf")
+        or f"auditoria_{audit_id}_detalle.pdf"
+    )
+
+    html = render_template(
+        "audit_report.html",
+        audit=audit,
+        grouped_items=grouped_items_all,
+        report=report,
+        tnps_response=tnps_response,
+        supply_requests=supply_requests,
+        inline_css=inline_css,
+        print_mode=True,
+        pdf_detail_mode=True,
         detail_filter_active=False,
         detail_filter={},
     )

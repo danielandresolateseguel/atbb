@@ -116,6 +116,17 @@
         }());
 
         (function () {
+            function withCacheBust(url) {
+                try {
+                    const normalizedUrl = new URL(url, window.location.href);
+                    normalizedUrl.searchParams.set("_cb", String(Date.now()));
+                    return normalizedUrl.toString();
+                } catch (e) {
+                    const suffix = url.indexOf("?") >= 0 ? "&" : "?";
+                    return url + suffix + "_cb=" + Date.now();
+                }
+            }
+
             async function sharePdf(url, filename, title, triggerEl) {
                 if (!url) {
                     return;
@@ -128,7 +139,7 @@
                 }
 
                 try {
-                    const response = await fetch(url, { credentials: "same-origin" });
+                    const response = await fetch(withCacheBust(url), { credentials: "same-origin", cache: "no-store" });
                     if (!response.ok) {
                         throw new Error("No fue posible descargar el PDF.");
                     }
@@ -159,6 +170,9 @@
                     link.click();
                     link.remove();
                     URL.revokeObjectURL(objectUrl);
+                } catch (error) {
+                    const message = error && error.message ? error.message : "No fue posible compartir el PDF.";
+                    window.alert(message);
                 } finally {
                     if (triggerEl) {
                         triggerEl.disabled = false;

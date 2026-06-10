@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Informe auditoría {{ audit["id"] }}</title>
+    <title>{% if pdf_detail_mode %}Detalle auditoría{% else %}Informe auditoría{% endif %} {{ audit["id"] }}</title>
     {% if inline_css %}
         <style>{{ inline_css|safe }}</style>
     {% else %}
@@ -15,10 +15,14 @@
         <section class="report-shell">
             <header class="report-header">
                 <div>
-                    <p class="eyebrow">Informe ejecutivo</p>
+                    <p class="eyebrow">{% if pdf_detail_mode %}Detalle de auditoría{% else %}Informe ejecutivo{% endif %}</p>
                     <h1>Auditoría técnica de terreno</h1>
                     <p class="report-subtitle">
-                        Presentación visual para gerencia con hallazgos, evidencias y estado general de cumplimiento.
+                        {% if pdf_detail_mode %}
+                            Checklist completo con evidencias, firmas y solicitudes asociadas.
+                        {% else %}
+                            Presentación visual para gerencia con hallazgos, evidencias y estado general de cumplimiento.
+                        {% endif %}
                     </p>
                 </div>
                 <div class="report-actions no-print">
@@ -91,7 +95,10 @@
                         </article>
                         <article>
                             <span>Móvil técnico</span>
-                            <strong>{% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}</strong>
+                            <strong>
+                                {% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}
+                                {% if audit["employee_code"] %} | {{ audit["employee_code"] }}{% endif %}
+                            </strong>
                         </article>
                         <article>
                             <span>Empresa</span>
@@ -310,7 +317,7 @@
                 </article>
             </section>
 
-            <section class="report-card">
+            <section class="report-card{% if print_mode %} break-before-page{% endif %}">
                 <div class="section-heading">
                     <div>
                         <p class="eyebrow">Prioridad</p>
@@ -336,7 +343,7 @@
                 {% endif %}
             </section>
 
-            <section class="report-card">
+            <section class="report-card{% if print_mode %} break-before-page{% endif %}">
                 <div class="section-heading">
                     <div>
                         <p class="eyebrow">Acción</p>
@@ -352,6 +359,9 @@
                                     <th>Item</th>
                                     <th>Código</th>
                                     <th>Cantidad</th>
+                                    {% if pdf_detail_mode %}
+                                        <th>Nota</th>
+                                    {% endif %}
                                 </tr>
                             </thead>
                             <tbody>
@@ -361,6 +371,9 @@
                                         <td>{{ req["item_label"] }}</td>
                                         <td>{{ req["material_code"] }}</td>
                                         <td>{{ req["quantity"] if req["quantity"] is not none else "-" }}</td>
+                                        {% if pdf_detail_mode %}
+                                            <td>{{ req["notes"] or "-" }}</td>
+                                        {% endif %}
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -371,38 +384,40 @@
                 {% endif %}
             </section>
 
-            <section class="report-card">
-                <div class="section-heading">
-                    <div>
-                        <p class="eyebrow">Evidencia</p>
-                        <h3>Galería fotográfica</h3>
+            {% if not pdf_detail_mode %}
+                <section class="report-card{% if print_mode %} break-before-page{% endif %}">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Evidencia</p>
+                            <h3>Galería fotográfica</h3>
+                        </div>
                     </div>
-                </div>
-                {% if report["evidence_items"] %}
-                    <div class="photo-gallery">
-                        {% for item in report["evidence_items"] %}
-                            {% for photo_src in item["photo_path"]|audit_photo_paths %}
-                                <article class="photo-card">
-                                    {% if photo_src.startswith("http") %}
-                                        <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
-                                    {% else %}
-                                        <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
-                                    {% endif %}
-                                    <div class="photo-meta">
-                                        <strong>{{ item["item_label"] }}</strong>
-                                        <span>{{ item["section_title"] }}</span>
-                                        <p>{{ item["notes"] or "Sin observación." }}</p>
-                                    </div>
-                                </article>
+                    {% if report["evidence_items"] %}
+                        <div class="photo-gallery">
+                            {% for item in report["evidence_items"] %}
+                                {% for photo_src in item["photo_path"]|audit_photo_paths %}
+                                    <article class="photo-card">
+                                        {% if photo_src.startswith("http") %}
+                                            <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
+                                        {% else %}
+                                            <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
+                                        {% endif %}
+                                        <div class="photo-meta">
+                                            <strong>{{ item["item_label"] }}</strong>
+                                            <span>{{ item["section_title"] }}</span>
+                                            <p>{{ item["notes"] or "Sin observación." }}</p>
+                                        </div>
+                                    </article>
+                                {% endfor %}
                             {% endfor %}
-                        {% endfor %}
-                    </div>
-                {% else %}
-                    <p class="empty-state">No hay evidencias fotográficas registradas en esta auditoría.</p>
-                {% endif %}
-            </section>
+                        </div>
+                    {% else %}
+                        <p class="empty-state">No hay evidencias fotográficas registradas en esta auditoría.</p>
+                    {% endif %}
+                </section>
+            {% endif %}
 
-            <section class="report-card" id="detalle-checklist">
+            <section class="report-card{% if print_mode %} break-before-page{% endif %}" id="detalle-checklist">
                 <div class="section-heading">
                     <div>
                         <p class="eyebrow">Checklist</p>
@@ -431,6 +446,20 @@
                                                 {% if item["status"] == "no_cumple" %}
                                                     <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|non_compliance_reason_label }}</p>
                                                 {% endif %}
+                                                {% if pdf_detail_mode %}
+                                                    {% set photo_list = item["photo_path"]|audit_photo_paths %}
+                                                    {% if photo_list %}
+                                                        <div class="report-item-evidence">
+                                                            {% for photo_src in photo_list %}
+                                                                {% if photo_src.startswith("http") %}
+                                                                    <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}">
+                                                                {% else %}
+                                                                    <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia de {{ item['item_label'] }}">
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </div>
+                                                    {% endif %}
+                                                {% endif %}
                                             </div>
                                             <span class="badge badge-{{ item['status']|replace('_', '-') }}">
                                                 {% if item["status"] == "cumple" %}Cumple{% elif item["status"] == "conforme" %}Conforme{% elif item["status"] == "no_cumple" %}No cumple{% elif item["status"] == "nc_menor" %}No conformidad menor{% elif item["status"] == "nc_mayor" %}No conformidad Mayor{% else %}No aplica{% endif %}
@@ -446,7 +475,7 @@
                 {% endif %}
             </section>
 
-            <section class="signature-grid">
+            <section class="signature-grid{% if print_mode %} break-before-page{% endif %}">
                 <article class="report-card">
                     <div class="section-heading">
                         <div>
@@ -493,6 +522,17 @@
     </main>
     <script>
         (function () {
+            function withCacheBust(url) {
+                try {
+                    const normalizedUrl = new URL(url, window.location.href);
+                    normalizedUrl.searchParams.set("_cb", String(Date.now()));
+                    return normalizedUrl.toString();
+                } catch (e) {
+                    const suffix = url.indexOf("?") >= 0 ? "&" : "?";
+                    return url + suffix + "_cb=" + Date.now();
+                }
+            }
+
             async function sharePdf(url, filename, title, triggerEl) {
                 if (!url) {
                     return;
@@ -505,7 +545,7 @@
                 }
 
                 try {
-                    const response = await fetch(url, { credentials: "same-origin" });
+                    const response = await fetch(withCacheBust(url), { credentials: "same-origin", cache: "no-store" });
                     if (!response.ok) {
                         throw new Error("No fue posible descargar el PDF.");
                     }
@@ -536,6 +576,9 @@
                     link.click();
                     link.remove();
                     URL.revokeObjectURL(objectUrl);
+                } catch (error) {
+                    const message = error && error.message ? error.message : "No fue posible compartir el PDF.";
+                    window.alert(message);
                 } finally {
                     if (triggerEl) {
                         triggerEl.disabled = false;
