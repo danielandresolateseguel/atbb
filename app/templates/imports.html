@@ -126,7 +126,7 @@
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Importador</p>
-                <h3>Subir archivo CSV</h3>
+                <h3>Subir archivo CSV o XLSX</h3>
             </div>
         </div>
 
@@ -142,7 +142,12 @@
 
         <label>
             <span>Archivo CSV o XLSX</span>
-            <input type="file" name="csv_file" accept=".csv,.xlsx" required>
+            <input
+                type="file"
+                name="csv_file"
+                accept=".csv,.CSV,text/csv,application/csv,.xlsx,.XLSX,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                required
+            >
         </label>
 
         <button class="button button-primary" type="submit">Importar archivo</button>
