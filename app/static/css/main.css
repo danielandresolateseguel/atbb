@@ -2079,6 +2079,18 @@ td {
 }
 
 @media print {
+    .topbar,
+    .nav-toggle,
+    .user-menu,
+    .flash-stack {
+        display: none !important;
+    }
+
+    .page {
+        width: 100%;
+        margin: 0;
+    }
+
     body,
     .report-body {
         background: #ffffff;

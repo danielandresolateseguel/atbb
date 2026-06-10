@@ -11,17 +11,10 @@
             {{ audit["audit_date"] }} | {% if audit["mobile_code"] %}Móvil {{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}
         </p>
     </div>
-    <div class="hero-actions">
+    <div class="hero-actions no-print">
         <span class="badge badge-{{ audit['result_status']|lower|replace(' ', '-') }}">{{ audit["result_status"] }}</span>
         <a class="button button-secondary" href="{{ url_for('main.audit_report', audit_id=audit['id']) }}">Ver informe ejecutivo</a>
-        <button
-            class="button button-secondary"
-            type="button"
-            data-share-pdf="1"
-            data-pdf-url="{{ url_for('main.audit_report_pdf', audit_id=audit['id'], filename='auditoria_' ~ audit['id'] ~ '_detalle.pdf') }}"
-            data-filename="auditoria_{{ audit['id'] }}_detalle.pdf"
-            data-title="Auditoría {{ audit['id'] }} (Detalle)"
-        >Compartir PDF</button>
+        <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
         <a class="button button-secondary" href="{{ url_for('main.tnps', audit_id=audit['id']) }}">
             {% if tnps_response %}
                 Editar tNPS
