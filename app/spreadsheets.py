@@ -27,7 +27,22 @@ def parse_tabular_upload(uploaded_file):
     if filename.endswith(".xlsx"):
         return parse_xlsx_bytes(raw_content)
 
-    raise ValueError("Solo se permiten archivos .csv o .xlsx.")
+    if zipfile.is_zipfile(io.BytesIO(raw_content)):
+        try:
+            return parse_xlsx_bytes(raw_content)
+        except Exception:
+            pass
+
+    try:
+        return parse_csv_bytes(raw_content)
+    except UnicodeDecodeError:
+        pass
+
+    raise ValueError(
+        "Solo se permiten archivos .csv o .xlsx. "
+        "Si tu archivo fue descargado con doble extension (por ejemplo .xlsx.xls), "
+        "renombralo para que termine en .xlsx y vuelve a intentar."
+    )
 
 
 def parse_csv_bytes(raw_content):
