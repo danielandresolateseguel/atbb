@@ -35,6 +35,22 @@ def normalize_audit_record_scope(value):
     return AUDIT_SCOPE_OFFICIAL
 
 
+def normalize_supervisor_scope_name(value):
+    return " ".join((value or "").strip().split()).upper()
+
+
+def normalize_supervisor_scope_names(values):
+    normalized_values = []
+    seen = set()
+    for value in values or []:
+        normalized = normalize_supervisor_scope_name(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_values.append(normalized)
+    return normalized_values
+
+
 def get_audit_official_from_date():
     raw = (current_app.config.get("AUDIT_OFFICIAL_FROM_DATE") or "").strip()
     if not raw:
@@ -113,6 +129,16 @@ def init_db():
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'auditor',
             is_active INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS user_supervisor_scopes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER NOT NULL,
+            supervisor_name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(user_id, supervisor_name),
+            FOREIGN KEY (user_id) REFERENCES users (id)
         );
 
         CREATE TABLE IF NOT EXISTS technicians (
@@ -214,6 +240,9 @@ def init_db():
             technician_signature_path TEXT,
             technician_display_name TEXT,
             technician_employee_code TEXT,
+            technician_company_snapshot TEXT,
+            technician_supervisor_snapshot TEXT,
+            technician_center_snapshot TEXT,
             location TEXT NOT NULL,
             address TEXT,
             installation_type TEXT NOT NULL,
@@ -264,6 +293,35 @@ def init_db():
             FOREIGN KEY (audit_id) REFERENCES audits (id)
         );
 
+        CREATE TABLE IF NOT EXISTS audit_findings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            audit_id INTEGER NOT NULL,
+            audit_item_id INTEGER NOT NULL,
+            technician_id INTEGER,
+            supervisor_name TEXT,
+            owner_user_id INTEGER,
+            item_status TEXT NOT NULL,
+            finding_status TEXT NOT NULL DEFAULT 'nuevo',
+            priority TEXT NOT NULL DEFAULT 'media',
+            response_notes TEXT,
+            evidence_path TEXT,
+            responded_by_user_id INTEGER,
+            responded_at TEXT,
+            resolved_at TEXT,
+            validated_by_user_id INTEGER,
+            validated_at TEXT,
+            validation_status TEXT,
+            validation_notes TEXT,
+            FOREIGN KEY (audit_id) REFERENCES audits (id),
+            FOREIGN KEY (audit_item_id) REFERENCES audit_items (id),
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (owner_user_id) REFERENCES users (id),
+            FOREIGN KEY (responded_by_user_id) REFERENCES users (id),
+            FOREIGN KEY (validated_by_user_id) REFERENCES users (id)
+        );
+
         CREATE TABLE IF NOT EXISTS tnps_responses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -305,6 +363,19 @@ def init_db_postgres():
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'auditor',
             is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_supervisor_scopes (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            user_id INTEGER NOT NULL REFERENCES users (id),
+            supervisor_name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(user_id, supervisor_name)
         )
         """
     )
@@ -432,6 +503,9 @@ def init_db_postgres():
             technician_signature_path TEXT,
             technician_display_name TEXT,
             technician_employee_code TEXT,
+            technician_company_snapshot TEXT,
+            technician_supervisor_snapshot TEXT,
+            technician_center_snapshot TEXT,
             location TEXT NOT NULL,
             address TEXT,
             installation_type TEXT NOT NULL,
@@ -488,6 +562,33 @@ def init_db_postgres():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS audit_findings (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            audit_id INTEGER NOT NULL REFERENCES audits (id),
+            audit_item_id INTEGER NOT NULL REFERENCES audit_items (id),
+            technician_id INTEGER REFERENCES technicians (id),
+            supervisor_name TEXT,
+            owner_user_id INTEGER REFERENCES users (id),
+            item_status TEXT NOT NULL,
+            finding_status TEXT NOT NULL DEFAULT 'nuevo',
+            priority TEXT NOT NULL DEFAULT 'media',
+            response_notes TEXT,
+            evidence_path TEXT,
+            responded_by_user_id INTEGER REFERENCES users (id),
+            responded_at TIMESTAMPTZ,
+            resolved_at TIMESTAMPTZ,
+            validated_by_user_id INTEGER REFERENCES users (id),
+            validated_at TIMESTAMPTZ,
+            validation_status TEXT,
+            validation_notes TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS tnps_responses (
             id SERIAL PRIMARY KEY,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -522,9 +623,20 @@ def count_users():
 def fetch_user_by_id(user_id):
     row = get_db().execute(
         """
-        SELECT id, username, password_hash, role, is_active
+        SELECT
+            users.id,
+            users.username,
+            users.password_hash,
+            users.role,
+            users.is_active,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM user_supervisor_scopes
+                WHERE user_supervisor_scopes.user_id = users.id
+                  AND user_supervisor_scopes.is_active = 1
+            ), 0) AS supervisor_scope_count
         FROM users
-        WHERE id = ?
+        WHERE users.id = ?
         """,
         (user_id,),
     ).fetchone()
@@ -537,9 +649,20 @@ def fetch_user_by_username(username):
         return None
     row = get_db().execute(
         """
-        SELECT id, username, password_hash, role, is_active
+        SELECT
+            users.id,
+            users.username,
+            users.password_hash,
+            users.role,
+            users.is_active,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM user_supervisor_scopes
+                WHERE user_supervisor_scopes.user_id = users.id
+                  AND user_supervisor_scopes.is_active = 1
+            ), 0) AS supervisor_scope_count
         FROM users
-        WHERE username = ?
+        WHERE users.username = ?
         """,
         (normalized,),
     ).fetchone()
@@ -551,13 +674,19 @@ def fetch_users():
     rows = get_db().execute(
         f"""
         SELECT
-            id,
-            username,
-            role,
-            is_active,
-            {created_at_expr} AS created_at
+            users.id,
+            users.username,
+            users.role,
+            users.is_active,
+            {created_at_expr} AS created_at,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM user_supervisor_scopes
+                WHERE user_supervisor_scopes.user_id = users.id
+                  AND user_supervisor_scopes.is_active = 1
+            ), 0) AS supervisor_scope_count
         FROM users
-        ORDER BY username ASC
+        ORDER BY users.username ASC
         """
     ).fetchall()
     return [dict(row) for row in rows]
@@ -576,6 +705,102 @@ def count_active_admins():
     return row["admin_count"] if isinstance(row, dict) else row[0]
 
 
+def fetch_user_supervisor_scopes(user_id, only_active=True):
+    where_clauses = ["user_id = ?"]
+    params = [user_id]
+    if only_active:
+        where_clauses.append("is_active = 1")
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            id,
+            user_id,
+            supervisor_name,
+            is_active,
+            created_at
+        FROM user_supervisor_scopes
+        WHERE {' AND '.join(where_clauses)}
+        ORDER BY supervisor_name ASC
+        """,
+        tuple(params),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_user_supervisor_scope_names(user_id, only_active=True):
+    return [row["supervisor_name"] for row in fetch_user_supervisor_scopes(user_id, only_active=only_active)]
+
+
+def replace_user_supervisor_scopes(user_id, supervisor_names):
+    normalized_names = normalize_supervisor_scope_names(supervisor_names)
+    connection = get_db()
+    connection.execute("DELETE FROM user_supervisor_scopes WHERE user_id = ?", (user_id,))
+    if normalized_names:
+        connection.executemany(
+            """
+            INSERT INTO user_supervisor_scopes (user_id, supervisor_name, is_active)
+            VALUES (?, ?, 1)
+            """,
+            [(user_id, name) for name in normalized_names],
+        )
+    connection.commit()
+    return normalized_names
+
+
+def find_owner_user_id_by_supervisor_name(supervisor_name):
+    normalized_name = normalize_supervisor_scope_name(supervisor_name)
+    if not normalized_name:
+        return None
+
+    rows = get_db().execute(
+        """
+        SELECT users.id
+        FROM users
+        INNER JOIN user_supervisor_scopes ON user_supervisor_scopes.user_id = users.id
+        WHERE users.role = 'supervisor'
+          AND users.is_active = 1
+          AND user_supervisor_scopes.is_active = 1
+          AND user_supervisor_scopes.supervisor_name = ?
+        ORDER BY users.username ASC
+        """,
+        (normalized_name,),
+    ).fetchall()
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    return row["id"] if isinstance(row, dict) else row[0]
+
+
+def append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=None, audit_table_alias="audits"):
+    if supervisor_scope_names is None:
+        return
+
+    normalized_names = normalize_supervisor_scope_names(supervisor_scope_names)
+    if not normalized_names:
+        where_clauses.append("1 = 0")
+        return
+
+    placeholders = ", ".join(["?"] * len(normalized_names))
+    where_clauses.append(
+        f"""
+        (
+            UPPER(TRIM(COALESCE({audit_table_alias}.technician_supervisor_snapshot, ''))) IN ({placeholders})
+            OR (
+                COALESCE({audit_table_alias}.technician_supervisor_snapshot, '') = ''
+                AND {audit_table_alias}.technician_id IN (
+                    SELECT technicians.id
+                    FROM technicians
+                    WHERE UPPER(TRIM(COALESCE(technicians.supervisor_name, ''))) IN ({placeholders})
+                )
+            )
+        )
+        """
+    )
+    params.extend(normalized_names)
+    params.extend(normalized_names)
+
+
 def create_user(username, password, role="auditor", is_active=1):
     normalized = (username or "").strip()
     if not normalized:
@@ -585,9 +810,7 @@ def create_user(username, password, role="auditor", is_active=1):
         raise ValueError("La contraseña es obligatoria.")
 
     safe_role = (role or "auditor").strip().lower()
-    if safe_role == "supervisor":
-        safe_role = "admin"
-    if safe_role not in {"admin", "auditor", "gerente"}:
+    if safe_role not in {"admin", "auditor", "gerente", "supervisor"}:
         safe_role = "auditor"
 
     password_hash = generate_password_hash(raw_password)
@@ -625,9 +848,7 @@ def update_user(user_id, username=None, password=None, role=None, is_active=None
         raise ValueError("El usuario es obligatorio.")
 
     safe_role = (role or existing["role"] or "auditor").strip().lower()
-    if safe_role == "supervisor":
-        safe_role = "admin"
-    if safe_role not in {"admin", "auditor", "gerente"}:
+    if safe_role not in {"admin", "auditor", "gerente", "supervisor"}:
         safe_role = "auditor"
 
     active_value = existing["is_active"] if is_active is None else (1 if is_active else 0)
@@ -658,6 +879,19 @@ def update_user(user_id, username=None, password=None, role=None, is_active=None
         raise
 
 def ensure_legacy_columns(connection):
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_supervisor_scopes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER NOT NULL,
+            supervisor_name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(user_id, supervisor_name),
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """
+    )
     add_column_if_missing(connection, "technicians", "phone", "TEXT")
     add_column_if_missing(connection, "technicians", "commune", "TEXT")
     add_column_if_missing(connection, "technicians", "team", "TEXT")
@@ -691,6 +925,9 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_display_name", "TEXT")
     add_column_if_missing(connection, "audits", "technician_employee_code", "TEXT")
+    add_column_if_missing(connection, "audits", "technician_company_snapshot", "TEXT")
+    add_column_if_missing(connection, "audits", "technician_supervisor_snapshot", "TEXT")
+    add_column_if_missing(connection, "audits", "technician_center_snapshot", "TEXT")
     add_column_if_missing(connection, "audits", "address", "TEXT")
     add_column_if_missing(connection, "audits", "record_scope", "TEXT NOT NULL DEFAULT 'oficial'")
     add_column_if_missing(connection, "audits", "serialized_stock_status", "TEXT")
@@ -699,6 +936,38 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "material_stock_notes", "TEXT")
     add_column_if_missing(connection, "audit_items", "non_compliance_reason", "TEXT")
     add_column_if_missing(connection, "audit_items", "photo_path", "TEXT")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_findings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            audit_id INTEGER NOT NULL,
+            audit_item_id INTEGER NOT NULL,
+            technician_id INTEGER,
+            supervisor_name TEXT,
+            owner_user_id INTEGER,
+            item_status TEXT NOT NULL,
+            finding_status TEXT NOT NULL DEFAULT 'nuevo',
+            priority TEXT NOT NULL DEFAULT 'media',
+            response_notes TEXT,
+            evidence_path TEXT,
+            responded_by_user_id INTEGER,
+            responded_at TEXT,
+            resolved_at TEXT,
+            validated_by_user_id INTEGER,
+            validated_at TEXT,
+            validation_status TEXT,
+            validation_notes TEXT,
+            FOREIGN KEY (audit_id) REFERENCES audits (id),
+            FOREIGN KEY (audit_item_id) REFERENCES audit_items (id),
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (owner_user_id) REFERENCES users (id),
+            FOREIGN KEY (responded_by_user_id) REFERENCES users (id),
+            FOREIGN KEY (validated_by_user_id) REFERENCES users (id)
+        )
+        """
+    )
     add_column_if_missing(connection, "tnps_responses", "booking_ease_score", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "punctuality_score", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "communication_clarity_score", "INTEGER")
@@ -760,6 +1029,9 @@ def ensure_audits_nullable_technician(connection):
             technician_signature_path TEXT,
             technician_display_name TEXT,
             technician_employee_code TEXT,
+            technician_company_snapshot TEXT,
+            technician_supervisor_snapshot TEXT,
+            technician_center_snapshot TEXT,
             location TEXT NOT NULL,
             address TEXT,
             installation_type TEXT NOT NULL,
@@ -795,6 +1067,9 @@ def ensure_audits_nullable_technician(connection):
             technician_signature_path,
             technician_display_name,
             technician_employee_code,
+            technician_company_snapshot,
+            technician_supervisor_snapshot,
+            technician_center_snapshot,
             location,
             address,
             installation_type,
@@ -821,6 +1096,9 @@ def ensure_audits_nullable_technician(connection):
             technician_signature_path,
             technician_display_name,
             technician_employee_code,
+            technician_company_snapshot,
+            technician_supervisor_snapshot,
+            technician_center_snapshot,
             location,
             address,
             installation_type,
@@ -882,6 +1160,9 @@ def ensure_audits_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS sa_number TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS address TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS record_scope TEXT NOT NULL DEFAULT 'oficial'")
+    cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_company_snapshot TEXT")
+    cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_supervisor_snapshot TEXT")
+    cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_center_snapshot TEXT")
 
 
 def ensure_mobile_unit_codes_normalized_sqlite(connection):
@@ -1910,11 +2191,12 @@ def fetch_stock_stats():
     return dict(row)
 
 
-def fetch_dashboard_stats(auditor_user_id=None):
+def fetch_dashboard_stats(auditor_user_id=None, supervisor_scope_names=None):
     where_clauses = []
     params = []
 
     append_audit_visibility_filters(where_clauses, params)
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
 
     if auditor_user_id is not None:
         where_clauses.append("audits.auditor_user_id = ?")
@@ -2185,11 +2467,12 @@ def fetch_tnps_response_for_audit(audit_id):
     return dict(row) if row else None
 
 
-def fetch_recent_audits(limit=5, auditor_user_id=None):
+def fetch_recent_audits(limit=5, auditor_user_id=None, supervisor_scope_names=None):
     where_clauses = []
     params = []
 
     append_audit_visibility_filters(where_clauses, params)
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
 
     if auditor_user_id is not None:
         where_clauses.append("audits.auditor_user_id = ?")
@@ -2226,8 +2509,12 @@ def fetch_recent_audits(limit=5, auditor_user_id=None):
     return [dict(row) for row in rows]
 
 
-def fetch_all_audits(filters=None, auditor_user_id=None):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = build_audits_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
     rows = get_db().execute(
         f"""
         SELECT
@@ -2348,7 +2635,13 @@ def fetch_audit_picker_audits(filters=None, auditor_user_id=None, limit=25, offs
     return [dict(row) for row in rows]
 
 
-def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=None, extra_params=None):
+def build_audits_where_sql(
+    filters=None,
+    auditor_user_id=None,
+    supervisor_scope_names=None,
+    extra_clauses=None,
+    extra_params=None,
+):
     filters = filters or {}
     extra_clauses = extra_clauses or []
     extra_params = extra_params or []
@@ -2389,6 +2682,8 @@ def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=Non
         where_clauses.append("audits.auditor_user_id = ?")
         params.append(auditor_user_id)
 
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
+
     if extra_clauses:
         where_clauses.extend(extra_clauses)
         params.extend(list(extra_params))
@@ -2400,7 +2695,13 @@ def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=Non
     return where_sql, tuple(params)
 
 
-def build_audits_where_sql_with_technicians(filters=None, auditor_user_id=None, extra_clauses=None, extra_params=None):
+def build_audits_where_sql_with_technicians(
+    filters=None,
+    auditor_user_id=None,
+    supervisor_scope_names=None,
+    extra_clauses=None,
+    extra_params=None,
+):
     filters = filters or {}
     extra_clauses = list(extra_clauses or [])
     extra_params = list(extra_params or [])
@@ -2417,6 +2718,7 @@ def build_audits_where_sql_with_technicians(filters=None, auditor_user_id=None, 
     return build_audits_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
         extra_clauses=extra_clauses,
         extra_params=extra_params,
     )
@@ -3096,8 +3398,11 @@ def fetch_audit_reports_supply_requests_summary(filters=None, auditor_user_id=No
     return [dict(row) for row in rows]
 
 
-def fetch_audit_detail(audit_id):
+def fetch_audit_detail(audit_id, supervisor_scope_names=None):
     created_at_expr = "audits.created_at" if is_postgres() else "datetime(audits.created_at, 'localtime')"
+    where_clauses = ["audits.id = ?"]
+    params = [audit_id]
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
     row = get_db().execute(
         f"""
         SELECT
@@ -3110,6 +3415,9 @@ def fetch_audit_detail(audit_id):
             audits.technician_signature_path,
             audits.technician_display_name,
             audits.technician_employee_code,
+            audits.technician_company_snapshot,
+            audits.technician_supervisor_snapshot,
+            audits.technician_center_snapshot,
             audits.location,
             audits.address,
             audits.installation_type,
@@ -3126,9 +3434,9 @@ def fetch_audit_detail(audit_id):
             mobile_units.mobile_code,
             COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
             COALESCE(technicians.employee_code, audits.technician_employee_code) AS employee_code,
-            technicians.company_name AS technician_company,
-            technicians.supervisor_name AS technician_supervisor,
-            technicians.center_name AS technician_center,
+            COALESCE(audits.technician_company_snapshot, technicians.company_name) AS technician_company,
+            COALESCE(audits.technician_supervisor_snapshot, technicians.supervisor_name) AS technician_supervisor,
+            COALESCE(audits.technician_center_snapshot, technicians.center_name) AS technician_center,
             vehicles.plate AS vehicle_plate,
             vehicles.brand AS vehicle_brand,
             vehicles.model AS vehicle_model,
@@ -3143,9 +3451,9 @@ def fetch_audit_detail(audit_id):
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-        WHERE audits.id = ?
+        WHERE {' AND '.join(where_clauses)}
         """,
-        (audit_id,),
+        tuple(params),
     ).fetchone()
     return dict(row) if row else None
 
@@ -3193,6 +3501,406 @@ def fetch_audit_supply_requests(audit_id):
         (audit_id,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def fetch_audit_findings(audit_id):
+    created_at_expr = "audit_findings.created_at" if is_postgres() else "datetime(audit_findings.created_at, 'localtime')"
+    updated_at_expr = "audit_findings.updated_at" if is_postgres() else "datetime(audit_findings.updated_at, 'localtime')"
+    responded_at_expr = "audit_findings.responded_at" if is_postgres() else "datetime(audit_findings.responded_at, 'localtime')"
+    validated_at_expr = "audit_findings.validated_at" if is_postgres() else "datetime(audit_findings.validated_at, 'localtime')"
+    resolved_at_expr = "audit_findings.resolved_at" if is_postgres() else "datetime(audit_findings.resolved_at, 'localtime')"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audit_findings.id,
+            audit_findings.audit_id,
+            audit_findings.audit_item_id,
+            audit_findings.supervisor_name,
+            audit_findings.item_status,
+            audit_findings.finding_status,
+            audit_findings.priority,
+            audit_findings.response_notes,
+            audit_findings.evidence_path,
+            audit_findings.validation_status,
+            audit_findings.validation_notes,
+            {created_at_expr} AS created_at,
+            {updated_at_expr} AS updated_at,
+            {responded_at_expr} AS responded_at,
+            {validated_at_expr} AS validated_at,
+            {resolved_at_expr} AS resolved_at,
+            audit_items.section_title,
+            audit_items.item_label,
+            audit_items.is_critical,
+            audit_items.non_compliance_reason,
+            audit_items.notes AS item_notes,
+            owners.username AS owner_username,
+            responders.username AS responded_by_username,
+            validators.username AS validated_by_username
+        FROM audit_findings
+        INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
+        LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
+        LEFT JOIN users AS responders ON responders.id = audit_findings.responded_by_user_id
+        LEFT JOIN users AS validators ON validators.id = audit_findings.validated_by_user_id
+        WHERE audit_findings.audit_id = ?
+        ORDER BY audit_items.section_title ASC, audit_items.item_label ASC, audit_findings.id ASC
+        """,
+        (audit_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    filters = filters or {}
+    where_clauses = []
+    params = []
+
+    append_audit_visibility_filters(where_clauses, params)
+
+    if auditor_user_id is not None:
+        where_clauses.append("audits.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    finding_status = (filters.get("finding_status") or "").strip()
+    priority = (filters.get("priority") or "").strip()
+    validation_status = (filters.get("validation_status") or "").strip()
+    audit_id = (filters.get("audit_id") or "").strip()
+    q = (filters.get("q") or "").strip()
+
+    if from_date:
+        where_clauses.append("audits.audit_date >= ?")
+        params.append(from_date)
+
+    if to_date:
+        where_clauses.append("audits.audit_date <= ?")
+        params.append(to_date)
+
+    if finding_status:
+        where_clauses.append("audit_findings.finding_status = ?")
+        params.append(finding_status)
+
+    if priority:
+        where_clauses.append("audit_findings.priority = ?")
+        params.append(priority)
+
+    if validation_status:
+        if validation_status == "__none__":
+            where_clauses.append("COALESCE(audit_findings.validation_status, '') = ''")
+        else:
+            where_clauses.append("audit_findings.validation_status = ?")
+            params.append(validation_status)
+
+    if audit_id:
+        where_clauses.append("CAST(audit_findings.audit_id AS TEXT) = ?")
+        params.append(audit_id)
+
+    if q:
+        like_value = f"%{q}%"
+        if is_postgres():
+            where_clauses.append(
+                "("
+                "COALESCE(mobile_units.mobile_code, '') ILIKE ? OR "
+                "COALESCE(technicians.name, audits.technician_display_name, '') ILIKE ? OR "
+                "COALESCE(audit_items.section_title, '') ILIKE ? OR "
+                "COALESCE(audit_items.item_label, '') ILIKE ? OR "
+                "COALESCE(audit_findings.supervisor_name, '') ILIKE ?"
+                ")"
+            )
+            params.extend([like_value] * 5)
+        else:
+            where_clauses.append(
+                "("
+                "LOWER(COALESCE(mobile_units.mobile_code, '')) LIKE ? OR "
+                "LOWER(COALESCE(technicians.name, audits.technician_display_name, '')) LIKE ? OR "
+                "LOWER(COALESCE(audit_items.section_title, '')) LIKE ? OR "
+                "LOWER(COALESCE(audit_items.item_label, '')) LIKE ? OR "
+                "LOWER(COALESCE(audit_findings.supervisor_name, '')) LIKE ?"
+                ")"
+            )
+            lowered = like_value.lower()
+            params.extend([lowered] * 5)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+    return where_sql, tuple(params)
+
+
+def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = _build_findings_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    row = get_db().execute(
+        f"""
+        SELECT
+            COUNT(*) AS total_findings,
+            SUM(CASE WHEN audit_findings.finding_status IN ('nuevo', 'respondido', 'resuelto', 'reabierto') THEN 1 ELSE 0 END) AS active_findings,
+            SUM(CASE WHEN audit_findings.priority = 'alta' THEN 1 ELSE 0 END) AS high_priority_count,
+            SUM(CASE WHEN audit_findings.finding_status = 'reabierto' THEN 1 ELSE 0 END) AS reopened_count,
+            SUM(CASE WHEN audit_findings.finding_status = 'resuelto' AND COALESCE(audit_findings.validation_status, '') != 'validado' THEN 1 ELSE 0 END) AS pending_validation_count,
+            SUM(CASE WHEN audit_findings.finding_status = 'validado' THEN 1 ELSE 0 END) AS validated_count
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+    total_findings = row["total_findings"] or 0
+    validated_count = row["validated_count"] or 0
+    validation_rate = 0 if total_findings == 0 else round((validated_count / total_findings) * 100)
+    return {
+        "total_findings": total_findings,
+        "active_findings": row["active_findings"] or 0,
+        "high_priority_count": row["high_priority_count"] or 0,
+        "reopened_count": row["reopened_count"] or 0,
+        "pending_validation_count": row["pending_validation_count"] or 0,
+        "validated_count": validated_count,
+        "validation_rate": validation_rate,
+    }
+
+
+def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300):
+    created_at_expr = "audit_findings.created_at" if is_postgres() else "datetime(audit_findings.created_at, 'localtime')"
+    updated_at_expr = "audit_findings.updated_at" if is_postgres() else "datetime(audit_findings.updated_at, 'localtime')"
+    where_sql, params = _build_findings_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audit_findings.id,
+            audit_findings.audit_id,
+            audit_findings.supervisor_name,
+            audit_findings.item_status,
+            audit_findings.finding_status,
+            audit_findings.priority,
+            audit_findings.validation_status,
+            audit_findings.evidence_path,
+            {created_at_expr} AS created_at,
+            {updated_at_expr} AS updated_at,
+            audits.audit_date,
+            audits.auditor_name,
+            audits.result_status,
+            audits.location,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            audit_items.section_title,
+            audit_items.item_label,
+            audit_items.non_compliance_reason,
+            owners.username AS owner_username
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
+        {where_sql}
+        ORDER BY audits.audit_date DESC, audit_findings.updated_at DESC, audit_findings.id DESC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_names=None):
+    created_at_expr = "audit_findings.created_at" if is_postgres() else "datetime(audit_findings.created_at, 'localtime')"
+    updated_at_expr = "audit_findings.updated_at" if is_postgres() else "datetime(audit_findings.updated_at, 'localtime')"
+    responded_at_expr = "audit_findings.responded_at" if is_postgres() else "datetime(audit_findings.responded_at, 'localtime')"
+    validated_at_expr = "audit_findings.validated_at" if is_postgres() else "datetime(audit_findings.validated_at, 'localtime')"
+    resolved_at_expr = "audit_findings.resolved_at" if is_postgres() else "datetime(audit_findings.resolved_at, 'localtime')"
+    where_sql, params = _build_findings_where_sql(
+        {"finding_id": finding_id},
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    extra_where = "audit_findings.id = ?"
+    query_params = [finding_id]
+    if where_sql:
+        where_sql = where_sql + " AND " + extra_where
+        query_params = list(params) + [finding_id]
+    else:
+        where_sql = "WHERE " + extra_where
+
+    row = get_db().execute(
+        f"""
+        SELECT
+            audit_findings.id,
+            audit_findings.audit_id,
+            audit_findings.audit_item_id,
+            audit_findings.technician_id,
+            audit_findings.supervisor_name,
+            audit_findings.owner_user_id,
+            audit_findings.item_status,
+            audit_findings.finding_status,
+            audit_findings.priority,
+            audit_findings.response_notes,
+            audit_findings.evidence_path,
+            audit_findings.validation_status,
+            audit_findings.validation_notes,
+            {created_at_expr} AS created_at,
+            {updated_at_expr} AS updated_at,
+            {responded_at_expr} AS responded_at,
+            {validated_at_expr} AS validated_at,
+            {resolved_at_expr} AS resolved_at,
+            audits.audit_date,
+            audits.auditor_name,
+            audits.auditor_user_id,
+            audits.sa_number,
+            audits.location,
+            audits.installation_type,
+            audits.result_status,
+            audits.total_score,
+            audits.technician_company_snapshot,
+            audits.technician_supervisor_snapshot,
+            audits.technician_center_snapshot,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, audits.technician_employee_code) AS technician_employee_code,
+            audit_items.section_key,
+            audit_items.section_title,
+            audit_items.item_key,
+            audit_items.item_label,
+            audit_items.is_critical,
+            audit_items.non_compliance_reason,
+            audit_items.notes AS item_notes,
+            audit_items.photo_path,
+            owners.username AS owner_username,
+            responders.username AS responded_by_username,
+            validators.username AS validated_by_username
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
+        LEFT JOIN users AS responders ON responders.id = audit_findings.responded_by_user_id
+        LEFT JOIN users AS validators ON validators.id = audit_findings.validated_by_user_id
+        {where_sql}
+        """,
+        tuple(query_params),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_finding_response(finding_id, finding_status, response_notes, evidence_path, responded_by_user_id):
+    safe_status = (finding_status or "").strip().lower()
+    if safe_status not in {"respondido", "resuelto"}:
+        raise ValueError("El estado de respuesta no es válido.")
+
+    notes_value = (response_notes or "").strip() or None
+    if not notes_value:
+        raise ValueError("Debes ingresar una respuesta para el hallazgo.")
+
+    existing = get_db().execute(
+        "SELECT evidence_path FROM audit_findings WHERE id = ?",
+        (finding_id,),
+    ).fetchone()
+    if not existing:
+        return False
+
+    previous_evidence = existing["evidence_path"] if isinstance(existing, dict) else existing[0]
+    evidence_value = evidence_path if evidence_path is not None else previous_evidence
+
+    get_db().execute(
+        """
+        UPDATE audit_findings
+        SET
+            finding_status = ?,
+            response_notes = ?,
+            evidence_path = ?,
+            responded_by_user_id = ?,
+            responded_at = CURRENT_TIMESTAMP,
+            resolved_at = CASE WHEN ? = 'resuelto' THEN CURRENT_TIMESTAMP ELSE resolved_at END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (safe_status, notes_value, evidence_value, responded_by_user_id, safe_status, finding_id),
+    )
+    get_db().commit()
+    return True
+
+
+def validate_finding(finding_id, validated_by_user_id, approved, validation_notes=None):
+    status = "validado" if approved else "rechazado"
+    finding_status = "validado" if approved else "reabierto"
+    notes_value = (validation_notes or "").strip() or None
+
+    get_db().execute(
+        """
+        UPDATE audit_findings
+        SET
+            validation_status = ?,
+            validation_notes = ?,
+            validated_by_user_id = ?,
+            validated_at = CURRENT_TIMESTAMP,
+            finding_status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (status, notes_value, validated_by_user_id, finding_status, finding_id),
+    )
+    get_db().commit()
+    return True
+
+
+def _finding_priority_for_item(item):
+    status = str(item.get("status") or "").strip().lower()
+    if item.get("is_critical") or status == "nc_mayor":
+        return "alta"
+    if status == "nc_menor":
+        return "media"
+    return "media"
+
+
+def create_audit_findings(audit_id, audit_data, inserted_items, connection=None):
+    connection = connection or get_db()
+    supervisor_name = normalize_supervisor_scope_name(audit_data.get("technician_supervisor_snapshot"))
+    owner_user_id = find_owner_user_id_by_supervisor_name(supervisor_name)
+
+    finding_rows = []
+    for item in inserted_items:
+        status = str(item.get("status") or "").strip().lower()
+        if status not in {"no_cumple", "nc_menor", "nc_mayor"}:
+            continue
+        finding_rows.append(
+            (
+                audit_id,
+                item["id"],
+                audit_data.get("technician_id"),
+                supervisor_name or None,
+                owner_user_id,
+                item["status"],
+                _finding_priority_for_item(item),
+            )
+        )
+
+    if not finding_rows:
+        return 0
+
+    connection.executemany(
+        """
+        INSERT INTO audit_findings (
+            audit_id,
+            audit_item_id,
+            technician_id,
+            supervisor_name,
+            owner_user_id,
+            item_status,
+            priority
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        finding_rows,
+    )
+    return len(finding_rows)
 
 
 def create_audit_supply_requests(audit_id, supply_requests):
@@ -3244,6 +3952,9 @@ def create_audit(audit_data, items, supply_requests=None):
             technician_signature_path,
             technician_display_name,
             technician_employee_code,
+            technician_company_snapshot,
+            technician_supervisor_snapshot,
+            technician_center_snapshot,
             location,
             address,
             installation_type,
@@ -3258,7 +3969,7 @@ def create_audit(audit_data, items, supply_requests=None):
             mobile_unit_id,
             technician_id,
             vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         audit_data["audit_date"],
@@ -3269,6 +3980,9 @@ def create_audit(audit_data, items, supply_requests=None):
         audit_data.get("technician_signature_path"),
         audit_data.get("technician_display_name"),
         audit_data.get("technician_employee_code"),
+        audit_data.get("technician_company_snapshot"),
+        audit_data.get("technician_supervisor_snapshot"),
+        audit_data.get("technician_center_snapshot"),
         audit_data["location"],
         audit_data.get("address"),
         audit_data["installation_type"],
@@ -3296,37 +4010,62 @@ def create_audit(audit_data, items, supply_requests=None):
         cursor = connection.execute(insert_sql, insert_params)
         audit_id = cursor.lastrowid
 
-    connection.executemany(
-        """
-        INSERT INTO audit_items (
+    inserted_items = []
+    for item in items:
+        item_params = (
             audit_id,
-            section_key,
-            section_title,
-            item_key,
-            item_label,
-            status,
-            is_critical,
-            non_compliance_reason,
-            notes,
-            photo_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            (
-                audit_id,
-                item["section_key"],
-                item["section_title"],
-                item["item_key"],
-                item["item_label"],
-                item["status"],
-                1 if item["is_critical"] else 0,
-                item.get("non_compliance_reason"),
-                item["notes"],
-                item.get("photo_path"),
+            item["section_key"],
+            item["section_title"],
+            item["item_key"],
+            item["item_label"],
+            item["status"],
+            1 if item["is_critical"] else 0,
+            item.get("non_compliance_reason"),
+            item["notes"],
+            item.get("photo_path"),
+        )
+        if is_postgres():
+            item_cursor = connection.execute(
+                """
+                INSERT INTO audit_items (
+                    audit_id,
+                    section_key,
+                    section_title,
+                    item_key,
+                    item_label,
+                    status,
+                    is_critical,
+                    non_compliance_reason,
+                    notes,
+                    photo_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                item_params,
             )
-            for item in items
-        ],
-    )
+            item_row = item_cursor.fetchone()
+            item_id = (item_row["id"] if isinstance(item_row, dict) else item_row[0]) if item_row else None
+        else:
+            item_cursor = connection.execute(
+                """
+                INSERT INTO audit_items (
+                    audit_id,
+                    section_key,
+                    section_title,
+                    item_key,
+                    item_label,
+                    status,
+                    is_critical,
+                    non_compliance_reason,
+                    notes,
+                    photo_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                item_params,
+            )
+            item_id = item_cursor.lastrowid
+        inserted_items.append({**item, "id": item_id})
+    create_audit_findings(audit_id, audit_data, inserted_items, connection=connection)
 
     if supply_requests:
         connection.executemany(

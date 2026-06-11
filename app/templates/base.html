@@ -20,14 +20,21 @@
                         <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
                     {% endif %}
                     <a href="{{ url_for('main.audit_list') }}">Historial</a>
-                    <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
-                    <a href="{{ url_for('main.tnps') }}">tNPS</a>
+                    {% if can_view_findings %}
+                        <a href="{{ url_for('main.findings_list') }}">{% if is_supervisor %}Mi bandeja{% else %}Hallazgos{% endif %}</a>
+                    {% endif %}
+                    {% if not is_supervisor %}
+                        <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
+                        <a href="{{ url_for('main.tnps') }}">tNPS</a>
+                    {% endif %}
                     {% if can_view_reports %}
                         <a href="{{ url_for('main.reports') }}">Reportes</a>
                     {% endif %}
-                    <a href="{{ url_for('main.equipment') }}">Equipos</a>
-                    <a href="{{ url_for('main.materials_stock') }}">Stock</a>
-                    <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
+                    {% if not is_supervisor %}
+                        <a href="{{ url_for('main.equipment') }}">Equipos</a>
+                        <a href="{{ url_for('main.materials_stock') }}">Stock</a>
+                        <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
+                    {% endif %}
                     {% if can_import %}
                         <a href="{{ url_for('main.imports') }}">Importar datos</a>
                     {% endif %}

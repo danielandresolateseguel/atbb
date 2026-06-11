@@ -7,7 +7,7 @@
     <div>
         <p class="eyebrow">Administración</p>
         <h2>Usuarios</h2>
-        <p class="hero-copy">Crea usuarios auditor o gerente.</p>
+        <p class="hero-copy">Crea usuarios administrador, auditor, gerente o supervisor.</p>
     </div>
     <div class="hero-actions">
         {% if can_create_users %}
@@ -23,6 +23,7 @@
                 <tr>
                     <th>Usuario</th>
                     <th>Rol</th>
+                    <th>Alcance</th>
                     <th>Activo</th>
                     <th>Creado</th>
                     <th></th>
@@ -33,17 +34,28 @@
                     <tr>
                         <td>{{ row["username"] }}</td>
                         <td>{{ row["role"] }}</td>
+                        <td>
+                            {% if row["role"] == "supervisor" %}
+                                {{ row["supervisor_scope_count"] or 0 }} supervisor(es)
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
                         <td>{{ "Sí" if row["is_active"] else "No" }}</td>
                         <td>{{ row["created_at"] }}</td>
                         <td>
                             {% if can_edit_users %}
                                 <a class="table-link" href="{{ url_for('main.users_edit', user_id=row['id']) }}">Editar</a>
+                                {% if row["role"] == "supervisor" %}
+                                    |
+                                    <a class="table-link" href="{{ url_for('main.user_supervisor_scopes', user_id=row['id']) }}">Alcance</a>
+                                {% endif %}
                             {% endif %}
                         </td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="5" class="empty-state">No hay usuarios.</td>
+                        <td colspan="6" class="empty-state">No hay usuarios.</td>
                     </tr>
                 {% endfor %}
             </tbody>

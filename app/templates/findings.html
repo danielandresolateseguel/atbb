@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Hallazgos{% endblock %}
+
+{% block content %}
+<section class="section-heading">
+    <div>
+        <p class="eyebrow">Seguimiento</p>
+        <h2>{% if is_supervisor %}Mi bandeja de hallazgos{% else %}Hallazgos{% endif %}</h2>
+    </div>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Total</span>
+        <strong class="stat-value">{{ finding_stats["total_findings"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Activos</span>
+        <strong class="stat-value">{{ finding_stats["active_findings"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Alta prioridad</span>
+        <strong class="stat-value">{{ finding_stats["high_priority_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Reabiertos</span>
+        <strong class="stat-value">{{ finding_stats["reopened_count"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Pendientes validación</span>
+        <strong class="stat-value">{{ finding_stats["pending_validation_count"] }}</strong>
+    </article>
+</section>
+
+{% if finding_stats["reopened_count"] or finding_stats["high_priority_count"] %}
+    <section class="alert-stack">
+        {% if finding_stats["reopened_count"] %}
+            <article class="alert-card alert-critical">
+                <strong>Atención inmediata</strong>
+                <p>Hay {{ finding_stats["reopened_count"] }} hallazgo(s) reabierto(s) que requieren nueva respuesta.</p>
+            </article>
+        {% endif %}
+        {% if finding_stats["high_priority_count"] %}
+            <article class="alert-card alert-warning">
+                <strong>Prioridad alta en curso</strong>
+                <p>Hay {{ finding_stats["high_priority_count"] }} hallazgo(s) de prioridad alta dentro de la bandeja actual.</p>
+            </article>
+        {% endif %}
+    </section>
+{% endif %}
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.findings_list') }}">
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+        </label>
+        <label>
+            <span>Auditoría</span>
+            <input type="text" name="audit_id" value="{{ filters.audit_id }}" placeholder="ID auditoría">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="finding_status">
+                <option value="" {% if not filters.finding_status %}selected{% endif %}>Todos</option>
+                <option value="nuevo" {% if filters.finding_status == "nuevo" %}selected{% endif %}>Nuevo</option>
+                <option value="respondido" {% if filters.finding_status == "respondido" %}selected{% endif %}>Respondido</option>
+                <option value="resuelto" {% if filters.finding_status == "resuelto" %}selected{% endif %}>Resuelto</option>
+                <option value="validado" {% if filters.finding_status == "validado" %}selected{% endif %}>Validado</option>
+                <option value="reabierto" {% if filters.finding_status == "reabierto" %}selected{% endif %}>Reabierto</option>
+            </select>
+        </label>
+        <label>
+            <span>Prioridad</span>
+            <select name="priority">
+                <option value="" {% if not filters.priority %}selected{% endif %}>Todas</option>
+                <option value="alta" {% if filters.priority == "alta" %}selected{% endif %}>Alta</option>
+                <option value="media" {% if filters.priority == "media" %}selected{% endif %}>Media</option>
+            </select>
+        </label>
+        <label>
+            <span>Validación</span>
+            <select name="validation_status">
+                <option value="" {% if not filters.validation_status %}selected{% endif %}>Todas</option>
+                <option value="__none__" {% if filters.validation_status == "__none__" %}selected{% endif %}>Sin validar</option>
+                <option value="validado" {% if filters.validation_status == "validado" %}selected{% endif %}>Validado</option>
+                <option value="rechazado" {% if filters.validation_status == "rechazado" %}selected{% endif %}>Rechazado</option>
+            </select>
+        </label>
+        <label>
+            <span>Búsqueda</span>
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="Móvil, técnico, sección, ítem o supervisor">
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.findings_list') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="card table-card">
+    {% if findings %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Móvil / Técnico</th>
+                        <th>Sección</th>
+                        <th>Ítem</th>
+                        <th>Motivo</th>
+                        <th>Supervisor</th>
+                        <th>Prioridad</th>
+                        <th>Estado</th>
+                        <th>Validación</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for finding in findings %}
+                        <tr class="{% if finding['finding_status'] == 'reabierto' %}finding-row-critical{% elif finding['priority'] == 'alta' %}finding-row-warning{% endif %}">
+                            <td>{{ finding["audit_date"] }}</td>
+                            <td>{% if finding["mobile_code"] %}{{ finding["mobile_code"] }} | {% endif %}{{ finding["technician_name"] }}</td>
+                            <td>{{ finding["section_title"] }}</td>
+                            <td>{{ finding["item_label"] }}</td>
+                            <td>{{ finding["non_compliance_reason"]|non_compliance_reason_label if finding["non_compliance_reason"] else "-" }}</td>
+                            <td>{{ finding["supervisor_name"] or "-" }}</td>
+                            <td><span class="metric-pill {% if finding['priority'] == 'alta' %}metric-danger{% else %}metric-warning{% endif %}">{{ finding["priority"]|capitalize }}</span></td>
+                            <td><span class="metric-pill {% if finding['finding_status'] == 'reabierto' %}metric-danger{% elif finding['finding_status'] == 'validado' %}metric-ok{% elif finding['finding_status'] == 'resuelto' %}metric-warning{% else %}metric-neutral{% endif %}">{{ finding["finding_status"]|replace('_', ' ')|capitalize }}</span></td>
+                            <td><span class="metric-pill {% if finding['validation_status'] == 'validado' %}metric-ok{% elif finding['validation_status'] == 'rechazado' %}metric-danger{% else %}metric-neutral{% endif %}">{{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "Sin validar" }}</span></td>
+                            <td><a class="table-link" href="{{ url_for('main.finding_detail', finding_id=finding['id']) }}">Ver detalle</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        {% if filter_active %}
+            <p class="empty-state">No hay hallazgos para los filtros aplicados.</p>
+        {% else %}
+            <p class="empty-state">Todavía no hay hallazgos para mostrar.</p>
+        {% endif %}
+    {% endif %}
+</section>
+{% endblock %}

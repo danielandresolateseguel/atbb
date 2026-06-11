@@ -338,6 +338,12 @@ small {
     margin-bottom: 1rem;
 }
 
+.alert-stack {
+    display: grid;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
 .flash {
     padding: 0.95rem 1rem;
     border-radius: 12px;
@@ -995,6 +1001,14 @@ input[type="file"]:focus-visible {
 
 .table-wrap {
     overflow-x: auto;
+}
+
+.finding-row-warning td {
+    background: rgba(180, 83, 9, 0.05);
+}
+
+.finding-row-critical td {
+    background: rgba(220, 38, 38, 0.06);
 }
 
 table {

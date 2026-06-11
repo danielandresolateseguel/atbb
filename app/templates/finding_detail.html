@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Hallazgo {{ finding["id"] }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Seguimiento</p>
+        <h2>Hallazgo {{ finding["id"] }}</h2>
+        <p class="hero-copy">
+            {{ finding["audit_date"] }} | Auditoría {{ finding["audit_id"] }} | {% if finding["mobile_code"] %}Móvil {{ finding["mobile_code"] }} | {% endif %}{{ finding["technician_name"] }}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <span class="badge badge-{{ finding['finding_status']|replace('_', '-') }}">{{ finding["finding_status"]|replace('_', ' ')|capitalize }}</span>
+        <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=finding['audit_id']) }}">Ver auditoría</a>
+        <a class="button button-secondary" href="{{ url_for('main.findings_list') }}">Volver a la bandeja</a>
+    </div>
+</section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Contexto</p>
+                <h3>Datos del hallazgo</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Sección:</strong> {{ finding["section_title"] }}</p>
+            <p><strong>Ítem:</strong> {{ finding["item_label"] }}</p>
+            <p><strong>Estado ítem:</strong> {{ finding["item_status"]|replace('_', ' ')|capitalize }}</p>
+            <p><strong>Motivo:</strong> {{ finding["non_compliance_reason"]|non_compliance_reason_label if finding["non_compliance_reason"] else "-" }}</p>
+            <p><strong>Observación original:</strong> {{ finding["item_notes"] or "-" }}</p>
+            <p><strong>Prioridad:</strong> {{ finding["priority"]|capitalize }}</p>
+            <p><strong>Supervisor:</strong> {{ finding["supervisor_name"] or finding["technician_supervisor_snapshot"] or "-" }}</p>
+            <p><strong>Responsable:</strong> {{ finding["owner_username"] or "Sin asignar" }}</p>
+            <p><strong>Creado:</strong> {{ finding["created_at"] or "-" }}</p>
+            <p><strong>Actualizado:</strong> {{ finding["updated_at"] or "-" }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Auditoría</p>
+                <h3>Contexto operativo</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Auditor:</strong> {{ finding["auditor_name"] }}</p>
+            <p><strong>SA:</strong> {{ finding["sa_number"] or "-" }}</p>
+            <p><strong>Resultado:</strong> {{ finding["result_status"] }}</p>
+            <p><strong>Puntaje:</strong> {{ finding["total_score"] }}</p>
+            <p><strong>Ubicación:</strong> {{ finding["location"] }}</p>
+            <p><strong>Tipo:</strong> {{ finding["installation_type"] }}</p>
+            <p><strong>Empresa:</strong> {{ finding["technician_company_snapshot"] or "-" }}</p>
+            <p><strong>Centro:</strong> {{ finding["technician_center_snapshot"] or "-" }}</p>
+            <p><strong>Técnico:</strong> {{ finding["technician_name"] }}{% if finding["technician_employee_code"] %} | {{ finding["technician_employee_code"] }}{% endif %}</p>
+        </div>
+    </article>
+ </section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Respuesta</p>
+                <h3>Gestión del supervisor</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Estado actual:</strong> {{ finding["finding_status"]|replace('_', ' ')|capitalize }}</p>
+            <p><strong>Respuesta:</strong> {{ finding["response_notes"] or "-" }}</p>
+            <p><strong>Respondido por:</strong> {{ finding["responded_by_username"] or "-" }}</p>
+            <p><strong>Respondido el:</strong> {{ finding["responded_at"] or "-" }}</p>
+            <p><strong>Resuelto el:</strong> {{ finding["resolved_at"] or "-" }}</p>
+        </div>
+        {% set response_evidence = finding["evidence_path"]|audit_photo_paths %}
+        {% if response_evidence %}
+            <div class="evidence-block">
+                <strong>Evidencia de respuesta</strong>
+                {% for photo_src in response_evidence %}
+                    {% if photo_src.startswith("http") %}
+                        <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir evidencia {{ loop.index }}</a>
+                        <img src="{{ photo_src }}" alt="Evidencia del hallazgo" class="evidence-image">
+                    {% else %}
+                        <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir evidencia {{ loop.index }}</a>
+                        <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia del hallazgo" class="evidence-image">
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% endif %}
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Validación</p>
+                <h3>Revisión final</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Estado validación:</strong> {{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "-" }}</p>
+            <p><strong>Notas validación:</strong> {{ finding["validation_notes"] or "-" }}</p>
+            <p><strong>Validado por:</strong> {{ finding["validated_by_username"] or "-" }}</p>
+            <p><strong>Validado el:</strong> {{ finding["validated_at"] or "-" }}</p>
+        </div>
+    </article>
+</section>
+
+{% set item_evidence = finding["photo_path"]|audit_photo_paths %}
+{% if item_evidence %}
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Evidencia</p>
+                <h3>Fotos del hallazgo original</h3>
+            </div>
+        </div>
+        <div class="audit-detail-grid">
+            {% for photo_src in item_evidence %}
+                <article class="checklist-item">
+                    <div class="evidence-block">
+                        {% if photo_src.startswith("http") %}
+                            <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                            <img src="{{ photo_src }}" alt="Evidencia original {{ loop.index }}" class="evidence-image">
+                        {% else %}
+                            <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                            <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia original {{ loop.index }}" class="evidence-image">
+                        {% endif %}
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}
+
+{% if can_respond_findings %}
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Acción</p>
+                <h3>Responder hallazgo</h3>
+            </div>
+        </div>
+        <form method="post" action="{{ url_for('main.finding_respond', finding_id=finding['id']) }}" enctype="multipart/form-data" class="form-grid">
+            <label>
+                <span>Estado</span>
+                <select name="finding_status" required>
+                    <option value="respondido" {% if finding["finding_status"] == "respondido" %}selected{% endif %}>Respondido</option>
+                    <option value="resuelto" {% if finding["finding_status"] == "resuelto" %}selected{% endif %}>Resuelto</option>
+                </select>
+            </label>
+            <label>
+                <span>Evidencia (opcional)</span>
+                <input type="file" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+            </label>
+            <label>
+                <span>Respuesta del supervisor</span>
+                <textarea name="response_notes" rows="6" required>{{ finding["response_notes"] or "" }}</textarea>
+            </label>
+            <button class="button button-primary" type="submit">Guardar respuesta</button>
+        </form>
+    </section>
+{% endif %}
+
+{% if can_validate_findings %}
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Control</p>
+                <h3>Validar o reabrir</h3>
+            </div>
+        </div>
+        <form method="post" action="{{ url_for('main.finding_validate', finding_id=finding['id']) }}" class="form-grid">
+            <label>
+                <span>Acción</span>
+                <select name="validation_action" required>
+                    <option value="approve">Validar cierre</option>
+                    <option value="reject">Reabrir</option>
+                </select>
+            </label>
+            <label>
+                <span>Notas de validación</span>
+                <textarea name="validation_notes" rows="5">{{ finding["validation_notes"] or "" }}</textarea>
+            </label>
+            <button class="button button-primary" type="submit">Guardar validación</button>
+        </form>
+    </section>
+{% endif %}
+{% endblock %}

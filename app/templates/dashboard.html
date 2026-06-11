@@ -31,6 +31,44 @@
     </article>
 </section>
 
+{% if finding_stats %}
+    <section class="stats-grid">
+        <article class="card stat-card">
+            <span class="stat-label">Hallazgos activos</span>
+            <strong class="stat-value">{{ finding_stats["active_findings"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">Alta prioridad</span>
+            <strong class="stat-value">{{ finding_stats["high_priority_count"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">Reabiertos</span>
+            <strong class="stat-value">{{ finding_stats["reopened_count"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">Pendientes validación</span>
+            <strong class="stat-value">{{ finding_stats["pending_validation_count"] }}</strong>
+        </article>
+    </section>
+
+    {% if finding_stats["reopened_count"] or finding_stats["high_priority_count"] %}
+        <section class="alert-stack">
+            {% if finding_stats["reopened_count"] %}
+                <article class="alert-card alert-critical">
+                    <strong>Hallazgos reabiertos</strong>
+                    <p>Hay {{ finding_stats["reopened_count"] }} hallazgo(s) reabierto(s) que requieren nueva gestión.</p>
+                </article>
+            {% endif %}
+            {% if finding_stats["high_priority_count"] %}
+                <article class="alert-card alert-warning">
+                    <strong>Hallazgos de alta prioridad</strong>
+                    <p>Hay {{ finding_stats["high_priority_count"] }} hallazgo(s) de prioridad alta en seguimiento.</p>
+                </article>
+            {% endif %}
+        </section>
+    {% endif %}
+{% endif %}
+
 <section class="card dashboard-recent">
     <div class="section-heading">
         <div>

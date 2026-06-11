@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Alcance supervisor{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administración</p>
+        <h2>Alcance de {{ user["username"] }}</h2>
+        <p class="hero-copy">Define uno o más nombres de supervisor. El usuario verá únicamente auditorías de técnicos asociados a esos nombres.</p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.users_list') }}">Volver</a>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-grid">
+        <label>
+            <span>Nombres de supervisor</span>
+            <textarea name="supervisor_scopes" rows="10" placeholder="Un nombre por línea">{% for scope in scopes %}{{ scope["supervisor_name"] }}{% if not loop.last %}
+{% endif %}{% endfor %}</textarea>
+        </label>
+        <p class="empty-state">Carga un nombre por línea. Se normalizan espacios y mayúsculas para evitar duplicados.</p>
+        <button class="button button-primary" type="submit">Guardar alcance</button>
+    </form>
+</section>
+
+{% if scopes %}
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Referencia</p>
+                <h3>Supervisores asignados</h3>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>Supervisor</th>
+                        <th>Activo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scope in scopes %}
+                        <tr>
+                            <td>{{ scope["supervisor_name"] }}</td>
+                            <td>{{ "Sí" if scope["is_active"] else "No" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endif %}
+{% endblock %}

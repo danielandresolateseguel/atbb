@@ -33,7 +33,13 @@ from app.models import (
     fetch_user_by_id,
     fetch_user_by_username,
     fetch_users,
+    fetch_user_supervisor_scopes,
+    fetch_user_supervisor_scope_names,
     fetch_audit_detail,
+    fetch_audit_findings,
+    fetch_findings,
+    fetch_finding_stats,
+    fetch_finding_detail,
     fetch_audit_items,
     fetch_audit_supply_requests,
     fetch_all_audits,
@@ -92,6 +98,9 @@ from app.models import (
     import_technician_information,
     import_technicians,
     import_vehicles,
+    replace_user_supervisor_scopes,
+    update_finding_response,
+    validate_finding,
     update_audit_record_scope,
     update_mobile_unit_technician,
     update_vehicle_extinguisher_expiry,
@@ -204,10 +213,6 @@ def current_user():
         g.current_user = None
         return None
 
-    if user.get("role") == "supervisor":
-        update_user(user["id"], role="admin")
-        user["role"] = "admin"
-
     g._current_user_loaded = True
     g.current_user = user
     return user
@@ -226,6 +231,11 @@ def is_gerente():
 def is_auditor():
     user = current_user()
     return bool(user and (user.get("role") == "auditor"))
+
+
+def is_supervisor():
+    user = current_user()
+    return bool(user and (user.get("role") == "supervisor"))
 
 
 def can_import():
@@ -261,6 +271,38 @@ def can_edit_users():
 def can_view_reports():
     user = current_user()
     return bool(user and (user.get("role") in {"admin", "auditor", "gerente"}))
+
+
+def can_manage_supervisor_scopes():
+    user = current_user()
+    return bool(user and (user.get("role") == "admin"))
+
+
+def can_view_findings():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "gerente", "auditor", "supervisor"}))
+
+
+def can_respond_findings():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "supervisor"}))
+
+
+def can_validate_findings():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "gerente", "auditor"}))
+
+
+def current_supervisor_scope_names():
+    user = current_user()
+    if not user or user.get("role") != "supervisor":
+        return None
+    return fetch_user_supervisor_scope_names(user["id"])
+
+
+def current_auditor_user_id():
+    user = current_user()
+    return user["id"] if user and user.get("role") == "auditor" else None
 
 
 def build_csv_response(rows, filename, fieldnames=None):
@@ -1215,6 +1257,7 @@ def inject_auth_context():
         "is_admin": bool(user and (user.get("role") == "admin")),
         "is_gerente": bool(user and (user.get("role") == "gerente")),
         "is_auditor": bool(user and (user.get("role") == "auditor")),
+        "is_supervisor": bool(user and (user.get("role") == "supervisor")),
         "can_import": can_import(),
         "can_create_audit": can_create_audit(),
         "can_view_all_audits": can_view_all_audits(),
@@ -1222,6 +1265,10 @@ def inject_auth_context():
         "can_create_users": can_create_users(),
         "can_edit_users": can_edit_users(),
         "can_view_reports": can_view_reports(),
+        "can_manage_supervisor_scopes": can_manage_supervisor_scopes(),
+        "can_view_findings": can_view_findings(),
+        "can_respond_findings": can_respond_findings(),
+        "can_validate_findings": can_validate_findings(),
     }
 
 
@@ -1328,13 +1375,16 @@ def users_new():
                 if role != "auditor":
                     raise ValueError("El gerente solo puede crear usuarios de tipo auditor.")
             else:
-                if role not in {"admin", "auditor", "gerente"}:
+                if role not in {"admin", "auditor", "gerente", "supervisor"}:
                     raise ValueError("El rol seleccionado no es válido.")
 
-            create_user(username=username, password=password, role=role, is_active=1 if is_active else 0)
+            user_id = create_user(username=username, password=password, role=role, is_active=1 if is_active else 0)
             flash("Usuario creado.", "success")
             if actor and actor.get("role") == "gerente":
                 return redirect(url_for("main.users_new"))
+            if role == "supervisor":
+                flash("Ahora asigna el alcance del supervisor por nombre.", "success")
+                return redirect(url_for("main.user_supervisor_scopes", user_id=user_id))
             return redirect(url_for("main.users_list"))
         except ValueError as exc:
             flash(str(exc), "error")
@@ -1374,16 +1424,42 @@ def users_edit(user_id):
             ):
                 if count_active_admins() <= 1:
                     raise ValueError("Debe existir al menos un administrador activo.")
-            if user.get("role") != "admin" and projected_role not in {"auditor", "gerente"}:
+            if user.get("role") != "admin" and projected_role not in {"auditor", "gerente", "supervisor"}:
                 raise ValueError("El rol seleccionado no es válido.")
 
             update_user(user_id, username=username, password=password, role=role, is_active=is_active)
+            if projected_role != "supervisor":
+                replace_user_supervisor_scopes(user_id, [])
             flash("Usuario actualizado.", "success")
+            if projected_role == "supervisor":
+                return redirect(url_for("main.user_supervisor_scopes", user_id=user_id))
             return redirect(url_for("main.users_list"))
         except ValueError as exc:
             flash(str(exc), "error")
 
     return render_template("user_form.html", mode="edit", user=user)
+
+
+@main.route("/users/<int:user_id>/scopes", methods=["GET", "POST"])
+def user_supervisor_scopes(user_id):
+    if not can_manage_supervisor_scopes():
+        abort(403)
+
+    user = fetch_user_by_id(user_id)
+    if not user:
+        abort(404)
+    if user.get("role") != "supervisor":
+        flash("Solo los usuarios con rol supervisor pueden tener alcance asignado.", "error")
+        return redirect(url_for("main.users_list"))
+
+    if request.method == "POST":
+        raw_scopes = (request.form.get("supervisor_scopes") or "").replace(",", "\n")
+        normalized_scopes = replace_user_supervisor_scopes(user_id, raw_scopes.splitlines())
+        flash(f"Alcance actualizado. Supervisores asignados: {len(normalized_scopes)}.", "success")
+        return redirect(url_for("main.users_list"))
+
+    scopes = fetch_user_supervisor_scopes(user_id)
+    return render_template("user_scopes_form.html", user=user, scopes=scopes)
 
 
 CSV_IMPORT_TYPES = {
@@ -1930,6 +2006,32 @@ def persist_item_evidence(items, audit_date):
             item["photo_path"] = f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
 
 
+def persist_finding_evidence(photo_file, audit_date, finding_id):
+    if not has_uploaded_file(photo_file):
+        return None
+
+    _filename, extension = validate_photo_file(photo_file, f"hallazgo {finding_id}")
+    raw_bytes = photo_file.stream.read()
+    if not raw_bytes:
+        raise ValueError("La evidencia del hallazgo no contiene datos validos.")
+
+    optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+    date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
+    generated_name = f"finding_{finding_id}_{uuid4().hex[:12]}"
+
+    if cloudinary_enabled():
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        folder = f"{base_folder}/findings/{date_folder}"
+        return upload_image_to_cloudinary(optimized_bytes, folder=folder, public_id=generated_name)
+
+    target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "findings" / date_folder
+    target_dir.mkdir(parents=True, exist_ok=True)
+    generated_filename = f"{generated_name}.{optimized_extension}"
+    saved_path = target_dir / generated_filename
+    saved_path.write_bytes(optimized_bytes)
+    return f"uploads/audits/findings/{date_folder}/{generated_filename}".replace("\\", "/")
+
+
 @main.route("/api/audits/upload-evidence", methods=["POST"])
 def upload_audit_evidence():
     try:
@@ -2264,8 +2366,19 @@ def build_audit_report_metrics(audit, items):
 def dashboard():
     user = current_user()
     auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
-    recent_audits = fetch_recent_audits(auditor_user_id=auditor_user_id)
-    stats = fetch_dashboard_stats(auditor_user_id=auditor_user_id)
+    supervisor_scope_names = current_supervisor_scope_names()
+    recent_audits = fetch_recent_audits(
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    stats = fetch_dashboard_stats(
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    finding_stats = fetch_finding_stats(
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    ) if can_view_findings() else None
 
     return render_template(
         "dashboard.html",
@@ -2273,6 +2386,7 @@ def dashboard():
         total_audits=stats["total_audits"],
         approval_rate=stats["approval_rate"],
         critical_count=stats["critical_count"],
+        finding_stats=finding_stats,
     )
 
 
@@ -2567,6 +2681,7 @@ def supply_requests():
 def audit_list():
     user = current_user()
     auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    supervisor_scope_names = current_supervisor_scope_names()
     filters = {
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
@@ -2578,7 +2693,11 @@ def audit_list():
     if auditor_user_id is not None:
         filters["auditor"] = ""
 
-    audits = fetch_all_audits(filters, auditor_user_id=auditor_user_id)
+    audits = fetch_all_audits(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
     filter_active = any(
         [
             filters["from_date"],
@@ -3054,6 +3173,121 @@ def reports_print(report_key):
     return response
 
 
+@main.route("/findings")
+def findings_list():
+    if not can_view_findings():
+        abort(403)
+
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "audit_id": request.args.get("audit_id", "").strip(),
+        "finding_status": request.args.get("finding_status", "").strip(),
+        "priority": request.args.get("priority", "").strip(),
+        "validation_status": request.args.get("validation_status", "").strip(),
+        "q": request.args.get("q", "").strip(),
+    }
+    auditor_user_id = current_auditor_user_id()
+    supervisor_scope_names = current_supervisor_scope_names()
+    findings = fetch_findings(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    finding_stats = fetch_finding_stats(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    filter_active = any(filters.values())
+    return render_template(
+        "findings.html",
+        findings=findings,
+        finding_stats=finding_stats,
+        filters=filters,
+        filter_active=filter_active,
+    )
+
+
+@main.route("/findings/<int:finding_id>")
+def finding_detail(finding_id):
+    if not can_view_findings():
+        abort(403)
+
+    finding = fetch_finding_detail(
+        finding_id,
+        auditor_user_id=current_auditor_user_id(),
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    if not finding:
+        abort(404)
+    return render_template("finding_detail.html", finding=finding)
+
+
+@main.route("/findings/<int:finding_id>/respond", methods=["POST"])
+def finding_respond(finding_id):
+    if not can_respond_findings():
+        abort(403)
+
+    finding = fetch_finding_detail(
+        finding_id,
+        auditor_user_id=current_auditor_user_id(),
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    if not finding:
+        abort(404)
+
+    try:
+        response_notes = (request.form.get("response_notes") or "").strip().upper()
+        finding_status = (request.form.get("finding_status") or "").strip().lower()
+        evidence_file = request.files.get("evidence_file")
+        evidence_path = None
+        if has_uploaded_file(evidence_file):
+            evidence_path = persist_finding_evidence(evidence_file, finding["audit_date"], finding_id)
+
+        update_finding_response(
+            finding_id,
+            finding_status=finding_status,
+            response_notes=response_notes,
+            evidence_path=evidence_path,
+            responded_by_user_id=current_user()["id"],
+        )
+        flash("Respuesta del hallazgo guardada.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+
+    return redirect(url_for("main.finding_detail", finding_id=finding_id))
+
+
+@main.route("/findings/<int:finding_id>/validate", methods=["POST"])
+def finding_validate(finding_id):
+    if not can_validate_findings():
+        abort(403)
+
+    finding = fetch_finding_detail(
+        finding_id,
+        auditor_user_id=current_auditor_user_id(),
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    if not finding:
+        abort(404)
+
+    validation_action = (request.form.get("validation_action") or "").strip().lower()
+    validation_notes = (request.form.get("validation_notes") or "").strip().upper()
+    if validation_action not in {"approve", "reject"}:
+        flash("La accion de validacion no es valida.", "error")
+        return redirect(url_for("main.finding_detail", finding_id=finding_id))
+
+    validate_finding(
+        finding_id,
+        validated_by_user_id=current_user()["id"],
+        approved=(validation_action == "approve"),
+        validation_notes=validation_notes,
+    )
+    flash("Validacion actualizada.", "success")
+    return redirect(url_for("main.finding_detail", finding_id=finding_id))
+
+
 @main.route("/audits/<int:audit_id>/record-scope", methods=["POST"])
 def audit_record_scope_update(audit_id):
     if not is_admin():
@@ -3081,7 +3315,7 @@ def audit_record_scope_update(audit_id):
 
 @main.route("/audits/<int:audit_id>")
 def audit_detail(audit_id):
-    audit = fetch_audit_detail(audit_id)
+    audit = fetch_audit_detail(audit_id, supervisor_scope_names=current_supervisor_scope_names())
     if not audit:
         abort(404)
     if is_auditor():
@@ -3101,6 +3335,7 @@ def audit_detail(audit_id):
     items = fetch_audit_items(audit_id)
     grouped_items = build_grouped_audit_items(items)
     supply_requests = fetch_audit_supply_requests(audit_id)
+    findings = fetch_audit_findings(audit_id)
     tnps_response = fetch_tnps_response_for_audit(audit_id)
     response = make_response(
         render_template(
@@ -3108,6 +3343,7 @@ def audit_detail(audit_id):
             audit=audit,
             grouped_items=grouped_items,
             supply_requests=supply_requests,
+            findings=findings,
             tnps_response=tnps_response,
         )
     )
@@ -3119,7 +3355,7 @@ def audit_detail(audit_id):
 
 @main.route("/audits/<int:audit_id>/report")
 def audit_report(audit_id):
-    audit = fetch_audit_detail(audit_id)
+    audit = fetch_audit_detail(audit_id, supervisor_scope_names=current_supervisor_scope_names())
     if not audit:
         abort(404)
     if is_auditor():
@@ -3489,6 +3725,9 @@ def new_audit():
                 or None
             )
             technician_employee_code = selected_mobile.get("employee_code") or None
+            technician_company_snapshot = (selected_mobile.get("technician_company_name") or "").strip().upper() or None
+            technician_supervisor_snapshot = (selected_mobile.get("technician_supervisor_name") or "").strip().upper() or None
+            technician_center_snapshot = (selected_mobile.get("technician_center_name") or "").strip().upper() or None
 
             vehicle_id_raw = request.form.get("vehicle_id", "").strip()
             if not vehicle_id_raw:
@@ -3664,6 +3903,9 @@ def new_audit():
                     "technician_signature_path": technician_signature_path,
                     "technician_display_name": technician_display_name,
                     "technician_employee_code": technician_employee_code,
+                    "technician_company_snapshot": technician_company_snapshot,
+                    "technician_supervisor_snapshot": technician_supervisor_snapshot,
+                    "technician_center_snapshot": technician_center_snapshot,
                     "location": request.form["location"].strip().upper(),
                     "address": (request.form.get("address") or "").strip().upper() or None,
                     "installation_type": request.form["installation_type"].strip().upper(),
