@@ -24,6 +24,17 @@ def _normalize_bool(value):
     return normalized in {"1", "true", "yes", "y", "on"}
 
 
+AUDIT_SCOPE_OFFICIAL = "oficial"
+AUDIT_SCOPE_TESTING = "pruebas"
+
+
+def normalize_audit_record_scope(value):
+    normalized = (value or AUDIT_SCOPE_OFFICIAL).strip().lower()
+    if normalized == AUDIT_SCOPE_TESTING:
+        return AUDIT_SCOPE_TESTING
+    return AUDIT_SCOPE_OFFICIAL
+
+
 def get_audit_official_from_date():
     raw = (current_app.config.get("AUDIT_OFFICIAL_FROM_DATE") or "").strip()
     if not raw:
@@ -74,6 +85,17 @@ def close_db(_error=None):
     connection = g.pop("db_conn", None)
     if connection is not None:
         connection.close()
+
+
+def append_audit_visibility_filters(where_clauses, params, include_pruebas=False):
+    if not _normalize_bool(include_pruebas):
+        where_clauses.append("COALESCE(audits.record_scope, ?) = ?")
+        params.extend([AUDIT_SCOPE_OFFICIAL, AUDIT_SCOPE_OFFICIAL])
+
+        official_from_date = get_audit_official_from_date()
+        if official_from_date:
+            where_clauses.append("audits.audit_date >= ?")
+            params.append(official_from_date)
 
 
 def init_db():
@@ -196,6 +218,7 @@ def init_db():
             installation_type TEXT NOT NULL,
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
+            record_scope TEXT NOT NULL DEFAULT 'oficial',
             general_notes TEXT,
             serialized_stock_status TEXT,
             serialized_stock_notes TEXT,
@@ -412,6 +435,7 @@ def init_db_postgres():
             installation_type TEXT NOT NULL,
             total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
+            record_scope TEXT NOT NULL DEFAULT 'oficial',
             general_notes TEXT,
             serialized_stock_status TEXT,
             serialized_stock_notes TEXT,
@@ -665,6 +689,7 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_display_name", "TEXT")
     add_column_if_missing(connection, "audits", "technician_employee_code", "TEXT")
+    add_column_if_missing(connection, "audits", "record_scope", "TEXT NOT NULL DEFAULT 'oficial'")
     add_column_if_missing(connection, "audits", "serialized_stock_status", "TEXT")
     add_column_if_missing(connection, "audits", "serialized_stock_notes", "TEXT")
     add_column_if_missing(connection, "audits", "material_stock_status", "TEXT")
@@ -736,6 +761,7 @@ def ensure_audits_nullable_technician(connection):
             installation_type TEXT NOT NULL,
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
+            record_scope TEXT NOT NULL DEFAULT 'oficial',
             general_notes TEXT,
             serialized_stock_status TEXT,
             serialized_stock_notes TEXT,
@@ -769,6 +795,7 @@ def ensure_audits_nullable_technician(connection):
             installation_type,
             total_score,
             result_status,
+            record_scope,
             general_notes,
             serialized_stock_status,
             serialized_stock_notes,
@@ -793,6 +820,7 @@ def ensure_audits_nullable_technician(connection):
             installation_type,
             total_score,
             result_status,
+            COALESCE(record_scope, 'oficial'),
             general_notes,
             serialized_stock_status,
             serialized_stock_notes,
@@ -846,6 +874,7 @@ def ensure_technicians_columns_postgres(cursor):
 
 def ensure_audits_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS sa_number TEXT")
+    cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS record_scope TEXT NOT NULL DEFAULT 'oficial'")
 
 
 def ensure_mobile_unit_codes_normalized_sqlite(connection):
@@ -1380,9 +1409,12 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
         auditor_filter_sql = " AND audits.auditor_user_id = ?"
         auditor_filter_params = (auditor_user_id,)
 
+    visibility_filter_sql = " AND COALESCE(audits.record_scope, ?) = ?"
+    visibility_filter_params = (AUDIT_SCOPE_OFFICIAL, AUDIT_SCOPE_OFFICIAL)
+
+    official_from_date = get_audit_official_from_date()
     cutoff_sql = ""
     cutoff_params = ()
-    official_from_date = get_audit_official_from_date()
     if official_from_date:
         cutoff_sql = " AND audits.audit_date >= ?"
         cutoff_params = (official_from_date,)
@@ -1404,12 +1436,13 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
             LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
             LEFT JOIN technicians ON technicians.id = audits.technician_id
             INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-            WHERE audits.mobile_unit_id = ?{cutoff_sql}{auditor_filter_sql}
+            WHERE audits.mobile_unit_id = ?{visibility_filter_sql}{cutoff_sql}{auditor_filter_sql}
             ORDER BY audits.created_at DESC
             LIMIT ?
             """,
             (
                 mobile_unit_id,
+                *visibility_filter_params,
                 *cutoff_params,
                 *auditor_filter_params,
                 limit,
@@ -1432,13 +1465,14 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
             LEFT JOIN mobile_units AS audit_mobile ON audit_mobile.id = audits.mobile_unit_id
             LEFT JOIN technicians ON technicians.id = audits.technician_id
             INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
-            WHERE (audits.mobile_unit_id = ? OR audits.technician_id = ?){cutoff_sql}{auditor_filter_sql}
+            WHERE (audits.mobile_unit_id = ? OR audits.technician_id = ?){visibility_filter_sql}{cutoff_sql}{auditor_filter_sql}
             ORDER BY audits.created_at DESC
             LIMIT ?
             """,
             (
                 mobile_unit_id,
                 technician_id,
+                *visibility_filter_params,
                 *cutoff_params,
                 *auditor_filter_params,
                 limit,
@@ -1873,10 +1907,7 @@ def fetch_dashboard_stats(auditor_user_id=None):
     where_clauses = []
     params = []
 
-    official_from_date = get_audit_official_from_date()
-    if official_from_date:
-        where_clauses.append("audits.audit_date >= ?")
-        params.append(official_from_date)
+    append_audit_visibility_filters(where_clauses, params)
 
     if auditor_user_id is not None:
         where_clauses.append("audits.auditor_user_id = ?")
@@ -2151,10 +2182,7 @@ def fetch_recent_audits(limit=5, auditor_user_id=None):
     where_clauses = []
     params = []
 
-    official_from_date = get_audit_official_from_date()
-    if official_from_date:
-        where_clauses.append("audits.audit_date >= ?")
-        params.append(official_from_date)
+    append_audit_visibility_filters(where_clauses, params)
 
     if auditor_user_id is not None:
         where_clauses.append("audits.auditor_user_id = ?")
@@ -2205,6 +2233,7 @@ def fetch_all_audits(filters=None, auditor_user_id=None):
             audits.installation_type,
             audits.total_score,
             audits.result_status,
+            audits.record_scope,
             mobile_units.mobile_code,
             COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
             vehicles.plate AS vehicle_plate
@@ -2326,10 +2355,7 @@ def build_audits_where_sql(filters=None, auditor_user_id=None, extra_clauses=Non
     auditor = (filters.get("auditor") or "").strip()
 
     include_pruebas = _normalize_bool(filters.get("include_pruebas"))
-    official_from_date = get_audit_official_from_date()
-    if official_from_date and not include_pruebas:
-        where_clauses.append("audits.audit_date >= ?")
-        params.append(official_from_date)
+    append_audit_visibility_filters(where_clauses, params, include_pruebas=include_pruebas)
 
     if from_date:
         where_clauses.append("audits.audit_date >= ?")
@@ -2390,15 +2416,22 @@ def build_audits_where_sql_with_technicians(filters=None, auditor_user_id=None, 
 
 
 def fetch_distinct_auditors():
+    where_clauses = [
+        "COALESCE(users.username, audits.auditor_name) IS NOT NULL",
+        "COALESCE(users.username, audits.auditor_name) != ''",
+    ]
+    params = []
+    append_audit_visibility_filters(where_clauses, params)
+    where_sql = "WHERE " + " AND ".join(where_clauses)
     rows = get_db().execute(
-        """
+        f"""
         SELECT DISTINCT COALESCE(users.username, audits.auditor_name) AS auditor_name
         FROM audits
         LEFT JOIN users ON users.id = audits.auditor_user_id
-        WHERE COALESCE(users.username, audits.auditor_name) IS NOT NULL
-          AND COALESCE(users.username, audits.auditor_name) != ''
+        {where_sql}
         ORDER BY auditor_name ASC
-        """
+        """,
+        tuple(params),
     ).fetchall()
     return [dict(row)["auditor_name"] for row in rows]
 
@@ -3074,6 +3107,7 @@ def fetch_audit_detail(audit_id):
             audits.installation_type,
             audits.total_score,
             audits.result_status,
+            audits.record_scope,
             audits.general_notes,
             audits.serialized_stock_status,
             audits.serialized_stock_notes,
@@ -3206,6 +3240,7 @@ def create_audit(audit_data, items, supply_requests=None):
             installation_type,
             total_score,
             result_status,
+            record_scope,
             general_notes,
             serialized_stock_status,
             serialized_stock_notes,
@@ -3214,7 +3249,7 @@ def create_audit(audit_data, items, supply_requests=None):
             mobile_unit_id,
             technician_id,
             vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         audit_data["audit_date"],
@@ -3229,6 +3264,7 @@ def create_audit(audit_data, items, supply_requests=None):
         audit_data["installation_type"],
         audit_data["total_score"],
         audit_data["result_status"],
+        normalize_audit_record_scope(audit_data.get("record_scope")),
         audit_data["general_notes"],
         audit_data.get("serialized_stock_status"),
         audit_data.get("serialized_stock_notes"),
@@ -3314,6 +3350,21 @@ def create_audit(audit_data, items, supply_requests=None):
         )
     connection.commit()
     return audit_id
+
+
+def update_audit_record_scope(audit_id, record_scope):
+    safe_scope = normalize_audit_record_scope(record_scope)
+    connection = get_db()
+    cursor = connection.execute(
+        """
+        UPDATE audits
+        SET record_scope = ?
+        WHERE id = ?
+        """,
+        (safe_scope, audit_id),
+    )
+    connection.commit()
+    return (cursor.rowcount or 0) > 0
 
 
 def import_technicians(rows):

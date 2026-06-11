@@ -13,6 +13,9 @@
     </div>
     <div class="hero-actions no-print">
         <span class="badge badge-{{ audit['result_status']|lower|replace(' ', '-') }}">{{ audit["result_status"] }}</span>
+        {% if audit["record_scope"] == "pruebas" %}
+            <span class="badge badge-pruebas">Pruebas</span>
+        {% endif %}
         <a class="button button-secondary" href="{{ url_for('main.audit_report', audit_id=audit['id']) }}">Ver informe ejecutivo</a>
         <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
         <a class="button button-secondary" href="{{ url_for('main.tnps', audit_id=audit['id']) }}">
@@ -22,8 +25,26 @@
                 Registrar tNPS
             {% endif %}
         </a>
+        {% if is_admin %}
+            <form method="post" action="{{ url_for('main.audit_record_scope_update', audit_id=audit['id']) }}">
+                {% if audit["record_scope"] == "pruebas" %}
+                    <input type="hidden" name="record_scope" value="oficial">
+                    <button class="button button-secondary" type="submit" onclick="return confirm('Esta auditoría volverá a impactar en el circuito oficial. ¿Continuar?');">Volver a oficial</button>
+                {% else %}
+                    <input type="hidden" name="record_scope" value="pruebas">
+                    <button class="button button-secondary" type="submit" onclick="return confirm('La auditoría dejará de impactar en historial, dashboard y reportes oficiales. ¿Mover a pruebas?');">Mover a pruebas</button>
+                {% endif %}
+            </form>
+        {% endif %}
     </div>
 </section>
+
+{% if audit["record_scope"] == "pruebas" %}
+    <section class="alert-card alert-warning">
+        <strong>Auditoría aislada en pruebas</strong>
+        <p>Este registro se conserva para trazabilidad, pero queda fuera del historial y de los reportes oficiales hasta que vuelva al circuito oficial.</p>
+    </section>
+{% endif %}
 
 <section class="detail-grid">
     <article class="card info-card">
@@ -35,6 +56,7 @@
         </div>
         <div class="info-list">
             <p><strong>Auditor:</strong> {{ audit["auditor_name"] }}</p>
+            <p><strong>Sector:</strong> {% if audit["record_scope"] == "pruebas" %}Pruebas{% else %}Oficial{% endif %}</p>
             <p><strong>SA:</strong> {{ audit["sa_number"] or "-" }}</p>
             <p><strong>Móvil técnico:</strong> {% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}{% if audit["employee_code"] %} | {{ audit["employee_code"] }}{% endif %}</p>
             <p><strong>Empresa:</strong> {{ audit["technician_company"] or "-" }}</p>

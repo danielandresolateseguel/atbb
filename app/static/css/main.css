@@ -328,6 +328,10 @@ small {
     align-items: center;
 }
 
+.hero-actions form {
+    margin: 0;
+}
+
 .flash-stack {
     display: grid;
     gap: 0.75rem;
@@ -464,6 +468,11 @@ small {
 .critical-chip {
     background: var(--danger-soft);
     color: var(--danger);
+}
+
+.badge-pruebas {
+    background: var(--primary-soft);
+    color: var(--primary);
 }
 
 .weight-chip {

@@ -92,6 +92,7 @@ from app.models import (
     import_technician_information,
     import_technicians,
     import_vehicles,
+    update_audit_record_scope,
     update_mobile_unit_technician,
     update_vehicle_extinguisher_expiry,
     update_vehicle_insurance_expiry,
@@ -3051,6 +3052,31 @@ def reports_print(report_key):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@main.route("/audits/<int:audit_id>/record-scope", methods=["POST"])
+def audit_record_scope_update(audit_id):
+    if not is_admin():
+        abort(403)
+
+    audit = fetch_audit_detail(audit_id)
+    if not audit:
+        abort(404)
+
+    record_scope = (request.form.get("record_scope") or "").strip().lower()
+    if record_scope not in {"oficial", "pruebas"}:
+        flash("El sector seleccionado no es valido.", "error")
+        return redirect(url_for("main.audit_detail", audit_id=audit_id))
+
+    if not update_audit_record_scope(audit_id, record_scope):
+        flash("No fue posible actualizar el sector de la auditoria.", "error")
+        return redirect(url_for("main.audit_detail", audit_id=audit_id))
+
+    if record_scope == "pruebas":
+        flash("La auditoria fue movida a pruebas y ya no impacta en el circuito oficial.", "success")
+    else:
+        flash("La auditoria volvio al circuito oficial.", "success")
+    return redirect(url_for("main.audit_detail", audit_id=audit_id))
 
 
 @main.route("/audits/<int:audit_id>")

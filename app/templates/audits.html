@@ -41,7 +41,7 @@
         {% endif %}
         {% if audit_official_from_date %}
             <label class="checkbox-field">
-                <span>Incluir pruebas (antes del corte {{ audit_official_from_date }})</span>
+                <span>Incluir pruebas y registros previos al corte {{ audit_official_from_date }}</span>
                 <input type="checkbox" name="include_pruebas" value="1" {% if filters.include_pruebas %}checked{% endif %}>
             </label>
         {% endif %}
@@ -78,7 +78,12 @@
                             <td>{% if audit.mobile_code %}{{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}</td>
                             <td>{{ audit.vehicle_plate }}</td>
                             <td>{{ audit.location }}</td>
-                            <td><span class="badge badge-{{ audit.result_status|lower|replace(' ', '-') }}">{{ audit.result_status }}</span></td>
+                            <td>
+                                <span class="badge badge-{{ audit.result_status|lower|replace(' ', '-') }}">{{ audit.result_status }}</span>
+                                {% if audit.record_scope == "pruebas" %}
+                                    <span class="badge badge-pruebas">Pruebas</span>
+                                {% endif %}
+                            </td>
                             <td>{{ audit.total_score }}</td>
                             <td><a class="table-link" href="{{ url_for('main.audit_detail', audit_id=audit.id) }}">Ver detalle</a></td>
                         </tr>

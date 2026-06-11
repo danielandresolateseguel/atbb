@@ -62,7 +62,7 @@
         {% endif %}
         {% if audit_official_from_date %}
             <label class="checkbox-field">
-                <span>Incluir pruebas (antes del corte {{ audit_official_from_date }})</span>
+                <span>Incluir pruebas y registros previos al corte {{ audit_official_from_date }}</span>
                 <input type="checkbox" name="include_pruebas" value="1" {% if filters.include_pruebas %}checked{% endif %}>
             </label>
         {% endif %}
