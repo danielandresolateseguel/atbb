@@ -95,6 +95,11 @@
         </label>
 
         <label>
+            <span>Dirección</span>
+            <input type="text" name="address" value="{{ request.form.get('address', '')|upper }}" placeholder="Calle y número / referencia">
+        </label>
+
+        <label>
             <span>Tipo de instalación</span>
             <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '')|upper }}" placeholder="Alta / Service" required>
         </label>

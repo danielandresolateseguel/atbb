@@ -3665,6 +3665,7 @@ def new_audit():
                     "technician_display_name": technician_display_name,
                     "technician_employee_code": technician_employee_code,
                     "location": request.form["location"].strip().upper(),
+                    "address": (request.form.get("address") or "").strip().upper() or None,
                     "installation_type": request.form["installation_type"].strip().upper(),
                     "mobile_unit_id": mobile_unit_id,
                     "technician_id": selected_mobile.get("technician_id"),

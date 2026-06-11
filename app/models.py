@@ -215,6 +215,7 @@ def init_db():
             technician_display_name TEXT,
             technician_employee_code TEXT,
             location TEXT NOT NULL,
+            address TEXT,
             installation_type TEXT NOT NULL,
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
@@ -432,6 +433,7 @@ def init_db_postgres():
             technician_display_name TEXT,
             technician_employee_code TEXT,
             location TEXT NOT NULL,
+            address TEXT,
             installation_type TEXT NOT NULL,
             total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
@@ -689,6 +691,7 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "technician_signature_path", "TEXT")
     add_column_if_missing(connection, "audits", "technician_display_name", "TEXT")
     add_column_if_missing(connection, "audits", "technician_employee_code", "TEXT")
+    add_column_if_missing(connection, "audits", "address", "TEXT")
     add_column_if_missing(connection, "audits", "record_scope", "TEXT NOT NULL DEFAULT 'oficial'")
     add_column_if_missing(connection, "audits", "serialized_stock_status", "TEXT")
     add_column_if_missing(connection, "audits", "serialized_stock_notes", "TEXT")
@@ -758,6 +761,7 @@ def ensure_audits_nullable_technician(connection):
             technician_display_name TEXT,
             technician_employee_code TEXT,
             location TEXT NOT NULL,
+            address TEXT,
             installation_type TEXT NOT NULL,
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
@@ -792,6 +796,7 @@ def ensure_audits_nullable_technician(connection):
             technician_display_name,
             technician_employee_code,
             location,
+            address,
             installation_type,
             total_score,
             result_status,
@@ -817,6 +822,7 @@ def ensure_audits_nullable_technician(connection):
             technician_display_name,
             technician_employee_code,
             location,
+            address,
             installation_type,
             total_score,
             result_status,
@@ -874,6 +880,7 @@ def ensure_technicians_columns_postgres(cursor):
 
 def ensure_audits_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS sa_number TEXT")
+    cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS address TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS record_scope TEXT NOT NULL DEFAULT 'oficial'")
 
 
@@ -3104,6 +3111,7 @@ def fetch_audit_detail(audit_id):
             audits.technician_display_name,
             audits.technician_employee_code,
             audits.location,
+            audits.address,
             audits.installation_type,
             audits.total_score,
             audits.result_status,
@@ -3237,6 +3245,7 @@ def create_audit(audit_data, items, supply_requests=None):
             technician_display_name,
             technician_employee_code,
             location,
+            address,
             installation_type,
             total_score,
             result_status,
@@ -3249,7 +3258,7 @@ def create_audit(audit_data, items, supply_requests=None):
             mobile_unit_id,
             technician_id,
             vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         audit_data["audit_date"],
@@ -3261,6 +3270,7 @@ def create_audit(audit_data, items, supply_requests=None):
         audit_data.get("technician_display_name"),
         audit_data.get("technician_employee_code"),
         audit_data["location"],
+        audit_data.get("address"),
         audit_data["installation_type"],
         audit_data["total_score"],
         audit_data["result_status"],
