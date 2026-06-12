@@ -43,6 +43,8 @@ CHECKLIST_SECTIONS = [
             {"key": "fusionadora", "label": "Fusionadora operativa", "critical": False},
             {"key": "cortadora", "label": "Cortadora de FO (Cleaver)", "critical": True},
             {"key": "estuche_cleaver", "label": "Estuche de Cleaver", "critical": False},
+            {"key": "pinza_crimpar_rj5_11_9", "label": "PINZ.P/ CRIMPAR. CONEC. TEL RJ5.11.9 cod 390100106", "critical": False},
+            {"key": "tijera_cortadora_fo", "label": "TIJERA CORTADORA FO cod 280300201", "critical": False},
             {"key": "pinza_peladora_claus_cfs2", "label": "280300208 - Pinza peladora Claus CFS2", "critical": False},
             {"key": "peladora_drop_plano", "label": "Peladora de Drop plano", "critical": False},
             {"key": "medidor", "label": "Power Meter", "critical": True},
@@ -54,7 +56,6 @@ CHECKLIST_SECTIONS = [
             },
             {"key": "lapiz_limpiador_conector_fo", "label": "Lápiz limpiador conector FO", "critical": False},
             {"key": "limpieza", "label": "Alcohol Isopropilico + Paño", "critical": False},
-            {"key": "baterias", "label": "Cargador USB", "critical": False},
             {"key": "orden_kit", "label": "Bolso kit de fibra", "critical": False},
         ],
     },
@@ -175,6 +176,7 @@ CHECKLIST_SECTIONS = [
                 "material_code": "",
                 "evidence_required": True,
             },
+
         ],
     },
     {
@@ -286,10 +288,6 @@ TOOL_MATCH_RULES = {
         "label": "Kit de limpieza",
         "keywords": ["limpieza", "alcohol", "isoprop", "cletop", "cleaner", "toall", "pano", "paño"],
     },
-    "baterias": {
-        "label": "Baterías o cargadores",
-        "keywords": ["bateria", "batería", "baterias", "baterías", "cargador", "charger", "usb"],
-    },
     "cartuchera_herramientas": {
         "label": "Cartuchera porta herramientas",
         "keywords": ["cartuchera", "porta herramientas", "porta-herramientas", "cinturon", "cinturón"],
@@ -313,5 +311,21 @@ TOOL_MATCH_RULES = {
     "mecha_encastre_6x110_widia": {
         "label": "Mecha encastre 6x110mm widia",
         "keywords": ["280600194", "mecha", "encastre", "6x110", "6x110mm", "6 x 110", "widia"],
+    },
+    "pinza_crimpar_rj5_11_9": {
+        "label": "PINZ.P/ CRIMPAR. CONEC. TEL RJ5.11.9",
+        "keywords": ["390100106", "pinza", "crimpar", "conector", "tel", "rj5.11.9"],
+    },
+    "tijera_cortadora_fo": {
+        "label": "TIJERA CORTADORA FO",
+        "keywords": ["280300201", "tijera", "cortadora", "fo", "fibra optica"],
+    },
+    "mano_pinza_punta_aislada": {
+        "label": "Pinza de punta aislada a 1000V",
+        "keywords": ["280300101", "pinza", "punta", "aislada", "1000v"],
+    },
+    "mano_alicate_chico_aislado": {
+        "label": "Alicate chico aislado a 1000V",
+        "keywords": ["280300103", "alicate", "chico", "aislado", "1000v"],
     },
 }
