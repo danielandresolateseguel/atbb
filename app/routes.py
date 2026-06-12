@@ -290,7 +290,7 @@ def can_respond_findings():
 
 def can_validate_findings():
     user = current_user()
-    return bool(user and (user.get("role") in {"admin", "gerente", "auditor"}))
+    return bool(user and (user.get("role") in {"admin", "gerente"}))
 
 
 def current_supervisor_scope_names():

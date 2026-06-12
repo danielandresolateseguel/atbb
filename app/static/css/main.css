@@ -502,6 +502,10 @@ small {
     gap: 1rem;
 }
 
+form.form-grid {
+    align-items: start;
+}
+
 .button-row,
 .guide-list {
     display: grid;
@@ -2337,6 +2341,20 @@ td {
 
     .form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    form.form-grid > p,
+    form.form-grid > button {
+        grid-column: 1 / -1;
+    }
+
+    form.form-grid > button {
+        justify-self: stretch;
+    }
+
+    form.form-grid:has(input[type="file"]) > label:has(textarea),
+    form.form-grid:has(textarea):not(:has(select)):not(:has(input[type="file"])) > label:has(textarea) {
+        grid-column: 1 / -1;
     }
 
     .signature-grid {
