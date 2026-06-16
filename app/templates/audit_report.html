@@ -399,7 +399,7 @@
                     {% if report["evidence_items"] %}
                         <div class="photo-gallery">
                             {% for item in report["evidence_items"] %}
-                                {% for photo_src in item["photo_path"]|audit_photo_paths %}
+                                {% for photo_src in item["photo_path"]|audit_photo_paths(3600 if print_mode else 900) %}
                                     <article class="photo-card">
                                         {% if photo_src.startswith("http") %}
                                             <img src="{{ photo_src }}" alt="Evidencia de {{ item['item_label'] }}" class="report-photo">
@@ -451,7 +451,7 @@
                                                     <p><strong>Motivo:</strong> {{ item["non_compliance_reason"]|non_compliance_reason_label }}</p>
                                                 {% endif %}
                                                 {% if pdf_detail_mode and item["status"] != "cumple" %}
-                                                    {% set photo_list = item["photo_path"]|audit_photo_paths %}
+                                                    {% set photo_list = item["photo_path"]|audit_photo_paths(3600 if print_mode else 900) %}
                                                     {% if photo_list %}
                                                         <div class="report-item-evidence">
                                                             {% set photo_src = photo_list[0] %}

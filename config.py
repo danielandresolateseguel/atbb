@@ -33,6 +33,7 @@ class Config:
     UPLOADS_DIR = Path(os.environ.get("UPLOADS_DIR", str(BASE_DIR / "app" / "static" / "uploads")))
     AUDIT_EVIDENCE_DIR = UPLOADS_DIR / "audits"
     MAX_CONTENT_LENGTH = env_int("MAX_CONTENT_LENGTH_MB", 50) * 1024 * 1024
+    MAX_SIGNATURE_BYTES = env_int("MAX_SIGNATURE_BYTES_KB", 512) * 1024
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL")
     CLOUDINARY_FOLDER = os.environ.get("CLOUDINARY_FOLDER", "atbb")

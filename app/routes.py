@@ -179,7 +179,7 @@ def non_compliance_reason_label(value):
 
 
 @main.app_template_filter("audit_photo_paths")
-def audit_photo_paths(value):
+def audit_photo_paths(value, expires_in_seconds=900):
     if value is None:
         return []
     raw = str(value).strip()
@@ -189,10 +189,30 @@ def audit_photo_paths(value):
         try:
             parsed = json.loads(raw)
         except Exception:
-            return [raw]
+            parsed = [raw]
         if isinstance(parsed, list):
-            return [str(entry) for entry in parsed if entry]
-    return [raw]
+            items = [str(entry) for entry in parsed if entry]
+        else:
+            items = [raw]
+    else:
+        items = [raw]
+
+    resolved = []
+    for entry in items:
+        candidate = (entry or "").strip()
+        if not candidate:
+            continue
+        decoded = decode_cloudinary_ref(candidate)
+        if decoded:
+            signed = build_cloudinary_signed_url(
+                candidate,
+                expires_in_seconds=expires_in_seconds,
+            )
+            if signed:
+                resolved.append(signed)
+            continue
+        resolved.append(candidate)
+    return resolved
 
 
 
@@ -1902,7 +1922,7 @@ def build_cloudinary_signed_url(ref_or_url, expires_in_seconds=600):
 
     raw_url = (current_app.config.get("CLOUDINARY_URL") or "").strip()
     if not raw_url.startswith("cloudinary://"):
-        return ref_or_url
+        return None
 
     import cloudinary
     from cloudinary.utils import cloudinary_url
@@ -1969,8 +1989,20 @@ def persist_item_evidence(items, audit_date):
                 if cloudinary_enabled():
                     base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
                     folder = f"{base_folder}/audits/{date_folder}"
-                    uploaded_url = upload_image_to_cloudinary(optimized_bytes, folder=folder, public_id=generated_name)
-                    photo_paths.append(uploaded_url)
+                    uploaded = upload_private_image_to_cloudinary(
+                        optimized_bytes,
+                        folder=folder,
+                        public_id=generated_name,
+                    )
+                    photo_paths.append(
+                        encode_cloudinary_ref(
+                            uploaded.get("public_id"),
+                            version=uploaded.get("version"),
+                            delivery_type="private",
+                            resource_type="image",
+                            file_format=optimized_extension,
+                        )
+                    )
                 else:
                     generated_filename = f"{generated_name}.{optimized_extension}"
                     saved_path = target_dir / generated_filename
@@ -1997,8 +2029,18 @@ def persist_item_evidence(items, audit_date):
         if cloudinary_enabled():
             base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
             folder = f"{base_folder}/audits/{date_folder}"
-            uploaded_url = upload_image_to_cloudinary(optimized_bytes, folder=folder, public_id=generated_name)
-            item["photo_path"] = uploaded_url
+            uploaded = upload_private_image_to_cloudinary(
+                optimized_bytes,
+                folder=folder,
+                public_id=generated_name,
+            )
+            item["photo_path"] = encode_cloudinary_ref(
+                uploaded.get("public_id"),
+                version=uploaded.get("version"),
+                delivery_type="private",
+                resource_type="image",
+                file_format=optimized_extension,
+            )
         else:
             generated_filename = f"{generated_name}.{optimized_extension}"
             saved_path = target_dir / generated_filename
@@ -2022,7 +2064,18 @@ def persist_finding_evidence(photo_file, audit_date, finding_id):
     if cloudinary_enabled():
         base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
         folder = f"{base_folder}/findings/{date_folder}"
-        return upload_image_to_cloudinary(optimized_bytes, folder=folder, public_id=generated_name)
+        uploaded = upload_private_image_to_cloudinary(
+            optimized_bytes,
+            folder=folder,
+            public_id=generated_name,
+        )
+        return encode_cloudinary_ref(
+            uploaded.get("public_id"),
+            version=uploaded.get("version"),
+            delivery_type="private",
+            resource_type="image",
+            file_format=optimized_extension,
+        )
 
     target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "findings" / date_folder
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -2095,12 +2148,20 @@ def upload_audit_evidence():
 
             optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
             if cloudinary_enabled():
-                uploaded_url = upload_image_to_cloudinary(
+                uploaded = upload_private_image_to_cloudinary(
                     optimized_bytes,
                     folder=cloud_folder,
                     public_id=generated_name,
                 )
-                saved_paths.append(uploaded_url)
+                saved_paths.append(
+                    encode_cloudinary_ref(
+                        uploaded.get("public_id"),
+                        version=uploaded.get("version"),
+                        delivery_type="private",
+                        resource_type="image",
+                        file_format=optimized_extension,
+                    )
+                )
             else:
                 generated_filename = f"{generated_name}.{optimized_extension}"
                 saved_path = target_dir / generated_filename
@@ -2148,6 +2209,11 @@ def persist_auditor_signature(signature_data, audit_date):
 
     if not decoded_signature:
         raise ValueError("La firma del auditor no contiene datos validos.")
+    if not decoded_signature.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("La firma del auditor no corresponde a un PNG valido.")
+    max_signature_bytes = int(current_app.config.get("MAX_SIGNATURE_BYTES") or 0)
+    if max_signature_bytes and len(decoded_signature) > max_signature_bytes:
+        raise ValueError("La firma del auditor excede el tamaño maximo permitido.")
 
     date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
     generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_firma_auditor_{uuid4().hex[:8]}"
@@ -2194,6 +2260,11 @@ def persist_technician_signature(signature_data, audit_date):
 
     if not decoded_signature:
         raise ValueError("La firma del tecnico no contiene datos validos.")
+    if not decoded_signature.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("La firma del tecnico no corresponde a un PNG valido.")
+    max_signature_bytes = int(current_app.config.get("MAX_SIGNATURE_BYTES") or 0)
+    if max_signature_bytes and len(decoded_signature) > max_signature_bytes:
+        raise ValueError("La firma del tecnico excede el tamaño maximo permitido.")
 
     date_folder = datetime.fromisoformat(audit_date).strftime("%Y/%m")
     generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_firma_tecnico_{uuid4().hex[:8]}"

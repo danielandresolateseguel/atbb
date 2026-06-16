@@ -1959,6 +1959,9 @@
                 if (!name) {
                     return;
                 }
+                if (name === "auditor_signature" || name === "technician_signature") {
+                    return;
+                }
                 if (type === "file") {
                     return;
                 }
