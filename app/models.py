@@ -1,4 +1,5 @@
 import sqlite3
+import unicodedata
 from datetime import datetime
 
 from flask import current_app, g
@@ -27,12 +28,44 @@ def _normalize_bool(value):
 AUDIT_SCOPE_OFFICIAL = "oficial"
 AUDIT_SCOPE_TESTING = "pruebas"
 
+AUDIT_MATERIAL_STOCK_PRIORITY_NAMES = [
+    "CBL.DROP PLANO 70M G657 CONECT.RE. FORZ",
+    "CONECT.OPT.MEC.SC/APC P/CBL.DROP",
+    "CTRL.REM.P/DECO ANDROID TV (FLOW) V3",
+    "PILAS AAA",
+    "TALONARIO DE GARANTIAS 30 DÍAS",
+    "VASO TERMICO - INVIERNO 2025",
+]
+
 
 def normalize_audit_record_scope(value):
     normalized = (value or AUDIT_SCOPE_OFFICIAL).strip().lower()
     if normalized == AUDIT_SCOPE_TESTING:
         return AUDIT_SCOPE_TESTING
     return AUDIT_SCOPE_OFFICIAL
+
+
+def normalize_material_name(value):
+    raw = " ".join(str(value or "").strip().upper().split())
+    if not raw:
+        return ""
+    normalized = unicodedata.normalize("NFKD", raw)
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+_AUDIT_MATERIAL_STOCK_PRIORITY_TOKENS = [
+    normalize_material_name(name) for name in AUDIT_MATERIAL_STOCK_PRIORITY_NAMES
+]
+
+
+def _audit_material_stock_priority_index(material_name):
+    normalized = normalize_material_name(material_name)
+    if not normalized:
+        return None
+    for idx, token in enumerate(_AUDIT_MATERIAL_STOCK_PRIORITY_TOKENS):
+        if normalized == token or token in normalized:
+            return idx
+    return None
 
 
 def normalize_supervisor_scope_name(value):
@@ -1883,13 +1916,23 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit
 
     summary = dict(summary_row)
     tool_matches = detect_tool_matches([row["name"] for row in search_rows])
+    stock_payload = [dict(row) for row in stock_rows]
+    def stock_sort_key(row):
+        material_name = row.get("material_name")
+        normalized_name = normalize_material_name(material_name)
+        priority_idx = _audit_material_stock_priority_index(material_name)
+        if priority_idx is None:
+            return (1, normalized_name)
+        return (0, priority_idx, normalized_name)
+
+    stock_payload.sort(key=stock_sort_key)
 
     return {
         "mobile": mobile,
         "summary": summary,
         "equipment_rows": [dict(row) for row in equipment_rows],
         "_debug_equipment_rows": [dict(row) for row in equipment_rows], # DEBUG: Para inspeccionar los datos de seriales
-        "stock_rows": [dict(row) for row in stock_rows],
+        "stock_rows": stock_payload,
         "tool_matches": tool_matches,
         "alerts": build_mobile_audit_alerts(mobile, summary, tool_matches),
     }
