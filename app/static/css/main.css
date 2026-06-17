@@ -5,8 +5,8 @@
     --border: #d8dfeb;
     --text: #18212f;
     --muted: #5f6b7a;
-    --primary: #1d4ed8;
-    --primary-soft: #dbeafe;
+    --primary: #0e2f3f;
+    --primary-soft: #ccfbf1;
     --danger: #dc2626;
     --danger-soft: #fee2e2;
     --success: #15803d;
@@ -182,6 +182,22 @@ a {
     border-radius: 12px;
     background: var(--surface-alt);
     font-weight: 700;
+}
+
+.logout-form {
+    margin: 0;
+}
+
+.logout-button {
+    width: 100%;
+    padding: 0.7rem 0.85rem;
+    border: 0;
+    border-radius: 12px;
+    background: var(--surface-alt);
+    font-weight: 700;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
 .nav a {
@@ -2400,4 +2416,64 @@ td {
     .button-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+}
+
+.page.page-auth {
+    width: min(520px, calc(100% - 1.25rem));
+    margin: 0 auto;
+    min-height: 100vh;
+    padding: 2.25rem 0;
+    display: grid;
+    align-content: center;
+}
+
+@media (min-width: 768px) {
+    .page.page-auth {
+        width: min(520px, calc(100% - 2.5rem));
+    }
+}
+
+body.page-auth {
+    --primary: #0f766e;
+    --primary-soft: #ccfbf1;
+    background:
+        radial-gradient(900px circle at 18% 14%, rgba(20, 184, 166, 0.22), transparent 56%),
+        radial-gradient(800px circle at 82% 10%, rgba(245, 158, 11, 0.14), transparent 52%),
+        radial-gradient(900px circle at 70% 85%, rgba(99, 102, 241, 0.16), transparent 58%),
+        linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+}
+
+.page.page-auth .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.page.page-auth .card {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+}
+
+.auth-heading {
+    display: grid;
+    justify-items: center;
+    gap: 0.35rem;
+    text-align: center;
+    margin-bottom: 1.25rem;
+}
+
+.auth-heading p {
+    margin: 0;
+}
+
+.auth-heading h2 {
+    margin: 0;
+}
+
+.auth-form {
+    margin: 0;
+}
+
+.page.page-auth form.form-grid > button {
+    justify-self: center;
+    width: min(260px, 100%);
+    border-radius: 999px;
 }

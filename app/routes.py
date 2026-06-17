@@ -1,9 +1,11 @@
 import base64
 import binascii
 import csv
+import hmac
 import io
 import json
 import os
+import secrets
 import time
 import traceback
 from pathlib import Path
@@ -113,6 +115,93 @@ from app.spreadsheets import parse_tabular_upload
 
 
 main = Blueprint("main", __name__)
+
+_login_attempts = {}
+
+def csrf_token():
+    token = session.get("_csrf_token")
+    if token and isinstance(token, str) and len(token) >= 32:
+        return token
+    token = secrets.token_urlsafe(32)
+    session["_csrf_token"] = token
+    return token
+
+
+def validate_csrf_token(value):
+    expected = session.get("_csrf_token")
+    provided = (value or "").strip()
+    if not expected or not provided:
+        return False
+    if not isinstance(expected, str):
+        return False
+    return hmac.compare_digest(expected, provided)
+
+
+def client_ip():
+    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    return request.remote_addr or "unknown"
+
+
+def _login_rate_limit_settings():
+    window_seconds = int(os.environ.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS") or 300)
+    max_per_ip = int(os.environ.get("LOGIN_RATE_LIMIT_MAX_IP") or 25)
+    max_per_user = int(os.environ.get("LOGIN_RATE_LIMIT_MAX_USER") or 10)
+    return window_seconds, max_per_ip, max_per_user
+
+
+def _prune_attempts(timestamps, now, window_seconds):
+    if not timestamps:
+        return []
+    cutoff = now - window_seconds
+    return [ts for ts in timestamps if ts >= cutoff]
+
+
+def is_login_rate_limited(ip, username):
+    window_seconds, max_per_ip, max_per_user = _login_rate_limit_settings()
+    now = int(time.time())
+
+    ip_key = f"ip:{ip}"
+    ip_attempts = _prune_attempts(_login_attempts.get(ip_key), now, window_seconds)
+    _login_attempts[ip_key] = ip_attempts
+    if len(ip_attempts) >= max_per_ip:
+        return True
+
+    normalized_user = (username or "").strip().lower()
+    if normalized_user:
+        user_key = f"user:{normalized_user}"
+        user_attempts = _prune_attempts(_login_attempts.get(user_key), now, window_seconds)
+        _login_attempts[user_key] = user_attempts
+        if len(user_attempts) >= max_per_user:
+            return True
+
+    return False
+
+
+def record_login_failure(ip, username):
+    window_seconds, _max_per_ip, _max_per_user = _login_rate_limit_settings()
+    now = int(time.time())
+
+    ip_key = f"ip:{ip}"
+    ip_attempts = _prune_attempts(_login_attempts.get(ip_key), now, window_seconds)
+    ip_attempts.append(now)
+    _login_attempts[ip_key] = ip_attempts
+
+    normalized_user = (username or "").strip().lower()
+    if normalized_user:
+        user_key = f"user:{normalized_user}"
+        user_attempts = _prune_attempts(_login_attempts.get(user_key), now, window_seconds)
+        user_attempts.append(now)
+        _login_attempts[user_key] = user_attempts
+
+
+def clear_login_failures(ip, username):
+    ip_key = f"ip:{ip}"
+    _login_attempts.pop(ip_key, None)
+    normalized_user = (username or "").strip().lower()
+    if normalized_user:
+        _login_attempts.pop(f"user:{normalized_user}", None)
 
 #region debug-point audit-evidence-500
 def _dbg_audit_evidence_500(event_name, payload=None):
@@ -1274,6 +1363,7 @@ def inject_auth_context():
     user = current_user()
     return {
         "current_user": user,
+        "csrf_token": csrf_token(),
         "is_admin": bool(user and (user.get("role") == "admin")),
         "is_gerente": bool(user and (user.get("role") == "gerente")),
         "is_auditor": bool(user and (user.get("role") == "auditor")),
@@ -1330,19 +1420,31 @@ def login():
     next_url = safe_next_url(request.args.get("next"))
 
     if request.method == "POST":
+        if not validate_csrf_token(request.form.get("csrf_token")):
+            flash("La sesión del formulario expiró. Recarga e intenta nuevamente.", "error")
+            return render_template("login.html", next=next_url), 400
+
         username = (request.form.get("username") or "").strip()
         password = (request.form.get("password") or "").strip()
         next_url = safe_next_url(request.form.get("next")) or next_url
 
+        ip = client_ip()
+        if is_login_rate_limited(ip, username):
+            flash("Demasiados intentos. Espera unos minutos e intenta nuevamente.", "error")
+            return render_template("login.html", next=next_url), 429
+
         user = fetch_user_by_username(username)
         if not user or not user.get("is_active"):
+            record_login_failure(ip, username)
             flash("Usuario o contraseña incorrectos.", "error")
             return render_template("login.html", next=next_url)
 
         if not check_password_hash(user["password_hash"], password):
+            record_login_failure(ip, username)
             flash("Usuario o contraseña incorrectos.", "error")
             return render_template("login.html", next=next_url)
 
+        clear_login_failures(ip, username)
         session.clear()
         session.permanent = True
         session["user_id"] = user["id"]
@@ -1358,8 +1460,10 @@ def api_ping():
     return jsonify({"ok": True})
 
 
-@main.route("/logout")
+@main.route("/logout", methods=["POST"])
 def logout():
+    if not validate_csrf_token(request.form.get("csrf_token")):
+        abort(400)
     session.clear()
     return redirect(url_for("main.login"))
 

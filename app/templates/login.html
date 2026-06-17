@@ -1,18 +1,19 @@
 {% extends "base.html" %}
 
+{% set page_class = "page-auth" %}
+
 {% block title %}Ingresar{% endblock %}
 
 {% block content %}
-<section class="hero">
-    <div>
+<section class="card auth-card">
+    <header class="auth-heading">
         <p class="eyebrow">Acceso</p>
         <h2>Ingresar</h2>
         <p class="hero-copy">Ingresa con tu usuario para acceder a la app.</p>
-    </div>
-</section>
+    </header>
 
-<section class="card">
-    <form method="post" class="form-grid">
+    <form method="post" class="form-grid auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ next or '' }}">
         <label>
             <span>Usuario</span>

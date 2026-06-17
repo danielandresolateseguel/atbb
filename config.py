@@ -25,6 +25,17 @@ def env_float(name, default):
     except ValueError:
         return float(default)
 
+def env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    normalized = str(raw).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return bool(default)
+
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
@@ -40,4 +51,9 @@ class Config:
     REPORT_TARGET_APPROVAL_RATE = env_int("REPORT_TARGET_APPROVAL_RATE", 85)
     REPORT_TARGET_AVERAGE_SCORE = env_float("REPORT_TARGET_AVERAGE_SCORE", 95.0)
     AUDIT_OFFICIAL_FROM_DATE = (os.environ.get("AUDIT_OFFICIAL_FROM_DATE") or "").strip() or None
-    PERMANENT_SESSION_LIFETIME = timedelta(days=3)
+    PERMANENT_SESSION_LIFETIME = timedelta(minutes=env_int("SESSION_LIFETIME_MINUTES", 720))
+    SESSION_REFRESH_EACH_REQUEST = True
+    SESSION_COOKIE_NAME = os.environ.get("SESSION_COOKIE_NAME", "atbb_session")
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = (os.environ.get("SESSION_COOKIE_SAMESITE") or "Lax").strip() or "Lax"
+    SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", False)
