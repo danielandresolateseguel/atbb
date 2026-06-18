@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask, flash, jsonify, redirect, request, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -11,6 +13,10 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
     app.config["AUDIT_EVIDENCE_DIR"].mkdir(parents=True, exist_ok=True)
+
+    debug_raw = str(os.environ.get("FLASK_DEBUG") or "").strip().lower()
+    if debug_raw in {"1", "true", "yes", "y", "on"}:
+        app.config["DEBUG"] = True
 
     if app.config.get("SECRET_KEY") == "dev-secret-key-change-me" and not app.debug and not app.testing:
         raise RuntimeError("SECRET_KEY no está configurada. Define la variable de entorno SECRET_KEY.")
@@ -61,6 +67,3 @@ def create_app():
         init_db()
 
     return app
-
-
-app = create_app()

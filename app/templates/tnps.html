@@ -57,6 +57,114 @@
     </article>
 </section>
 
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Drivers</p>
+            <h3>Qué está empujando el tNPS</h3>
+        </div>
+    </div>
+
+    {% if stats["drivers"] %}
+        <div class="table-wrap">
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>Atributo</th>
+                        <th>Respuestas</th>
+                        <th>Valor</th>
+                        <th>NPS atributo</th>
+                        <th>Impacto (r)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for driver in stats["drivers"] %}
+                        <tr>
+                            <td>{{ driver["label"] }}</td>
+                            <td>{{ driver["count"] }}</td>
+                            <td>
+                                {% if driver["value"] is none %}
+                                    -
+                                {% else %}
+                                    {{ driver["value"] }} {{ driver["value_suffix"] }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if driver["nps"] is none %}
+                                    -
+                                {% else %}
+                                    {{ driver["nps"] }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if driver["impact"] is none %}
+                                    -
+                                {% else %}
+                                    {{ driver["impact"] }} (n={{ driver["impact_count"] }})
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <small>Impacto (r) mide relación con el puntaje tNPS: más cerca de 1 indica que cuando sube el atributo, suele subir el tNPS (requiere n≥5).</small>
+    {% else %}
+        <p class="empty-state">Todavía no hay datos suficientes para calcular drivers.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Ranking</p>
+            <h3>Ranking por técnico</h3>
+        </div>
+    </div>
+
+    {% if technician_rankings %}
+        <div class="table-wrap">
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        <th>Técnico</th>
+                        <th>Respuestas</th>
+                        <th>tNPS</th>
+                        <th>Prom.</th>
+                        <th>Coord.</th>
+                        <th>Punt.</th>
+                        <th>Claridad</th>
+                        <th>1ra visita</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in technician_rankings %}
+                        <tr>
+                            <td>{{ row["technician_name"] }} ({{ row["technician_employee_code"] }})</td>
+                            <td>{{ row["total_responses"] }}</td>
+                            <td>{{ row["tnps_score"] }}</td>
+                            <td>{{ row["average_score"] }}</td>
+                            <td>{{ row["booking_ease_avg"] if row["booking_ease_avg"] is not none else "-" }}</td>
+                            <td>{{ row["punctuality_avg"] if row["punctuality_avg"] is not none else "-" }}</td>
+                            <td>{{ row["clarity_avg"] if row["clarity_avg"] is not none else "-" }}</td>
+                            <td>
+                                {% if row["first_visit_yes_rate"] is none %}
+                                    -
+                                {% else %}
+                                    {{ row["first_visit_yes_rate"] }}%
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <small>Incluye técnicos con al menos {{ min_n }} respuestas según los filtros.</small>
+    {% else %}
+        <p class="empty-state">No hay técnicos con al menos {{ min_n }} respuestas para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
 <section class="card tnps-record-card">
     <form method="post" class="import-form tnps-record-form">
         <div class="section-heading">
@@ -265,6 +373,11 @@
                     </option>
                 {% endfor %}
             </select>
+        </label>
+
+        <label>
+            <span>Mín. respuestas ranking</span>
+            <input type="number" name="min_n" min="1" step="1" value="{{ filters['min_n'] or min_n }}">
         </label>
 
         <div class="filter-actions">

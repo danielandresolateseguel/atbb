@@ -2499,6 +2499,30 @@ def create_tnps_response(
     return cursor.lastrowid
 
 
+def _pearson_correlation(pairs, min_samples=5):
+    values = [(float(x), float(y)) for x, y in pairs if x is not None and y is not None]
+    n = len(values)
+    if n < min_samples:
+        return None, n
+    xs = [v[0] for v in values]
+    ys = [v[1] for v in values]
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    sum_xy = 0.0
+    sum_x2 = 0.0
+    sum_y2 = 0.0
+    for x, y in values:
+        dx = x - mean_x
+        dy = y - mean_y
+        sum_xy += dx * dy
+        sum_x2 += dx * dx
+        sum_y2 += dy * dy
+    denom = (sum_x2 * sum_y2) ** 0.5
+    if denom == 0:
+        return None, n
+    return sum_xy / denom, n
+
+
 def fetch_tnps_stats(filters=None):
     filters = filters or {}
     where_clauses = []
@@ -2546,6 +2570,146 @@ def fetch_tnps_stats(filters=None):
     if total:
         tnps_score = round(((promoters / total) - (detractors / total)) * 100)
 
+    driver_row = get_db().execute(
+        f"""
+        SELECT
+            COUNT(booking_ease_score) AS booking_ease_total,
+            AVG(booking_ease_score) AS booking_ease_avg,
+            SUM(CASE WHEN booking_ease_score BETWEEN 9 AND 10 THEN 1 ELSE 0 END) AS booking_ease_promoters,
+            SUM(CASE WHEN booking_ease_score BETWEEN 1 AND 6 THEN 1 ELSE 0 END) AS booking_ease_detractors,
+
+            COUNT(punctuality_score) AS punctuality_total,
+            AVG(punctuality_score) AS punctuality_avg,
+            SUM(CASE WHEN punctuality_score BETWEEN 9 AND 10 THEN 1 ELSE 0 END) AS punctuality_promoters,
+            SUM(CASE WHEN punctuality_score BETWEEN 1 AND 6 THEN 1 ELSE 0 END) AS punctuality_detractors,
+
+            COUNT(communication_clarity_score) AS clarity_total,
+            AVG(communication_clarity_score) AS clarity_avg,
+            SUM(CASE WHEN communication_clarity_score BETWEEN 9 AND 10 THEN 1 ELSE 0 END) AS clarity_promoters,
+            SUM(CASE WHEN communication_clarity_score BETWEEN 1 AND 6 THEN 1 ELSE 0 END) AS clarity_detractors,
+
+            COUNT(issue_resolved_first_visit) AS first_visit_total,
+            AVG(issue_resolved_first_visit) AS first_visit_yes_rate
+        FROM tnps_responses
+        {where_sql}
+        """,
+        tuple(params),
+    ).fetchone()
+
+    calc_attr_nps = lambda promoters_count, detractors_count, total_count: (
+        None
+        if not total_count
+        else round(((promoters_count / total_count) - (detractors_count / total_count)) * 100)
+    )
+
+    booking_ease_total = driver_row["booking_ease_total"] or 0
+    punctuality_total = driver_row["punctuality_total"] or 0
+    clarity_total = driver_row["clarity_total"] or 0
+    first_visit_total = driver_row["first_visit_total"] or 0
+
+    booking_ease_avg = None if booking_ease_total == 0 else round((driver_row["booking_ease_avg"] or 0), 2)
+    punctuality_avg = None if punctuality_total == 0 else round((driver_row["punctuality_avg"] or 0), 2)
+    clarity_avg = None if clarity_total == 0 else round((driver_row["clarity_avg"] or 0), 2)
+    first_visit_yes_rate = None if first_visit_total == 0 else round(((driver_row["first_visit_yes_rate"] or 0) * 100), 1)
+
+    booking_ease_nps = calc_attr_nps(
+        float(driver_row["booking_ease_promoters"] or 0),
+        float(driver_row["booking_ease_detractors"] or 0),
+        float(booking_ease_total),
+    )
+    punctuality_nps = calc_attr_nps(
+        float(driver_row["punctuality_promoters"] or 0),
+        float(driver_row["punctuality_detractors"] or 0),
+        float(punctuality_total),
+    )
+    clarity_nps = calc_attr_nps(
+        float(driver_row["clarity_promoters"] or 0),
+        float(driver_row["clarity_detractors"] or 0),
+        float(clarity_total),
+    )
+
+    impact_rows = get_db().execute(
+        f"""
+        SELECT
+            score,
+            booking_ease_score,
+            punctuality_score,
+            communication_clarity_score,
+            issue_resolved_first_visit
+        FROM tnps_responses
+        {where_sql}
+        """,
+        tuple(params),
+    ).fetchall()
+
+    booking_corr, booking_corr_n = _pearson_correlation(
+        [(row["booking_ease_score"], row["score"]) for row in impact_rows]
+    )
+    punctuality_corr, punctuality_corr_n = _pearson_correlation(
+        [(row["punctuality_score"], row["score"]) for row in impact_rows]
+    )
+    clarity_corr, clarity_corr_n = _pearson_correlation(
+        [(row["communication_clarity_score"], row["score"]) for row in impact_rows]
+    )
+    first_visit_corr, first_visit_corr_n = _pearson_correlation(
+        [(row["issue_resolved_first_visit"], row["score"]) for row in impact_rows]
+    )
+
+    drivers = [
+        {
+            "key": "booking_ease",
+            "label": "Facilidad para coordinar",
+            "value": booking_ease_avg,
+            "value_suffix": "/10",
+            "count": booking_ease_total,
+            "nps": booking_ease_nps,
+            "impact": None if booking_corr is None else round(booking_corr, 2),
+            "impact_count": booking_corr_n,
+        },
+        {
+            "key": "punctuality",
+            "label": "Puntualidad del técnico",
+            "value": punctuality_avg,
+            "value_suffix": "/10",
+            "count": punctuality_total,
+            "nps": punctuality_nps,
+            "impact": None if punctuality_corr is None else round(punctuality_corr, 2),
+            "impact_count": punctuality_corr_n,
+        },
+        {
+            "key": "clarity",
+            "label": "Claridad de la explicación",
+            "value": clarity_avg,
+            "value_suffix": "/10",
+            "count": clarity_total,
+            "nps": clarity_nps,
+            "impact": None if clarity_corr is None else round(clarity_corr, 2),
+            "impact_count": clarity_corr_n,
+        },
+        {
+            "key": "first_visit_resolution",
+            "label": "Resolución en primera visita",
+            "value": first_visit_yes_rate,
+            "value_suffix": "% sí",
+            "count": first_visit_total,
+            "nps": None,
+            "impact": None if first_visit_corr is None else round(first_visit_corr, 2),
+            "impact_count": first_visit_corr_n,
+        },
+    ]
+
+    def driver_priority_key(driver):
+        impact = driver.get("impact")
+        value = driver.get("value")
+        value_rank = 9999 if value is None else float(value)
+        if impact is None:
+            return (2, 0, value_rank, driver.get("label") or "")
+        impact_value = float(impact)
+        impact_group = 0 if impact_value > 0 else 1
+        return (impact_group, -abs(impact_value), value_rank, driver.get("label") or "")
+
+    drivers.sort(key=driver_priority_key)
+
     return {
         "total_responses": total,
         "promoters_count": promoters,
@@ -2553,6 +2717,7 @@ def fetch_tnps_stats(filters=None):
         "detractors_count": detractors,
         "average_score": average_score,
         "tnps_score": tnps_score,
+        "drivers": drivers,
     }
 
 
@@ -2643,6 +2808,92 @@ def fetch_tnps_response_for_audit(audit_id):
         (audit_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def fetch_tnps_technician_rankings(filters=None, min_responses=20, limit=200):
+    filters = filters or {}
+    where_clauses = ["tnps_responses.technician_id IS NOT NULL"]
+    params = []
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    technician_id = filters.get("technician_id")
+
+    if from_date:
+        where_clauses.append("tnps_responses.response_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where_clauses.append("tnps_responses.response_date <= ?")
+        params.append(to_date)
+    if technician_id:
+        where_clauses.append("tnps_responses.technician_id = ?")
+        params.append(technician_id)
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            tnps_responses.technician_id,
+            technicians.name AS technician_name,
+            technicians.employee_code AS technician_employee_code,
+            COUNT(*) AS total_responses,
+            SUM(CASE WHEN score BETWEEN 9 AND 10 THEN 1 ELSE 0 END) AS promoters_count,
+            SUM(CASE WHEN score BETWEEN 0 AND 6 THEN 1 ELSE 0 END) AS detractors_count,
+            AVG(score) AS average_score,
+
+            COUNT(booking_ease_score) AS booking_ease_total,
+            AVG(booking_ease_score) AS booking_ease_avg,
+
+            COUNT(punctuality_score) AS punctuality_total,
+            AVG(punctuality_score) AS punctuality_avg,
+
+            COUNT(communication_clarity_score) AS clarity_total,
+            AVG(communication_clarity_score) AS clarity_avg,
+
+            COUNT(issue_resolved_first_visit) AS first_visit_total,
+            AVG(issue_resolved_first_visit) AS first_visit_yes_rate
+        FROM tnps_responses
+        LEFT JOIN technicians ON technicians.id = tnps_responses.technician_id
+        {where_sql}
+        GROUP BY tnps_responses.technician_id, technicians.name, technicians.employee_code
+        """,
+        tuple(params),
+    ).fetchall()
+
+    result = []
+    for row in rows:
+        total = row["total_responses"] or 0
+        if total < int(min_responses or 0):
+            continue
+        promoters = row["promoters_count"] or 0
+        detractors = row["detractors_count"] or 0
+        tnps_score = round(((promoters / total) - (detractors / total)) * 100) if total else 0
+
+        booking_total = row["booking_ease_total"] or 0
+        punctuality_total = row["punctuality_total"] or 0
+        clarity_total = row["clarity_total"] or 0
+        first_visit_total = row["first_visit_total"] or 0
+
+        result.append(
+            {
+                "technician_id": row["technician_id"],
+                "technician_name": row["technician_name"] or "-",
+                "technician_employee_code": row["technician_employee_code"] or "-",
+                "total_responses": total,
+                "tnps_score": tnps_score,
+                "average_score": round((row["average_score"] or 0), 2) if total else 0,
+                "booking_ease_avg": None if booking_total == 0 else round((row["booking_ease_avg"] or 0), 2),
+                "punctuality_avg": None if punctuality_total == 0 else round((row["punctuality_avg"] or 0), 2),
+                "clarity_avg": None if clarity_total == 0 else round((row["clarity_avg"] or 0), 2),
+                "first_visit_yes_rate": None
+                if first_visit_total == 0
+                else round(((row["first_visit_yes_rate"] or 0) * 100), 1),
+            }
+        )
+
+    result.sort(key=lambda r: (r["tnps_score"], -r["total_responses"], r["technician_name"]))
+    return result[:limit]
 
 
 def fetch_recent_audits(limit=5, auditor_user_id=None, supervisor_scope_names=None):

@@ -81,6 +81,7 @@ from app.models import (
     fetch_tnps_responses,
     fetch_tnps_response_for_audit,
     fetch_tnps_stats,
+    fetch_tnps_technician_rankings,
     fetch_material_by_code,
     fetch_material_catalog,
     fetch_materials_summary,
@@ -2597,6 +2598,7 @@ def tnps():
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
         "technician_id": request.args.get("technician_id", "").strip(),
+        "min_n": request.args.get("min_n", "").strip(),
     }
 
     technician_id = None
@@ -2606,6 +2608,14 @@ def tnps():
         except ValueError:
             flash("El tecnico seleccionado no es valido.", "error")
             filters["technician_id"] = ""
+
+    min_n = 20
+    if filters["min_n"]:
+        try:
+            min_n = max(1, int(filters["min_n"]))
+        except ValueError:
+            flash("El minimo de respuestas no es valido.", "error")
+            filters["min_n"] = ""
 
     query_filters = {
         "from_date": filters["from_date"],
@@ -2689,6 +2699,7 @@ def tnps():
 
     technicians = fetch_technicians()
     stats = fetch_tnps_stats(query_filters)
+    technician_rankings = fetch_tnps_technician_rankings(query_filters, min_responses=min_n)
     responses = fetch_tnps_responses(query_filters)
 
     return render_template(
@@ -2696,6 +2707,8 @@ def tnps():
         filters=filters,
         technicians=technicians,
         stats=stats,
+        technician_rankings=technician_rankings,
+        min_n=min_n,
         responses=responses,
         audit_context=audit_context,
         today=datetime.now().date().isoformat(),
