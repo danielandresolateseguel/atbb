@@ -72,6 +72,7 @@
         <div class="info-list">
             <p><strong>Estado actual:</strong> {{ finding["finding_status"]|replace('_', ' ')|capitalize }}</p>
             <p><strong>Respuesta:</strong> {{ finding["response_notes"] or "-" }}</p>
+            <p><strong>Criterio de cierre:</strong> {{ finding["closure_criteria"] or "-" }}</p>
             <p><strong>Respondido por:</strong> {{ finding["responded_by_username"] or "-" }}</p>
             <p><strong>Respondido el:</strong> {{ finding["responded_at"] or "-" }}</p>
             <p><strong>Resuelto el:</strong> {{ finding["resolved_at"] or "-" }}</p>
@@ -109,6 +110,24 @@
     </article>
 </section>
 
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Eficacia</p>
+                <h3>Verificación post-cierre</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Fecha objetivo:</strong> {{ finding["effectiveness_due_date"] or "-" }}</p>
+            <p><strong>Estado:</strong> {{ finding["effectiveness_status"]|replace('_', ' ')|capitalize if finding["effectiveness_status"] else "-" }}</p>
+            <p><strong>Notas:</strong> {{ finding["effectiveness_notes"] or "-" }}</p>
+            <p><strong>Verificado por:</strong> {{ finding["effectiveness_verified_by_username"] or "-" }}</p>
+            <p><strong>Verificado el:</strong> {{ finding["effectiveness_verified_at"] or "-" }}</p>
+        </div>
+    </article>
+</section>
+
 {% set item_evidence = finding["photo_path"]|audit_photo_paths %}
 {% if item_evidence %}
     <section class="card">
@@ -136,7 +155,9 @@
     </section>
 {% endif %}
 
-{% if can_respond_findings %}
+{% set is_validated = (finding["validation_status"] or "")|lower == "validado" or (finding["finding_status"] or "")|lower == "validado" %}
+
+{% if can_respond_findings and not is_validated %}
     <section class="card">
         <div class="section-heading">
             <div>
@@ -157,10 +178,44 @@
                 <input type="file" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
             </label>
             <label>
+                <span>Criterio de cierre</span>
+                <textarea name="closure_criteria" rows="3">{{ finding["closure_criteria"] or "" }}</textarea>
+            </label>
+            <label>
+                <span>Fecha verificación de eficacia</span>
+                <input type="date" name="effectiveness_due_date" value="{{ finding['effectiveness_due_date'] or '' }}">
+            </label>
+            <label>
                 <span>Respuesta del supervisor</span>
                 <textarea name="response_notes" rows="6" required>{{ finding["response_notes"] or "" }}</textarea>
             </label>
             <button class="button button-primary" type="submit">Guardar respuesta</button>
+        </form>
+    </section>
+{% endif %}
+
+{% if can_verify_findings_effectiveness and (finding["finding_status"] or "")|lower == "validado" %}
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Control</p>
+                <h3>Registrar verificación de eficacia</h3>
+            </div>
+        </div>
+        <form method="post" action="{{ url_for('main.finding_effectiveness_update', finding_id=finding['id']) }}" class="form-grid">
+            <label>
+                <span>Resultado</span>
+                <select name="effectiveness_status" required>
+                    <option value="pendiente" {% if (finding["effectiveness_status"] or "")|lower == "pendiente" or not finding["effectiveness_status"] %}selected{% endif %}>Pendiente</option>
+                    <option value="eficaz" {% if (finding["effectiveness_status"] or "")|lower == "eficaz" %}selected{% endif %}>Eficaz</option>
+                    <option value="no_eficaz" {% if (finding["effectiveness_status"] or "")|lower == "no_eficaz" %}selected{% endif %}>No eficaz</option>
+                </select>
+            </label>
+            <label>
+                <span>Notas</span>
+                <textarea name="effectiveness_notes" rows="5">{{ finding["effectiveness_notes"] or "" }}</textarea>
+            </label>
+            <button class="button button-primary" type="submit">Guardar verificación</button>
         </form>
     </section>
 {% endif %}
@@ -187,6 +242,39 @@
             </label>
             <button class="button button-primary" type="submit">Guardar validación</button>
         </form>
+    </section>
+{% endif %}
+
+{% if finding_events %}
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Trazabilidad</p>
+                <h3>Historial de cambios</h3>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Usuario</th>
+                        <th>Evento</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ev in finding_events %}
+                        <tr>
+                            <td>{{ ev["created_at"] or "-" }}</td>
+                            <td>{{ ev["actor_username"] or "-" }}</td>
+                            <td>{{ ev["event_type"]|replace('_', ' ')|capitalize }}</td>
+                            <td>{{ ev["detail"] or "-" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </section>
 {% endif %}
 {% endblock %}

@@ -1,5 +1,9 @@
+import os
+
 from app import create_app
 
+
+os.environ.setdefault("FLASK_DEBUG", "1")
 
 app = create_app()
 

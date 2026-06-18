@@ -42,6 +42,7 @@ from app.models import (
     fetch_findings,
     fetch_finding_stats,
     fetch_finding_detail,
+    fetch_finding_events,
     fetch_audit_items,
     fetch_audit_supply_requests,
     fetch_all_audits,
@@ -102,6 +103,7 @@ from app.models import (
     import_vehicles,
     replace_user_supervisor_scopes,
     update_finding_response,
+    update_finding_effectiveness,
     validate_finding,
     update_audit_record_scope,
     update_mobile_unit_technician,
@@ -400,6 +402,11 @@ def can_respond_findings():
 def can_validate_findings():
     user = current_user()
     return bool(user and (user.get("role") in {"admin", "gerente"}))
+
+
+def can_verify_findings_effectiveness():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "gerente", "auditor"}))
 
 
 def current_supervisor_scope_names():
@@ -1379,6 +1386,7 @@ def inject_auth_context():
         "can_view_findings": can_view_findings(),
         "can_respond_findings": can_respond_findings(),
         "can_validate_findings": can_validate_findings(),
+        "can_verify_findings_effectiveness": can_verify_findings_effectiveness(),
     }
 
 
@@ -3396,7 +3404,8 @@ def finding_detail(finding_id):
     )
     if not finding:
         abort(404)
-    return render_template("finding_detail.html", finding=finding)
+    finding_events = fetch_finding_events(finding_id)
+    return render_template("finding_detail.html", finding=finding, finding_events=finding_events)
 
 
 @main.route("/findings/<int:finding_id>/respond", methods=["POST"])
@@ -3415,6 +3424,8 @@ def finding_respond(finding_id):
     try:
         response_notes = (request.form.get("response_notes") or "").strip().upper()
         finding_status = (request.form.get("finding_status") or "").strip().lower()
+        closure_criteria = (request.form.get("closure_criteria") or "").strip().upper()
+        effectiveness_due_date = (request.form.get("effectiveness_due_date") or "").strip()
         evidence_file = request.files.get("evidence_file")
         evidence_path = None
         if has_uploaded_file(evidence_file):
@@ -3425,6 +3436,8 @@ def finding_respond(finding_id):
             finding_status=finding_status,
             response_notes=response_notes,
             evidence_path=evidence_path,
+            closure_criteria=closure_criteria,
+            effectiveness_due_date=effectiveness_due_date,
             responded_by_user_id=current_user()["id"],
         )
         flash("Respuesta del hallazgo guardada.", "success")
@@ -3453,13 +3466,48 @@ def finding_validate(finding_id):
         flash("La accion de validacion no es valida.", "error")
         return redirect(url_for("main.finding_detail", finding_id=finding_id))
 
-    validate_finding(
+    try:
+        validate_finding(
+            finding_id,
+            validated_by_user_id=current_user()["id"],
+            approved=(validation_action == "approve"),
+            validation_notes=validation_notes,
+        )
+        flash("Validacion actualizada.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("main.finding_detail", finding_id=finding_id))
+
+
+@main.route("/findings/<int:finding_id>/effectiveness", methods=["POST"])
+def finding_effectiveness_update(finding_id):
+    if not can_verify_findings_effectiveness():
+        abort(403)
+
+    finding = fetch_finding_detail(
         finding_id,
-        validated_by_user_id=current_user()["id"],
-        approved=(validation_action == "approve"),
-        validation_notes=validation_notes,
+        auditor_user_id=current_auditor_user_id(),
+        supervisor_scope_names=current_supervisor_scope_names(),
     )
-    flash("Validacion actualizada.", "success")
+    if not finding:
+        abort(404)
+
+    effectiveness_status = (request.form.get("effectiveness_status") or "").strip().lower()
+    effectiveness_notes = (request.form.get("effectiveness_notes") or "").strip().upper()
+    try:
+        user = current_user()
+        allow_override = bool(user and user.get("role") in {"admin", "gerente"})
+        update_finding_effectiveness(
+            finding_id,
+            effectiveness_status=effectiveness_status,
+            effectiveness_notes=effectiveness_notes,
+            verified_by_user_id=current_user()["id"],
+            allow_override=allow_override,
+        )
+        flash("Verificación de eficacia actualizada.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+
     return redirect(url_for("main.finding_detail", finding_id=finding_id))
 
 

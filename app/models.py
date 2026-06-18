@@ -1,6 +1,7 @@
 import sqlite3
 import unicodedata
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
@@ -340,6 +341,12 @@ def init_db():
             priority TEXT NOT NULL DEFAULT 'media',
             response_notes TEXT,
             evidence_path TEXT,
+            closure_criteria TEXT,
+            effectiveness_due_date TEXT,
+            effectiveness_status TEXT,
+            effectiveness_notes TEXT,
+            effectiveness_verified_at TEXT,
+            effectiveness_verified_by_user_id INTEGER,
             responded_by_user_id INTEGER,
             responded_at TEXT,
             resolved_at TEXT,
@@ -351,8 +358,20 @@ def init_db():
             FOREIGN KEY (audit_item_id) REFERENCES audit_items (id),
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
             FOREIGN KEY (owner_user_id) REFERENCES users (id),
+            FOREIGN KEY (effectiveness_verified_by_user_id) REFERENCES users (id),
             FOREIGN KEY (responded_by_user_id) REFERENCES users (id),
             FOREIGN KEY (validated_by_user_id) REFERENCES users (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS audit_finding_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finding_id INTEGER NOT NULL,
+            actor_user_id INTEGER,
+            event_type TEXT NOT NULL,
+            detail TEXT,
+            FOREIGN KEY (finding_id) REFERENCES audit_findings (id),
+            FOREIGN KEY (actor_user_id) REFERENCES users (id)
         );
 
         CREATE TABLE IF NOT EXISTS tnps_responses (
@@ -609,6 +628,12 @@ def init_db_postgres():
             priority TEXT NOT NULL DEFAULT 'media',
             response_notes TEXT,
             evidence_path TEXT,
+            closure_criteria TEXT,
+            effectiveness_due_date TEXT,
+            effectiveness_status TEXT,
+            effectiveness_notes TEXT,
+            effectiveness_verified_at TIMESTAMPTZ,
+            effectiveness_verified_by_user_id INTEGER REFERENCES users (id),
             responded_by_user_id INTEGER REFERENCES users (id),
             responded_at TIMESTAMPTZ,
             resolved_at TIMESTAMPTZ,
@@ -616,6 +641,19 @@ def init_db_postgres():
             validated_at TIMESTAMPTZ,
             validation_status TEXT,
             validation_notes TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_finding_events (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finding_id INTEGER NOT NULL REFERENCES audit_findings (id),
+            actor_user_id INTEGER REFERENCES users (id),
+            event_type TEXT NOT NULL,
+            detail TEXT
         )
         """
     )
@@ -641,6 +679,7 @@ def init_db_postgres():
 
     ensure_technicians_columns_postgres(cursor)
     ensure_audits_columns_postgres(cursor)
+    ensure_audit_findings_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
     connection.commit()
     connection.close()
@@ -985,6 +1024,12 @@ def ensure_legacy_columns(connection):
             priority TEXT NOT NULL DEFAULT 'media',
             response_notes TEXT,
             evidence_path TEXT,
+            closure_criteria TEXT,
+            effectiveness_due_date TEXT,
+            effectiveness_status TEXT,
+            effectiveness_notes TEXT,
+            effectiveness_verified_at TEXT,
+            effectiveness_verified_by_user_id INTEGER,
             responded_by_user_id INTEGER,
             responded_at TEXT,
             resolved_at TEXT,
@@ -996,8 +1041,29 @@ def ensure_legacy_columns(connection):
             FOREIGN KEY (audit_item_id) REFERENCES audit_items (id),
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
             FOREIGN KEY (owner_user_id) REFERENCES users (id),
+            FOREIGN KEY (effectiveness_verified_by_user_id) REFERENCES users (id),
             FOREIGN KEY (responded_by_user_id) REFERENCES users (id),
             FOREIGN KEY (validated_by_user_id) REFERENCES users (id)
+        )
+        """
+    )
+    add_column_if_missing(connection, "audit_findings", "closure_criteria", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "effectiveness_due_date", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "effectiveness_status", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "effectiveness_notes", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "effectiveness_verified_at", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "effectiveness_verified_by_user_id", "INTEGER")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_finding_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finding_id INTEGER NOT NULL,
+            actor_user_id INTEGER,
+            event_type TEXT NOT NULL,
+            detail TEXT,
+            FOREIGN KEY (finding_id) REFERENCES audit_findings (id),
+            FOREIGN KEY (actor_user_id) REFERENCES users (id)
         )
         """
     )
@@ -1196,6 +1262,75 @@ def ensure_audits_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_company_snapshot TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_supervisor_snapshot TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_center_snapshot TEXT")
+
+
+def ensure_audit_findings_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS closure_criteria TEXT")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_due_date TEXT")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_status TEXT")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_notes TEXT")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_verified_at TIMESTAMPTZ")
+    cursor.execute(
+        "ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_verified_by_user_id INTEGER REFERENCES users (id)"
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_finding_events (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finding_id INTEGER NOT NULL REFERENCES audit_findings (id),
+            actor_user_id INTEGER REFERENCES users (id),
+            event_type TEXT NOT NULL,
+            detail TEXT
+        )
+        """
+    )
+
+
+def create_finding_event(finding_id, actor_user_id, event_type, detail=None):
+    safe_type = (event_type or "").strip().lower()
+    if not safe_type:
+        return False
+    detail_value = None
+    if detail is not None:
+        if isinstance(detail, str):
+            detail_value = detail.strip() or None
+        else:
+            detail_value = json.dumps(detail, ensure_ascii=False)
+
+    get_db().execute(
+        """
+        INSERT INTO audit_finding_events (finding_id, actor_user_id, event_type, detail)
+        VALUES (?, ?, ?, ?)
+        """,
+        (finding_id, actor_user_id, safe_type, detail_value),
+    )
+    return True
+
+
+def fetch_finding_events(finding_id, limit=100):
+    created_at_expr = (
+        "audit_finding_events.created_at"
+        if is_postgres()
+        else "datetime(audit_finding_events.created_at, 'localtime')"
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audit_finding_events.id,
+            {created_at_expr} AS created_at,
+            audit_finding_events.event_type,
+            audit_finding_events.detail,
+            users.username AS actor_username
+        FROM audit_finding_events
+        LEFT JOIN users ON users.id = audit_finding_events.actor_user_id
+        WHERE audit_finding_events.finding_id = ?
+        ORDER BY audit_finding_events.id DESC
+        LIMIT ?
+        """,
+        (finding_id, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def ensure_mobile_unit_codes_normalized_sqlite(connection):
@@ -3727,6 +3862,8 @@ def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=No
             audit_findings.priority,
             audit_findings.validation_status,
             audit_findings.evidence_path,
+            audit_findings.effectiveness_due_date,
+            audit_findings.effectiveness_status,
             {created_at_expr} AS created_at,
             {updated_at_expr} AS updated_at,
             audits.audit_date,
@@ -3760,6 +3897,11 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
     responded_at_expr = "audit_findings.responded_at" if is_postgres() else "datetime(audit_findings.responded_at, 'localtime')"
     validated_at_expr = "audit_findings.validated_at" if is_postgres() else "datetime(audit_findings.validated_at, 'localtime')"
     resolved_at_expr = "audit_findings.resolved_at" if is_postgres() else "datetime(audit_findings.resolved_at, 'localtime')"
+    effectiveness_verified_at_expr = (
+        "audit_findings.effectiveness_verified_at"
+        if is_postgres()
+        else "datetime(audit_findings.effectiveness_verified_at, 'localtime')"
+    )
     where_sql, params = _build_findings_where_sql(
         {"finding_id": finding_id},
         auditor_user_id=auditor_user_id,
@@ -3787,6 +3929,11 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
             audit_findings.priority,
             audit_findings.response_notes,
             audit_findings.evidence_path,
+            audit_findings.closure_criteria,
+            audit_findings.effectiveness_due_date,
+            audit_findings.effectiveness_status,
+            audit_findings.effectiveness_notes,
+            {effectiveness_verified_at_expr} AS effectiveness_verified_at,
             audit_findings.validation_status,
             audit_findings.validation_notes,
             {created_at_expr} AS created_at,
@@ -3818,7 +3965,8 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
             audit_items.photo_path,
             owners.username AS owner_username,
             responders.username AS responded_by_username,
-            validators.username AS validated_by_username
+            validators.username AS validated_by_username,
+            effectiveness_verifiers.username AS effectiveness_verified_by_username
         FROM audit_findings
         INNER JOIN audits ON audits.id = audit_findings.audit_id
         INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
@@ -3827,6 +3975,7 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
         LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
         LEFT JOIN users AS responders ON responders.id = audit_findings.responded_by_user_id
         LEFT JOIN users AS validators ON validators.id = audit_findings.validated_by_user_id
+        LEFT JOIN users AS effectiveness_verifiers ON effectiveness_verifiers.id = audit_findings.effectiveness_verified_by_user_id
         {where_sql}
         """,
         tuple(query_params),
@@ -3834,7 +3983,30 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
     return dict(row) if row else None
 
 
-def update_finding_response(finding_id, finding_status, response_notes, evidence_path, responded_by_user_id):
+def _default_effectiveness_due_date_iso():
+    days = int(current_app.config.get("FINDING_EFFECTIVENESS_CHECK_DAYS") or 30)
+    return (datetime.utcnow().date() + timedelta(days=days)).isoformat()
+
+
+def _normalize_effectiveness_due_date(value):
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except ValueError as exc:
+        raise ValueError("La fecha de verificación de eficacia no es válida (usa AAAA-MM-DD).") from exc
+
+
+def update_finding_response(
+    finding_id,
+    finding_status,
+    response_notes,
+    evidence_path,
+    closure_criteria,
+    effectiveness_due_date,
+    responded_by_user_id,
+):
     safe_status = (finding_status or "").strip().lower()
     if safe_status not in {"respondido", "resuelto"}:
         raise ValueError("El estado de respuesta no es válido.")
@@ -3844,14 +4016,67 @@ def update_finding_response(finding_id, finding_status, response_notes, evidence
         raise ValueError("Debes ingresar una respuesta para el hallazgo.")
 
     existing = get_db().execute(
-        "SELECT evidence_path FROM audit_findings WHERE id = ?",
+        """
+        SELECT
+            finding_status,
+            validation_status,
+            response_notes,
+            evidence_path,
+            closure_criteria,
+            effectiveness_due_date,
+            effectiveness_status
+        FROM audit_findings
+        WHERE id = ?
+        """,
         (finding_id,),
     ).fetchone()
     if not existing:
         return False
 
-    previous_evidence = existing["evidence_path"] if isinstance(existing, dict) else existing[0]
+    if isinstance(existing, dict):
+        previous_finding_status = (existing.get("finding_status") or "").strip().lower()
+        previous_validation_status = (existing.get("validation_status") or "").strip().lower()
+        previous_response_notes = existing.get("response_notes")
+        previous_evidence = existing.get("evidence_path")
+        previous_criteria = existing.get("closure_criteria")
+        previous_due_date = existing.get("effectiveness_due_date")
+        previous_effectiveness_status = existing.get("effectiveness_status")
+    else:
+        previous_finding_status = (existing[0] or "").strip().lower()
+        previous_validation_status = (existing[1] or "").strip().lower()
+        previous_response_notes = existing[2]
+        previous_evidence = existing[3]
+        previous_criteria = existing[4]
+        previous_due_date = existing[5]
+        previous_effectiveness_status = existing[6]
+
+    if previous_validation_status == "validado" or previous_finding_status == "validado":
+        raise ValueError("No puedes editar un hallazgo ya validado.")
+
     evidence_value = evidence_path if evidence_path is not None else previous_evidence
+    criteria_value = (closure_criteria or "").strip() or previous_criteria or None
+    due_date_value = _normalize_effectiveness_due_date(effectiveness_due_date) or previous_due_date or None
+    effectiveness_status_value = (previous_effectiveness_status or "").strip() or None
+
+    if safe_status == "resuelto":
+        if not criteria_value:
+            raise ValueError("Debes ingresar el criterio de cierre para marcar el hallazgo como resuelto.")
+        if not due_date_value:
+            due_date_value = _default_effectiveness_due_date_iso()
+        if not effectiveness_status_value:
+            effectiveness_status_value = "pendiente"
+
+    changes = []
+    if previous_finding_status != safe_status:
+        changes.append(f"estado: {previous_finding_status or '-'} -> {safe_status}")
+    if (previous_response_notes or "") != (notes_value or ""):
+        changes.append("respuesta actualizada")
+    if (previous_criteria or "") != (criteria_value or ""):
+        changes.append("criterio de cierre actualizado")
+    if (previous_due_date or "") != (due_date_value or ""):
+        changes.append("fecha de eficacia actualizada")
+    if (previous_evidence or "") != (evidence_value or ""):
+        changes.append("evidencia actualizada")
 
     get_db().execute(
         """
@@ -3860,37 +4085,218 @@ def update_finding_response(finding_id, finding_status, response_notes, evidence
             finding_status = ?,
             response_notes = ?,
             evidence_path = ?,
+            closure_criteria = ?,
+            effectiveness_due_date = ?,
+            effectiveness_status = ?,
             responded_by_user_id = ?,
             responded_at = CURRENT_TIMESTAMP,
             resolved_at = CASE WHEN ? = 'resuelto' THEN CURRENT_TIMESTAMP ELSE resolved_at END,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (safe_status, notes_value, evidence_value, responded_by_user_id, safe_status, finding_id),
+        (
+            safe_status,
+            notes_value,
+            evidence_value,
+            criteria_value,
+            due_date_value,
+            effectiveness_status_value,
+            responded_by_user_id,
+            safe_status,
+            finding_id,
+        ),
     )
+    if changes:
+        create_finding_event(
+            finding_id,
+            actor_user_id=responded_by_user_id,
+            event_type="respuesta",
+            detail="; ".join(changes),
+        )
     get_db().commit()
     return True
 
 
 def validate_finding(finding_id, validated_by_user_id, approved, validation_notes=None):
+    existing = get_db().execute(
+        """
+        SELECT
+            finding_status,
+            validation_status,
+            evidence_path,
+            closure_criteria,
+            effectiveness_due_date,
+            effectiveness_status
+        FROM audit_findings
+        WHERE id = ?
+        """,
+        (finding_id,),
+    ).fetchone()
+    if not existing:
+        return False
+
+    if isinstance(existing, dict):
+        current_status = (existing.get("finding_status") or "").strip().lower()
+        current_validation_status = (existing.get("validation_status") or "").strip().lower()
+        evidence_path = existing.get("evidence_path")
+        closure_criteria = (existing.get("closure_criteria") or "").strip()
+        effectiveness_due_date = (existing.get("effectiveness_due_date") or "").strip()
+        effectiveness_status = (existing.get("effectiveness_status") or "").strip()
+    else:
+        current_status = (existing[0] or "").strip().lower()
+        current_validation_status = (existing[1] or "").strip().lower()
+        evidence_path = existing[2]
+        closure_criteria = (existing[3] or "").strip()
+        effectiveness_due_date = (existing[4] or "").strip()
+        effectiveness_status = (existing[5] or "").strip()
+
+    due_date_value = effectiveness_due_date or None
+    effectiveness_status_value = effectiveness_status or None
+
+    if approved:
+        if current_status != "resuelto":
+            raise ValueError("El hallazgo debe estar en estado resuelto antes de validar el cierre.")
+        if not closure_criteria:
+            raise ValueError("Falta el criterio de cierre. Completa la respuesta del supervisor antes de validar.")
+        if not due_date_value:
+            due_date_value = _default_effectiveness_due_date_iso()
+        if not effectiveness_status_value:
+            effectiveness_status_value = "pendiente"
+
     status = "validado" if approved else "rechazado"
     finding_status = "validado" if approved else "reabierto"
     notes_value = (validation_notes or "").strip() or None
 
-    get_db().execute(
-        """
-        UPDATE audit_findings
-        SET
-            validation_status = ?,
-            validation_notes = ?,
-            validated_by_user_id = ?,
-            validated_at = CURRENT_TIMESTAMP,
-            finding_status = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-        """,
-        (status, notes_value, validated_by_user_id, finding_status, finding_id),
+    if approved:
+        get_db().execute(
+            """
+            UPDATE audit_findings
+            SET
+                validation_status = ?,
+                validation_notes = ?,
+                validated_by_user_id = ?,
+                validated_at = CURRENT_TIMESTAMP,
+                finding_status = ?,
+                effectiveness_due_date = COALESCE(effectiveness_due_date, ?),
+                effectiveness_status = COALESCE(NULLIF(effectiveness_status, ''), ?),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                status,
+                notes_value,
+                validated_by_user_id,
+                finding_status,
+                due_date_value,
+                effectiveness_status_value,
+                finding_id,
+            ),
+        )
+    else:
+        get_db().execute(
+            """
+            UPDATE audit_findings
+            SET
+                validation_status = ?,
+                validation_notes = ?,
+                validated_by_user_id = ?,
+                validated_at = CURRENT_TIMESTAMP,
+                finding_status = ?,
+                effectiveness_due_date = NULL,
+                effectiveness_status = NULL,
+                effectiveness_notes = NULL,
+                effectiveness_verified_by_user_id = NULL,
+                effectiveness_verified_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                status,
+                notes_value,
+                validated_by_user_id,
+                finding_status,
+                finding_id,
+            ),
+        )
+    create_finding_event(
+        finding_id,
+        actor_user_id=validated_by_user_id,
+        event_type="validacion",
+        detail=("validado" if approved else "reabierto") + (f"; notas: {notes_value}" if notes_value else ""),
     )
+    get_db().commit()
+    return True
+
+
+def update_finding_effectiveness(
+    finding_id,
+    effectiveness_status,
+    effectiveness_notes,
+    verified_by_user_id,
+    allow_override=False,
+):
+    safe_status = (effectiveness_status or "").strip().lower()
+    if safe_status not in {"pendiente", "eficaz", "no_eficaz"}:
+        raise ValueError("El resultado de eficacia no es válido.")
+
+    notes_value = (effectiveness_notes or "").strip() or None
+
+    existing = get_db().execute(
+        "SELECT finding_status, effectiveness_status FROM audit_findings WHERE id = ?",
+        (finding_id,),
+    ).fetchone()
+    if not existing:
+        return False
+
+    if isinstance(existing, dict):
+        current_finding_status = (existing.get("finding_status") or "").strip().lower()
+        previous_status = (existing.get("effectiveness_status") or "").strip().lower()
+    else:
+        current_finding_status = (existing[0] or "").strip().lower()
+        previous_status = (existing[1] or "").strip().lower()
+
+    if safe_status in {"eficaz", "no_eficaz"} and current_finding_status != "validado":
+        raise ValueError("Solo puedes registrar eficacia una vez que el hallazgo esté validado.")
+
+    if previous_status in {"eficaz", "no_eficaz"} and safe_status != previous_status and not allow_override:
+        raise ValueError("La eficacia ya fue registrada y no se puede modificar.")
+
+    if safe_status == "pendiente":
+        get_db().execute(
+            """
+            UPDATE audit_findings
+            SET
+                effectiveness_status = ?,
+                effectiveness_notes = ?,
+                effectiveness_verified_by_user_id = NULL,
+                effectiveness_verified_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            ("pendiente", notes_value, finding_id),
+        )
+    else:
+        get_db().execute(
+            """
+            UPDATE audit_findings
+            SET
+                effectiveness_status = ?,
+                effectiveness_notes = ?,
+                effectiveness_verified_by_user_id = ?,
+                effectiveness_verified_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (safe_status, notes_value, verified_by_user_id, finding_id),
+        )
+
+    if previous_status != safe_status:
+        create_finding_event(
+            finding_id,
+            actor_user_id=verified_by_user_id,
+            event_type="eficacia",
+            detail=f"{previous_status or '-'} -> {safe_status}",
+        )
     get_db().commit()
     return True
 
