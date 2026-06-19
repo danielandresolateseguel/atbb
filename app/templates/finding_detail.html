@@ -12,7 +12,7 @@
         </p>
     </div>
     <div class="hero-actions">
-        <span class="badge badge-{{ finding['finding_status']|replace('_', '-') }}">{{ finding["finding_status"]|replace('_', ' ')|capitalize }}</span>
+        <span class="badge badge-{{ finding['finding_status']|replace('_', '-') }}">{{ finding["finding_status"]|finding_status_label }}</span>
         <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=finding['audit_id']) }}">Ver auditoría</a>
         <a class="button button-secondary" href="{{ url_for('main.findings_list') }}">Volver a la bandeja</a>
     </div>
@@ -70,7 +70,7 @@
             </div>
         </div>
         <div class="info-list">
-            <p><strong>Estado actual:</strong> {{ finding["finding_status"]|replace('_', ' ')|capitalize }}</p>
+            <p><strong>Estado actual:</strong> {{ finding["finding_status"]|finding_status_label }}</p>
             <p><strong>Respuesta:</strong> {{ finding["response_notes"] or "-" }}</p>
             <p><strong>Criterio de cierre:</strong> {{ finding["closure_criteria"] or "-" }}</p>
             <p><strong>Respondido por:</strong> {{ finding["responded_by_username"] or "-" }}</p>
@@ -165,36 +165,80 @@
                 <h3>Responder hallazgo</h3>
             </div>
         </div>
-        <form method="post" action="{{ url_for('main.finding_respond', finding_id=finding['id']) }}" enctype="multipart/form-data" class="form-grid">
+        <form method="post" action="{{ url_for('main.finding_respond', finding_id=finding['id']) }}" enctype="multipart/form-data" class="form-grid" id="finding_response_form">
             <label>
                 <span>Estado</span>
-                <select name="finding_status" required>
-                    <option value="respondido" {% if finding["finding_status"] == "respondido" %}selected{% endif %}>Respondido</option>
-                    <option value="resuelto" {% if finding["finding_status"] == "resuelto" %}selected{% endif %}>Resuelto</option>
+                <select name="finding_status" required id="finding_status_select">
+                    <option value="respondido" {% if finding["finding_status"] == "respondido" %}selected{% endif %}>En tratamiento</option>
+                    <option value="resuelto" {% if finding["finding_status"] == "resuelto" %}selected{% endif %}>Cerrado (pendiente verificación de eficacia)</option>
                 </select>
+            </label>
+            <label>
+                <span>Fecha verificación de eficacia</span>
+                <input type="date" name="effectiveness_due_date" value="{{ finding['effectiveness_due_date'] or '' }}" id="effectiveness_due_date_input">
             </label>
             <label>
                 <span>Evidencia (opcional)</span>
                 <input type="file" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
             </label>
             <label>
-                <span>Criterio de cierre</span>
-                <textarea name="closure_criteria" rows="3">{{ finding["closure_criteria"] or "" }}</textarea>
-            </label>
-            <label>
-                <span>Fecha verificación de eficacia</span>
-                <input type="date" name="effectiveness_due_date" value="{{ finding['effectiveness_due_date'] or '' }}">
-            </label>
-            <label>
                 <span>Respuesta del supervisor</span>
                 <textarea name="response_notes" rows="6" required>{{ finding["response_notes"] or "" }}</textarea>
             </label>
+            <label>
+                <span>Criterio de cierre</span>
+                <textarea name="closure_criteria" rows="3" id="closure_criteria_input">{{ finding["closure_criteria"] or "" }}</textarea>
+            </label>
             <button class="button button-primary" type="submit">Guardar respuesta</button>
+        </form>
+        <script>
+            (function () {
+                const form = document.getElementById("finding_response_form");
+                if (!form) return;
+                const statusSelect = document.getElementById("finding_status_select");
+                const closureCriteriaInput = document.getElementById("closure_criteria_input");
+                const dueDateInput = document.getElementById("effectiveness_due_date_input");
+                if (!statusSelect || !closureCriteriaInput || !dueDateInput) return;
+
+                function syncRequirements() {
+                    const isResolved = statusSelect.value === "resuelto";
+                    closureCriteriaInput.required = isResolved;
+                    dueDateInput.required = isResolved;
+                }
+
+                statusSelect.addEventListener("change", syncRequirements);
+                syncRequirements();
+            })();
+        </script>
+    </section>
+{% endif %}
+
+{% if can_validate_findings %}
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Control</p>
+                <h3>Validación del gerente</h3>
+            </div>
+        </div>
+        <form method="post" action="{{ url_for('main.finding_validate', finding_id=finding['id']) }}" class="form-grid" id="finding_validation_form">
+            <label>
+                <span>Acción</span>
+                <select name="validation_action" required>
+                    <option value="approve">Validar cierre</option>
+                    <option value="reject">Reabrir</option>
+                </select>
+            </label>
+            <label>
+                <span>Notas de validación</span>
+                <textarea name="validation_notes" rows="5">{{ finding["validation_notes"] or "" }}</textarea>
+            </label>
+            <button class="button button-primary" type="submit">Guardar validación</button>
         </form>
     </section>
 {% endif %}
 
-{% if can_verify_findings_effectiveness and (finding["finding_status"] or "")|lower == "validado" %}
+{% if can_verify_findings_effectiveness and is_validated %}
     <section class="card">
         <div class="section-heading">
             <div>
@@ -202,7 +246,7 @@
                 <h3>Registrar verificación de eficacia</h3>
             </div>
         </div>
-        <form method="post" action="{{ url_for('main.finding_effectiveness_update', finding_id=finding['id']) }}" class="form-grid">
+        <form method="post" action="{{ url_for('main.finding_effectiveness_update', finding_id=finding['id']) }}" class="form-grid" id="finding_effectiveness_form">
             <label>
                 <span>Resultado</span>
                 <select name="effectiveness_status" required>
@@ -216,31 +260,6 @@
                 <textarea name="effectiveness_notes" rows="5">{{ finding["effectiveness_notes"] or "" }}</textarea>
             </label>
             <button class="button button-primary" type="submit">Guardar verificación</button>
-        </form>
-    </section>
-{% endif %}
-
-{% if can_validate_findings %}
-    <section class="card">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Control</p>
-                <h3>Validar o reabrir</h3>
-            </div>
-        </div>
-        <form method="post" action="{{ url_for('main.finding_validate', finding_id=finding['id']) }}" class="form-grid">
-            <label>
-                <span>Acción</span>
-                <select name="validation_action" required>
-                    <option value="approve">Validar cierre</option>
-                    <option value="reject">Reabrir</option>
-                </select>
-            </label>
-            <label>
-                <span>Notas de validación</span>
-                <textarea name="validation_notes" rows="5">{{ finding["validation_notes"] or "" }}</textarea>
-            </label>
-            <button class="button button-primary" type="submit">Guardar validación</button>
         </form>
     </section>
 {% endif %}

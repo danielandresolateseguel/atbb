@@ -270,6 +270,20 @@ def non_compliance_reason_label(value):
     return raw.replace("_", " ").capitalize()
 
 
+@main.app_template_filter("finding_status_label")
+def finding_status_label(value):
+    raw = (value or "").strip().lower()
+    labels = {
+        "nuevo": "Nuevo",
+        "respondido": "En tratamiento",
+        "resuelto": "Cerrado (pendiente verificación de eficacia)",
+        "cerrado_definitivo": "Cerrado definitivo",
+        "reabierto": "Reabierto",
+        "validado": "Validado",
+    }
+    return labels.get(raw) or (raw.replace("_", " ").capitalize() if raw else "-")
+
+
 @main.app_template_filter("audit_photo_paths")
 def audit_photo_paths(value, expires_in_seconds=900):
     if value is None:

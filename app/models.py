@@ -4072,7 +4072,13 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
             SUM(CASE WHEN audit_findings.priority = 'alta' THEN 1 ELSE 0 END) AS high_priority_count,
             SUM(CASE WHEN audit_findings.finding_status = 'reabierto' THEN 1 ELSE 0 END) AS reopened_count,
             SUM(CASE WHEN audit_findings.finding_status = 'resuelto' AND COALESCE(audit_findings.validation_status, '') != 'validado' THEN 1 ELSE 0 END) AS pending_validation_count,
-            SUM(CASE WHEN audit_findings.finding_status = 'validado' THEN 1 ELSE 0 END) AS validated_count
+            SUM(
+                CASE
+                    WHEN COALESCE(audit_findings.validation_status, '') = 'validado' OR audit_findings.finding_status = 'validado'
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS validated_count
         FROM audit_findings
         INNER JOIN audits ON audits.id = audit_findings.audit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
@@ -4405,7 +4411,7 @@ def validate_finding(finding_id, validated_by_user_id, approved, validation_note
     effectiveness_status_value = effectiveness_status or None
 
     if approved:
-        if current_status != "resuelto":
+        if current_status not in {"resuelto", "validado"}:
             raise ValueError("El hallazgo debe estar en estado resuelto antes de validar el cierre.")
         if not closure_criteria:
             raise ValueError("Falta el criterio de cierre. Completa la respuesta del supervisor antes de validar.")
@@ -4415,7 +4421,6 @@ def validate_finding(finding_id, validated_by_user_id, approved, validation_note
             effectiveness_status_value = "pendiente"
 
     status = "validado" if approved else "rechazado"
-    finding_status = "validado" if approved else "reabierto"
     notes_value = (validation_notes or "").strip() or None
 
     if approved:
@@ -4427,7 +4432,6 @@ def validate_finding(finding_id, validated_by_user_id, approved, validation_note
                 validation_notes = ?,
                 validated_by_user_id = ?,
                 validated_at = CURRENT_TIMESTAMP,
-                finding_status = ?,
                 effectiveness_due_date = COALESCE(effectiveness_due_date, ?),
                 effectiveness_status = COALESCE(NULLIF(effectiveness_status, ''), ?),
                 updated_at = CURRENT_TIMESTAMP
@@ -4437,7 +4441,6 @@ def validate_finding(finding_id, validated_by_user_id, approved, validation_note
                 status,
                 notes_value,
                 validated_by_user_id,
-                finding_status,
                 due_date_value,
                 effectiveness_status_value,
                 finding_id,
@@ -4465,7 +4468,7 @@ def validate_finding(finding_id, validated_by_user_id, approved, validation_note
                 status,
                 notes_value,
                 validated_by_user_id,
-                finding_status,
+                "reabierto",
                 finding_id,
             ),
         )
@@ -4493,7 +4496,7 @@ def update_finding_effectiveness(
     notes_value = (effectiveness_notes or "").strip() or None
 
     existing = get_db().execute(
-        "SELECT finding_status, effectiveness_status FROM audit_findings WHERE id = ?",
+        "SELECT finding_status, validation_status, effectiveness_status FROM audit_findings WHERE id = ?",
         (finding_id,),
     ).fetchone()
     if not existing:
@@ -4501,12 +4504,15 @@ def update_finding_effectiveness(
 
     if isinstance(existing, dict):
         current_finding_status = (existing.get("finding_status") or "").strip().lower()
+        current_validation_status = (existing.get("validation_status") or "").strip().lower()
         previous_status = (existing.get("effectiveness_status") or "").strip().lower()
     else:
         current_finding_status = (existing[0] or "").strip().lower()
-        previous_status = (existing[1] or "").strip().lower()
+        current_validation_status = (existing[1] or "").strip().lower()
+        previous_status = (existing[2] or "").strip().lower()
 
-    if safe_status in {"eficaz", "no_eficaz"} and current_finding_status != "validado":
+    is_validated = current_validation_status == "validado" or current_finding_status == "validado"
+    if safe_status in {"eficaz", "no_eficaz"} and not is_validated:
         raise ValueError("Solo puedes registrar eficacia una vez que el hallazgo esté validado.")
 
     if previous_status in {"eficaz", "no_eficaz"} and safe_status != previous_status and not allow_override:
@@ -4519,6 +4525,7 @@ def update_finding_effectiveness(
             SET
                 effectiveness_status = ?,
                 effectiveness_notes = ?,
+                finding_status = CASE WHEN finding_status = 'cerrado_definitivo' THEN 'resuelto' ELSE finding_status END,
                 effectiveness_verified_by_user_id = NULL,
                 effectiveness_verified_at = NULL,
                 updated_at = CURRENT_TIMESTAMP
@@ -4527,19 +4534,37 @@ def update_finding_effectiveness(
             ("pendiente", notes_value, finding_id),
         )
     else:
-        get_db().execute(
-            """
-            UPDATE audit_findings
-            SET
-                effectiveness_status = ?,
-                effectiveness_notes = ?,
-                effectiveness_verified_by_user_id = ?,
-                effectiveness_verified_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (safe_status, notes_value, verified_by_user_id, finding_id),
-        )
+        if safe_status == "eficaz":
+            get_db().execute(
+                """
+                UPDATE audit_findings
+                SET
+                    effectiveness_status = ?,
+                    effectiveness_notes = ?,
+                    finding_status = 'cerrado_definitivo',
+                    effectiveness_verified_by_user_id = ?,
+                    effectiveness_verified_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (safe_status, notes_value, verified_by_user_id, finding_id),
+            )
+        else:
+            get_db().execute(
+                """
+                UPDATE audit_findings
+                SET
+                    effectiveness_status = ?,
+                    effectiveness_notes = ?,
+                    finding_status = 'reabierto',
+                    validation_status = 'rechazado',
+                    effectiveness_verified_by_user_id = ?,
+                    effectiveness_verified_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (safe_status, notes_value, verified_by_user_id, finding_id),
+            )
 
     if previous_status != safe_status:
         create_finding_event(

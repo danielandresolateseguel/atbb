@@ -5,7 +5,7 @@
     --border: #d8dfeb;
     --text: #18212f;
     --muted: #5f6b7a;
-    --primary: #0e2f3f;
+    --primary: #0f7fb8;
     --primary-soft: #ccfbf1;
     --danger: #dc2626;
     --danger-soft: #fee2e2;
@@ -2371,6 +2371,15 @@ td {
     form.form-grid:has(input[type="file"]) > label:has(textarea),
     form.form-grid:has(textarea):not(:has(select)):not(:has(input[type="file"])) > label:has(textarea) {
         grid-column: 1 / -1;
+    }
+
+    #finding_response_form > label:has(input[type="file"]) {
+        grid-column: 1 / -1;
+    }
+
+    #finding_validation_form,
+    #finding_effectiveness_form {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .signature-grid {

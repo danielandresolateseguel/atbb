@@ -246,7 +246,7 @@
                             <td>{{ finding["priority"]|capitalize }}</td>
                             <td>{{ finding["supervisor_name"] or "-" }}</td>
                             <td>{{ finding["owner_username"] or "Sin asignar" }}</td>
-                            <td>{{ finding["finding_status"]|replace('_', ' ')|capitalize }}</td>
+                            <td>{{ finding["finding_status"]|finding_status_label }}</td>
                             <td><a class="table-link" href="{{ url_for('main.finding_detail', finding_id=finding['id']) }}">Ver</a></td>
                         </tr>
                     {% endfor %}
