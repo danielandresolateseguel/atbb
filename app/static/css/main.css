@@ -231,6 +231,37 @@ a {
     max-width: none;
 }
 
+.page.page-dashboard {
+    margin: 0.75rem auto 1.5rem;
+}
+
+.page.page-dashboard .hero {
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.page.page-dashboard .hero h2 {
+    font-size: 1.55rem;
+    line-height: 1.15;
+}
+
+.page.page-dashboard .stats-grid {
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+}
+
+.page.page-dashboard .stats-grid .card.stat-card {
+    padding: 0.85rem;
+}
+
+.page.page-dashboard .stat-label {
+    font-size: 0.85rem;
+}
+
+.page.page-dashboard .stat-value {
+    font-size: 1.55rem;
+}
+
 .hero,
 .section-heading {
     display: flex;

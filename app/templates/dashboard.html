@@ -112,6 +112,67 @@
         </section>
     {% endif %}
 
+    {% if is_gerente and safety_risk_donut and safety_risk_donut["status_total"] %}
+        <section class="card table-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Riesgo</p>
+                    <h3>Hallazgos alta prioridad por estado</h3>
+                </div>
+                <a class="button button-secondary" href="{{ url_for('main.findings_list', priority='alta') }}">Ver alta prioridad</a>
+            </div>
+            <div class="executive-donut">
+                <div class="executive-donut-chart">
+                    <svg viewBox="0 0 140 140" width="220" height="220" aria-hidden="true">
+                        <circle cx="70" cy="70" r="54" fill="none" stroke="#E5E7EB" stroke-width="14"></circle>
+                        {% for seg in safety_risk_donut.donut_segments %}
+                            {% if seg.percent %}
+                                <circle
+                                    cx="70"
+                                    cy="70"
+                                    r="54"
+                                    fill="none"
+                                    stroke="{{ seg.color }}"
+                                    stroke-width="14"
+                                    stroke-linecap="butt"
+                                    transform="rotate(-90 70 70)"
+                                    style="stroke-dasharray: {{ seg.dasharray }}; stroke-dashoffset: {{ seg.dashoffset }};"
+                                ></circle>
+                            {% endif %}
+                        {% endfor %}
+                        <text x="70" y="68" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">{{ safety_risk_donut.status_total }}</text>
+                        <text x="70" y="88" text-anchor="middle" font-size="10" fill="#6B7280">alta prioridad</text>
+                    </svg>
+                </div>
+                <div class="executive-donut-table">
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Estado</th>
+                                    <th>Cant.</th>
+                                    <th>%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for seg in safety_risk_donut.donut_segments %}
+                                    <tr>
+                                        <td>
+                                            <span class="executive-donut-swatch" style="background:{{ seg.color }};"></span>
+                                            <a class="table-link" href="{{ url_for('main.findings_list', priority='alta', finding_status=seg.key) }}">{{ seg.label }}</a>
+                                        </td>
+                                        <td>{{ seg.count }}</td>
+                                        <td>{{ seg.percent }}%</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    {% endif %}
+
     {% if finding_stats["reopened_count"] or finding_stats["high_priority_count"] %}
         <section class="alert-stack">
             {% if finding_stats["reopened_count"] %}
