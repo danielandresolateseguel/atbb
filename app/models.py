@@ -4100,6 +4100,27 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
     }
 
 
+def fetch_finding_status_breakdown(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = _build_findings_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audit_findings.finding_status,
+            COUNT(*) AS findings_count
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        {where_sql}
+        GROUP BY audit_findings.finding_status
+        """,
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300):
     created_at_expr = "audit_findings.created_at" if is_postgres() else "datetime(audit_findings.created_at, 'localtime')"
     updated_at_expr = "audit_findings.updated_at" if is_postgres() else "datetime(audit_findings.updated_at, 'localtime')"

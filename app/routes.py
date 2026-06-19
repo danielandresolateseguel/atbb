@@ -41,6 +41,7 @@ from app.models import (
     fetch_audit_findings,
     fetch_findings,
     fetch_finding_stats,
+    fetch_finding_status_breakdown,
     fetch_finding_detail,
     fetch_finding_events,
     fetch_audit_items,
@@ -276,7 +277,7 @@ def finding_status_label(value):
     labels = {
         "nuevo": "Nuevo",
         "respondido": "En tratamiento",
-        "resuelto": "Cerrado (pendiente verificación de eficacia)",
+        "resuelto": "CER-PVE",
         "cerrado_definitivo": "Cerrado definitivo",
         "reabierto": "Reabierto",
         "validado": "Validado",
@@ -2578,6 +2579,43 @@ def dashboard():
         supervisor_scope_names=supervisor_scope_names,
     ) if can_view_findings() else None
 
+    finding_donut = None
+    if user and user.get("role") == "supervisor" and can_view_findings():
+        status_rows = fetch_finding_status_breakdown(
+            auditor_user_id=None,
+            supervisor_scope_names=supervisor_scope_names,
+        )
+        counts = {str(row.get("finding_status") or "").strip().lower(): (row.get("findings_count") or 0) for row in status_rows}
+        ordered = ["nuevo", "respondido", "resuelto", "reabierto", "cerrado_definitivo"]
+        status_total = sum(counts.get(key, 0) for key in ordered)
+        palette = {
+            "nuevo": "#6B7280",
+            "respondido": "#2563EB",
+            "resuelto": "#F59E0B",
+            "reabierto": "#DC2626",
+            "cerrado_definitivo": "#16A34A",
+        }
+        circumference = round(2 * 3.1416 * 54, 2)
+        donut_segments = []
+        offset_accum = 0.0
+        for key in ordered:
+            count = counts.get(key, 0)
+            percent = 0.0 if status_total == 0 else round((count / status_total) * 100, 1)
+            segment_len = 0.0 if percent == 0 else round(circumference * (percent / 100), 2)
+            donut_segments.append(
+                {
+                    "key": key,
+                    "label": finding_status_label(key),
+                    "count": count,
+                    "percent": percent,
+                    "color": palette.get(key, "#2563EB"),
+                    "dasharray": f"{segment_len} {round(circumference - segment_len, 2)}",
+                    "dashoffset": round(-offset_accum, 2),
+                }
+            )
+            offset_accum += segment_len
+        finding_donut = {"status_total": status_total, "donut_segments": donut_segments}
+
     return render_template(
         "dashboard.html",
         recent_audits=recent_audits,
@@ -2585,6 +2623,7 @@ def dashboard():
         approval_rate=stats["approval_rate"],
         critical_count=stats["critical_count"],
         finding_stats=finding_stats,
+        finding_donut=finding_donut,
     )
 
 

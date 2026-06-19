@@ -70,7 +70,7 @@
                 <option value="" {% if not filters.finding_status %}selected{% endif %}>Todos</option>
                 <option value="nuevo" {% if filters.finding_status == "nuevo" %}selected{% endif %}>Nuevo</option>
                 <option value="respondido" {% if filters.finding_status == "respondido" %}selected{% endif %}>En tratamiento</option>
-                <option value="resuelto" {% if filters.finding_status == "resuelto" %}selected{% endif %}>Cerrado (pendiente verificación de eficacia)</option>
+                <option value="resuelto" {% if filters.finding_status == "resuelto" %}selected{% endif %}>CER-PVE</option>
                 <option value="cerrado_definitivo" {% if filters.finding_status == "cerrado_definitivo" %}selected{% endif %}>Cerrado definitivo</option>
                 <option value="reabierto" {% if filters.finding_status == "reabierto" %}selected{% endif %}>Reabierto</option>
             </select>
