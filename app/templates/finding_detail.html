@@ -178,8 +178,8 @@
                 <input type="date" name="effectiveness_due_date" value="{{ finding['effectiveness_due_date'] or '' }}" id="effectiveness_due_date_input">
             </label>
             <label>
-                <span>Evidencia (opcional)</span>
-                <input type="file" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+                <span>Evidencia{% if finding["evidence_path"] %} (ya cargada){% endif %}</span>
+                <input type="file" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" {% if not finding["evidence_path"] %}required{% endif %}>
             </label>
             <label>
                 <span>Respuesta del supervisor</span>
