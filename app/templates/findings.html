@@ -131,7 +131,7 @@
                             <td>{{ finding["non_compliance_reason"]|non_compliance_reason_label if finding["non_compliance_reason"] else "-" }}</td>
                             <td>{{ finding["supervisor_name"] or "-" }}</td>
                             <td><span class="metric-pill {% if finding['priority'] == 'alta' %}metric-danger{% else %}metric-warning{% endif %}">{{ finding["priority"]|capitalize }}</span></td>
-                            <td><span class="metric-pill {% if finding['finding_status'] == 'cerrado_definitivo' or finding['finding_status'] == 'validado' %}metric-ok{% elif finding['finding_status'] == 'reabierto' %}metric-danger{% elif finding['finding_status'] == 'resuelto' %}metric-warning{% else %}metric-neutral{% endif %}">{{ finding["finding_status"]|finding_status_label }}</span></td>
+                            <td><span class="metric-pill metric-wrap {% if finding['finding_status'] == 'cerrado_definitivo' or finding['finding_status'] == 'validado' %}metric-ok{% elif finding['finding_status'] == 'reabierto' %}metric-danger{% elif finding['finding_status'] == 'resuelto' %}metric-warning{% else %}metric-neutral{% endif %}">{{ finding["finding_status"]|finding_status_label }}</span></td>
                             <td><span class="metric-pill {% if finding['validation_status'] == 'validado' %}metric-ok{% elif finding['validation_status'] == 'rechazado' %}metric-danger{% else %}metric-neutral{% endif %}">{{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "Sin validar" }}</span></td>
                             <td><a class="table-link" href="{{ url_for('main.finding_detail', finding_id=finding['id']) }}">Ver detalle</a></td>
                         </tr>

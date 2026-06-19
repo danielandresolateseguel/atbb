@@ -1999,6 +1999,14 @@ td {
     white-space: nowrap;
 }
 
+.metric-pill.metric-wrap {
+    display: inline-block;
+    white-space: normal;
+    text-align: center;
+    max-width: 220px;
+    word-break: break-word;
+}
+
 .metric-ok {
     background: var(--success-soft);
     color: var(--success);
