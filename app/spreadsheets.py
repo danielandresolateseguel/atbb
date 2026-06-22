@@ -11,6 +11,49 @@ XML_NAMESPACES = {
     "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
 }
 
+COMMON_HEADER_KEYWORDS = {
+    "employee_code",
+    "codigo_empleado",
+    "name",
+    "nombre",
+    "region",
+    "phone",
+    "telefono",
+    "commune",
+    "comuna",
+    "team",
+    "cuadrilla",
+    "is_active",
+    "activo",
+    "plate",
+    "patente",
+    "dominio",
+    "matricula",
+    "brand",
+    "marca",
+    "model",
+    "modelo",
+    "year",
+    "anio",
+    "status",
+    "estado",
+    "assigned_employee_code",
+    "odometer_km",
+    "km",
+    "kms",
+    "kilometros",
+    "kilometraje",
+    "material",
+    "codigo",
+    "descripcion",
+    "centro",
+    "tipo_de_almacen",
+    "almacen",
+    "codigo_almacen",
+    "codigo_material",
+    "serial",
+}
+
 
 def parse_tabular_upload(uploaded_file):
     if not uploaded_file or not uploaded_file.filename:
@@ -106,9 +149,10 @@ def parse_xlsx_sheet(workbook_zip, sheet_path, shared_strings):
     if not parsed_rows:
         return [], []
 
-    fieldnames = [normalize_header(cell) for cell in parsed_rows[0]]
+    header_index = detect_header_row_index(parsed_rows)
+    fieldnames = [normalize_header(cell) for cell in parsed_rows[header_index]]
     data_rows = []
-    for row in parsed_rows[1:]:
+    for row in parsed_rows[header_index + 1 :]:
         if len(row) < len(fieldnames):
             row = row + [""] * (len(fieldnames) - len(row))
         data_rows.append(
@@ -195,3 +239,39 @@ def normalize_row(row):
         for key, value in row.items()
         if key
     }
+
+
+def detect_header_row_index(parsed_rows):
+    if not parsed_rows:
+        return 0
+
+    limit = min(len(parsed_rows), 30)
+    best_index = 0
+    best_score = (-1, -1, -1)
+
+    for index in range(limit):
+        normalized_cells = [normalize_header(cell) for cell in parsed_rows[index]]
+        non_empty = sum(1 for cell in normalized_cells if cell)
+        if non_empty < 2:
+            continue
+        keyword_hits = sum(1 for cell in normalized_cells if cell in COMMON_HEADER_KEYWORDS)
+        unique_cells = len({cell for cell in normalized_cells if cell})
+        score = (keyword_hits, non_empty, unique_cells)
+        if score > best_score:
+            best_score = score
+            best_index = index
+
+    if best_score[0] > 0:
+        return best_index
+
+    best_index = 0
+    best_score = (-1, -1)
+    for index in range(limit):
+        normalized_cells = [normalize_header(cell) for cell in parsed_rows[index]]
+        non_empty = sum(1 for cell in normalized_cells if cell)
+        unique_cells = len({cell for cell in normalized_cells if cell})
+        score = (non_empty, unique_cells)
+        if score > best_score:
+            best_score = score
+            best_index = index
+    return best_index
