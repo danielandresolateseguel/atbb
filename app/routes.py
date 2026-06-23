@@ -3377,7 +3377,7 @@ def supply_requests():
             audit_id = None
 
     supply_requests_feed = []
-    if not can_create_supply_requests():
+    if not can_create_supply_requests() and audit_id is None:
         supply_requests_feed = fetch_supply_requests_feed(
             filters,
             auditor_user_id=auditor_user_id,
