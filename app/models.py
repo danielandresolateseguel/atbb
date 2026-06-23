@@ -3330,7 +3330,7 @@ def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=
     return [dict(row) for row in rows]
 
 
-def build_audit_picker_where_sql(filters=None, auditor_user_id=None):
+def build_audit_picker_where_sql(filters=None, auditor_user_id=None, supervisor_scope_names=None):
     filters = filters or {}
     extra_clauses = []
     extra_params = []
@@ -3371,13 +3371,18 @@ def build_audit_picker_where_sql(filters=None, auditor_user_id=None):
     return build_audits_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
         extra_clauses=extra_clauses,
         extra_params=extra_params,
     )
 
 
-def count_audit_picker_audits(filters=None, auditor_user_id=None):
-    where_sql, params = build_audit_picker_where_sql(filters, auditor_user_id=auditor_user_id)
+def count_audit_picker_audits(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = build_audit_picker_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
     row = get_db().execute(
         f"""
         SELECT COUNT(*) AS audits_count
@@ -3394,8 +3399,12 @@ def count_audit_picker_audits(filters=None, auditor_user_id=None):
     return row["audits_count"] if isinstance(row, dict) else row[0]
 
 
-def fetch_audit_picker_audits(filters=None, auditor_user_id=None, limit=25, offset=0):
-    where_sql, params = build_audit_picker_where_sql(filters, auditor_user_id=auditor_user_id)
+def fetch_audit_picker_audits(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=25, offset=0):
+    where_sql, params = build_audit_picker_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
     rows = get_db().execute(
         f"""
         SELECT
@@ -4286,6 +4295,102 @@ def fetch_audit_supply_requests(audit_id):
         ORDER BY id ASC
         """,
         (audit_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_supply_requests_feed(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=200):
+    filters = filters or {}
+    where_clauses = []
+    params = []
+
+    append_audit_visibility_filters(where_clauses, params, include_pruebas=False)
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    if from_date:
+        where_clauses.append("audits.audit_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where_clauses.append("audits.audit_date <= ?")
+        params.append(to_date)
+
+    if auditor_user_id is not None:
+        where_clauses.append("audits.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    query = (filters.get("q") or "").strip()
+    if query:
+        like_value = f"%{query}%"
+        if is_postgres():
+            where_clauses.append(
+                "("
+                "COALESCE(audits.sa_number, '') ILIKE ? OR "
+                "CAST(audits.id AS TEXT) ILIKE ? OR "
+                "COALESCE(mobile_units.mobile_code, '') ILIKE ? OR "
+                "COALESCE(technicians.name, audits.technician_display_name, '') ILIKE ? OR "
+                "COALESCE(vehicles.plate, '') ILIKE ? OR "
+                "COALESCE(audits.location, '') ILIKE ? OR "
+                "COALESCE(audit_supply_requests.material_code, '') ILIKE ? OR "
+                "COALESCE(audit_supply_requests.item_label, '') ILIKE ? OR "
+                "COALESCE(audit_supply_requests.notes, '') ILIKE ?"
+                ")"
+            )
+            params.extend([like_value] * 9)
+        else:
+            where_clauses.append(
+                "("
+                "LOWER(COALESCE(audits.sa_number, '')) LIKE ? OR "
+                "LOWER(CAST(audits.id AS TEXT)) LIKE ? OR "
+                "LOWER(COALESCE(mobile_units.mobile_code, '')) LIKE ? OR "
+                "LOWER(COALESCE(technicians.name, audits.technician_display_name, '')) LIKE ? OR "
+                "LOWER(COALESCE(vehicles.plate, '')) LIKE ? OR "
+                "LOWER(COALESCE(audits.location, '')) LIKE ? OR "
+                "LOWER(COALESCE(audit_supply_requests.material_code, '')) LIKE ? OR "
+                "LOWER(COALESCE(audit_supply_requests.item_label, '')) LIKE ? OR "
+                "LOWER(COALESCE(audit_supply_requests.notes, '')) LIKE ?"
+                ")"
+            )
+            params.extend([like_value.lower()] * 9)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    request_created_at_expr = (
+        "audit_supply_requests.created_at"
+        if is_postgres()
+        else "datetime(audit_supply_requests.created_at, 'localtime')"
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audit_supply_requests.id,
+            {request_created_at_expr} AS created_at,
+            audits.id AS audit_id,
+            audits.audit_date,
+            audits.sa_number,
+            audits.location,
+            audits.result_status,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            vehicles.plate AS vehicle_plate,
+            audit_supply_requests.request_type,
+            audit_supply_requests.item_label,
+            audit_supply_requests.material_code,
+            audit_supply_requests.quantity,
+            audit_supply_requests.notes
+        FROM audit_supply_requests
+        INNER JOIN audits ON audits.id = audit_supply_requests.audit_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        ORDER BY audit_supply_requests.created_at DESC, audit_supply_requests.id DESC
+        LIMIT ?
+        """,
+        tuple(list(params) + [int(limit or 200)]),
     ).fetchall()
     return [dict(row) for row in rows]
 

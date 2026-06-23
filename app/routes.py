@@ -50,6 +50,7 @@ from app.models import (
     fetch_finding_events,
     fetch_audit_items,
     fetch_audit_supply_requests,
+    fetch_supply_requests_feed,
     fetch_all_audits,
     fetch_audit_picker_audits,
     fetch_audit_reports_management_summary,
@@ -385,6 +386,16 @@ def can_import():
 
 
 def can_create_audit():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "auditor"}))
+
+
+def can_view_supply_requests():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "auditor", "gerente", "supervisor"}))
+
+
+def can_create_supply_requests():
     user = current_user()
     return bool(user and (user.get("role") in {"admin", "auditor"}))
 
@@ -1407,6 +1418,8 @@ def inject_auth_context():
         "is_supervisor": bool(user and (user.get("role") == "supervisor")),
         "can_import": can_import(),
         "can_create_audit": can_create_audit(),
+        "can_view_supply_requests": can_view_supply_requests(),
+        "can_create_supply_requests": can_create_supply_requests(),
         "can_view_all_audits": can_view_all_audits(),
         "can_view_users": can_view_users(),
         "can_create_users": can_create_users(),
@@ -3315,11 +3328,12 @@ def qc_detail(qc_session_id):
 
 @main.route("/supply-requests", methods=["GET", "POST"])
 def supply_requests():
-    if not can_create_audit():
+    if not can_view_supply_requests():
         abort(403)
 
     user = current_user()
     auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    supervisor_scope_names = current_supervisor_scope_names()
     filters = {
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
@@ -3334,10 +3348,15 @@ def supply_requests():
             page = 1
     page_size = 25
     offset = (page - 1) * page_size
-    audits_total = count_audit_picker_audits(filters, auditor_user_id=auditor_user_id)
+    audits_total = count_audit_picker_audits(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
     audits = fetch_audit_picker_audits(
         filters,
         auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
         limit=page_size,
         offset=offset,
     )
@@ -3357,8 +3376,17 @@ def supply_requests():
             flash("El ID de auditoría no es válido.", "error")
             audit_id = None
 
+    supply_requests_feed = []
+    if not can_create_supply_requests():
+        supply_requests_feed = fetch_supply_requests_feed(
+            filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+            limit=200,
+        )
+
     if audit_id is not None:
-        audit_context = fetch_audit_detail(audit_id)
+        audit_context = fetch_audit_detail(audit_id, supervisor_scope_names=supervisor_scope_names)
         if audit_context and is_auditor():
             current = current_user()
             if audit_context.get("auditor_user_id") != current["id"] and (audit_context.get("auditor_name") or "") != current["username"]:
@@ -3371,6 +3399,8 @@ def supply_requests():
     supply_requests_rows = fetch_audit_supply_requests(audit_id) if audit_context else []
 
     if request.method == "POST":
+        if not can_create_supply_requests():
+            abort(403)
         try:
             if not audit_context or audit_id is None:
                 raise ValueError("Debes seleccionar una auditoría para registrar la solicitud.")
@@ -3465,6 +3495,7 @@ def supply_requests():
         has_next_page=has_next_page,
         grouped_items=grouped_items,
         supply_requests=supply_requests_rows,
+        supply_requests_feed=supply_requests_feed,
         material_index=material_index,
         page_class="page-wide",
     )

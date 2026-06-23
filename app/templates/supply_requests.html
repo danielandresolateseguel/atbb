@@ -38,6 +38,57 @@
     </form>
 </section>
 
+{% if supply_requests_feed %}
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Seguimiento</p>
+                <h3>Solicitudes recientes</h3>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha solicitud</th>
+                        <th>Fecha auditoría</th>
+                        <th>SA</th>
+                        <th>Móvil técnico</th>
+                        <th>Vehículo</th>
+                        <th>Ubicación</th>
+                        <th>Tipo</th>
+                        <th>Código</th>
+                        <th>Cantidad</th>
+                        <th>Nota</th>
+                        <th>Abrir</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in supply_requests_feed %}
+                        <tr>
+                            <td>{{ req["created_at"] }}</td>
+                            <td>{{ req["audit_date"] }}</td>
+                            <td>{{ req["sa_number"] or "-" }}</td>
+                            <td>{% if req.get("mobile_code") %}{{ req["mobile_code"] }} | {% endif %}{{ req["technician_name"] or "-" }}</td>
+                            <td>{{ req["vehicle_plate"] or "-" }}</td>
+                            <td>{{ req["location"] or "-" }}</td>
+                            <td>{{ req["request_type"]|capitalize }}</td>
+                            <td>{{ req["material_code"] }}</td>
+                            <td>{{ req["quantity"] if req["quantity"] is not none else "-" }}</td>
+                            <td>{{ req["notes"] or "-" }}</td>
+                            <td><a class="table-link" href="{{ url_for('main.audit_detail', audit_id=req['audit_id']) }}">Ver</a></td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="11" class="empty-state">No hay solicitudes para los filtros aplicados.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endif %}
+
 <section class="card table-card">
     {% set filter_active = filters.from_date or filters.to_date or filters.q %}
     {% if audits %}
@@ -63,7 +114,7 @@
                             <td>{{ row["vehicle_plate"] }}</td>
                             <td>{{ row["location"] }}</td>
                             <td><span class="badge badge-{{ row.result_status|lower|replace(' ', '-') }}">{{ row["result_status"] }}</span></td>
-                            <td><a class="table-link" href="{{ url_for('main.supply_requests', audit_id=row['id'], q=filters.q, from_date=filters.from_date, to_date=filters.to_date, page=page) }}">Abrir</a></td>
+                            <td><a class="table-link" href="{{ url_for('main.supply_requests', audit_id=row['id'], q=filters.q, from_date=filters.from_date, to_date=filters.to_date, page=page) }}#audit_detail">Abrir</a></td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -91,7 +142,7 @@
 </section>
 
 {% if audit %}
-    <section class="card info-card">
+    <section class="card info-card" id="audit_detail">
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Auditoría</p>
@@ -106,73 +157,75 @@
         </div>
     </section>
 
-    <section class="card">
-        <form method="post" class="import-form">
-            <input type="hidden" name="audit_id" value="{{ audit['id'] }}">
+    {% if can_create_supply_requests %}
+        <section class="card">
+            <form method="post" class="import-form">
+                <input type="hidden" name="audit_id" value="{{ audit['id'] }}">
 
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Registro</p>
-                    <h3>Nueva solicitud</h3>
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Registro</p>
+                        <h3>Nueva solicitud</h3>
+                    </div>
                 </div>
-            </div>
 
-            <label>
-                <span>Tipo</span>
-                <select name="request_type" required>
-                    <option value="">Selecciona</option>
-                    <option value="reponer">Reponer</option>
-                    <option value="cambiar">Cambiar</option>
-                </select>
-            </label>
+                <label>
+                    <span>Tipo</span>
+                    <select name="request_type" required>
+                        <option value="">Selecciona</option>
+                        <option value="reponer">Reponer</option>
+                        <option value="cambiar">Cambiar</option>
+                    </select>
+                </label>
 
-            <label>
-                <span>Relacionado a ítem (opcional)</span>
-                <select name="audit_item_id">
-                    <option value="">Sin ítem asociado</option>
-                    {% for section_title, items in grouped_items.items() %}
-                        <optgroup label="{{ section_title }}">
-                            {% for item in items %}
-                                <option value="{{ item['id'] }}">{{ item["item_label"] }}</option>
-                            {% endfor %}
-                        </optgroup>
+                <label>
+                    <span>Relacionado a ítem (opcional)</span>
+                    <select name="audit_item_id">
+                        <option value="">Sin ítem asociado</option>
+                        {% for section_title, items in grouped_items.items() %}
+                            <optgroup label="{{ section_title }}">
+                                {% for item in items %}
+                                    <option value="{{ item['id'] }}">{{ item["item_label"] }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    <span>Código</span>
+                    <input
+                        type="text"
+                        name="material_code"
+                        placeholder="Ej: 320700029 o SIN CODIGO"
+                        list="materials_datalist"
+                        required
+                    >
+                </label>
+
+                <datalist id="materials_datalist">
+                    <option value="SIN CODIGO"></option>
+                    {% for code, name in (material_index or {}).items() %}
+                        <option value="{{ code }} - {{ name }}"></option>
                     {% endfor %}
-                </select>
-            </label>
+                </datalist>
 
-            <label>
-                <span>Código</span>
-                <input
-                    type="text"
-                    name="material_code"
-                    placeholder="Ej: 320700029 o SIN CODIGO"
-                    list="materials_datalist"
-                    required
-                >
-            </label>
+                <label>
+                    <span>Cantidad (opcional)</span>
+                    <input type="number" name="quantity" min="0" step="1">
+                </label>
 
-            <datalist id="materials_datalist">
-                <option value="SIN CODIGO"></option>
-                {% for code, name in (material_index or {}).items() %}
-                    <option value="{{ code }} - {{ name }}"></option>
-                {% endfor %}
-            </datalist>
+                <label>
+                    <span>Nota (opcional)</span>
+                    <input type="text" name="notes" placeholder="Obligatoria si el código es SIN CODIGO">
+                </label>
 
-            <label>
-                <span>Cantidad (opcional)</span>
-                <input type="number" name="quantity" min="0" step="1">
-            </label>
-
-            <label>
-                <span>Nota (opcional)</span>
-                <input type="text" name="notes" placeholder="Obligatoria si el código es SIN CODIGO">
-            </label>
-
-            <div class="button-row">
-                <button class="button button-primary" type="submit">Registrar</button>
-            </div>
-        </form>
-    </section>
+                <div class="button-row">
+                    <button class="button button-primary" type="submit">Registrar</button>
+                </div>
+            </form>
+        </section>
+    {% endif %}
 
     <section class="card table-card">
         <div class="section-heading">
@@ -212,5 +265,14 @@
             <p class="empty-state">No se registraron solicitudes.</p>
         {% endif %}
     </section>
+
+    <script>
+        (function () {
+            const target = document.getElementById("audit_detail");
+            if (!target) return;
+            if (window.location.hash) return;
+            target.scrollIntoView({ block: "start" });
+        }());
+    </script>
 {% endif %}
 {% endblock %}
