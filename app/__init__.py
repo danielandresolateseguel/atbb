@@ -2,6 +2,7 @@ import os
 
 from flask import Flask, flash, jsonify, redirect, request, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
+from datetime import datetime, timezone, timedelta
 
 from config import Config
 
@@ -13,6 +14,52 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
     app.config["AUDIT_EVIDENCE_DIR"].mkdir(parents=True, exist_ok=True)
+
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        ZoneInfo = None
+
+    def _app_timezone():
+        name = (app.config.get("APP_TIMEZONE") or "").strip() or "America/Argentina/Buenos_Aires"
+        if ZoneInfo:
+            try:
+                return ZoneInfo(name)
+            except Exception:
+                return timezone(timedelta(hours=-3))
+        return timezone(timedelta(hours=-3))
+
+    def _parse_any_datetime(value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        raw = str(value).strip()
+        if not raw:
+            return None
+        if raw.endswith("Z"):
+            raw = raw[:-1]
+            try:
+                return datetime.fromisoformat(raw).replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            try:
+                return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return None
+
+    def ar_dt(value, fmt="%Y-%m-%d %H:%M"):
+        dt = _parse_any_datetime(value)
+        if not dt:
+            return "-"
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(_app_timezone()).strftime(fmt)
+
+    app.jinja_env.filters["ar_dt"] = ar_dt
 
     debug_raw = str(os.environ.get("FLASK_DEBUG") or "").strip().lower()
     if debug_raw in {"1", "true", "yes", "y", "on"}:

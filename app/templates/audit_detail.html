@@ -139,7 +139,7 @@
         </div>
         <div class="info-list">
             <p><strong>Puntaje:</strong> {{ audit["total_score"] }}</p>
-            <p><strong>Fecha registro:</strong> {{ audit["created_at"] }}</p>
+            <p><strong>Fecha registro:</strong> {{ audit["created_at"]|ar_dt }}</p>
             <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "-" }}</p>
             <p>
                 <strong>Serializados:</strong>

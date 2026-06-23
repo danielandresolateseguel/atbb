@@ -46,6 +46,7 @@ from app.models import (
     fetch_findings,
     fetch_finding_stats,
     fetch_finding_status_breakdown,
+    fetch_effectiveness_alerts,
     fetch_finding_detail,
     fetch_finding_events,
     fetch_audit_items,
@@ -2729,6 +2730,13 @@ def dashboard():
         supervisor_scope_names=supervisor_scope_names,
     ) if can_view_findings() else None
 
+    effectiveness_alerts = None
+    if user and user.get("role") == "auditor":
+        effectiveness_alerts = fetch_effectiveness_alerts(
+            auditor_user_id=user["id"],
+            supervisor_scope_names=None,
+        )
+
     finding_donut = None
     if user and user.get("role") == "supervisor" and can_view_findings():
         status_rows = fetch_finding_status_breakdown(
@@ -2814,6 +2822,7 @@ def dashboard():
         finding_stats=finding_stats,
         finding_donut=finding_donut,
         safety_risk_donut=safety_risk_donut,
+        effectiveness_alerts=effectiveness_alerts,
     )
 
 
@@ -4009,6 +4018,7 @@ def findings_list():
         "finding_status": request.args.get("finding_status", "").strip(),
         "priority": request.args.get("priority", "").strip(),
         "validation_status": request.args.get("validation_status", "").strip(),
+        "effectiveness": request.args.get("effectiveness", "").strip(),
         "q": request.args.get("q", "").strip(),
     }
     auditor_user_id = current_auditor_user_id()

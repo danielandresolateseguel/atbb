@@ -447,7 +447,7 @@
                                     -
                                 {% endif %}
                             </td>
-                            <td>{{ row["created_at"] }}</td>
+                            <td>{{ row["created_at"]|ar_dt }}</td>
                             <td>{{ row["score"] }}</td>
                             <td>
                                 {% if row["score"] >= 9 %}

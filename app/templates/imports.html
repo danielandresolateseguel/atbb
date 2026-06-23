@@ -191,7 +191,7 @@
                     {% for batch in import_batches %}
                         <tr>
                             <td>{{ batch["id"] }}</td>
-                            <td>{{ batch["created_at"] }}</td>
+                            <td>{{ batch["created_at"]|ar_dt }}</td>
                             <td>{{ batch["import_label"] }}</td>
                             <td>{{ batch["uploaded_by_username"] or "-" }}</td>
                             <td>{{ batch["filename"] or "-" }}</td>

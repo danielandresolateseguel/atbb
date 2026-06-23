@@ -173,7 +173,8 @@
         </section>
     {% endif %}
 
-    {% if finding_stats["reopened_count"] or finding_stats["high_priority_count"] %}
+    {% set has_effectiveness_alerts = is_auditor and effectiveness_alerts and (effectiveness_alerts["overdue_count"] or effectiveness_alerts["due_soon_count"]) %}
+    {% if finding_stats["reopened_count"] or finding_stats["high_priority_count"] or has_effectiveness_alerts %}
         <section class="alert-stack">
             {% if finding_stats["reopened_count"] %}
                 <article class="alert-card alert-critical">
@@ -187,6 +188,64 @@
                     <p>Hay {{ finding_stats["high_priority_count"] }} hallazgo(s) de prioridad alta en seguimiento.</p>
                 </article>
             {% endif %}
+            {% if has_effectiveness_alerts and effectiveness_alerts["overdue_count"] %}
+                <article class="alert-card alert-critical">
+                    <strong>Eficacia vencida</strong>
+                    <p>
+                        Hay {{ effectiveness_alerts["overdue_count"] }} hallazgo(s) con verificación de eficacia vencida.
+                        <a class="table-link" href="{{ url_for('main.findings_list', effectiveness='vencida') }}">Ver vencidas</a>
+                    </p>
+                </article>
+            {% endif %}
+            {% if has_effectiveness_alerts and effectiveness_alerts["due_soon_count"] %}
+                <article class="alert-card alert-warning">
+                    <strong>Eficacia por vencer</strong>
+                    <p>
+                        Hay {{ effectiveness_alerts["due_soon_count"] }} hallazgo(s) con verificación de eficacia por vencer ({{ effectiveness_alerts["alert_days"] }} días).
+                        <a class="table-link" href="{{ url_for('main.findings_list', effectiveness='por_vencer') }}">Ver por vencer</a>
+                    </p>
+                </article>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    {% if has_effectiveness_alerts and effectiveness_alerts["rows"] %}
+        <section class="card table-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Seguimiento</p>
+                    <h3>Eficacia a verificar</h3>
+                </div>
+                <a class="button button-secondary" href="{{ url_for('main.findings_list', effectiveness='pendiente') }}">Ver bandeja</a>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha eficacia</th>
+                            <th>Hallazgo</th>
+                            <th>Móvil / Técnico</th>
+                            <th>Ítem</th>
+                            <th>Detalle</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in effectiveness_alerts["rows"] %}
+                            <tr class="{% if row['effectiveness_due_bucket'] == 'overdue' %}finding-row-critical{% elif row['effectiveness_due_bucket'] == 'due_soon' %}finding-row-warning{% endif %}">
+                                <td>
+                                    <span class="metric-pill {% if row['effectiveness_due_bucket'] == 'overdue' %}metric-danger{% elif row['effectiveness_due_bucket'] == 'due_soon' %}metric-warning{% else %}metric-neutral{% endif %}">
+                                        {{ row["effectiveness_due_date"] or "-" }}
+                                    </span>
+                                </td>
+                                <td>#{{ row["id"] }} (Audit {{ row["audit_id"] }})</td>
+                                <td>{% if row["mobile_code"] %}{{ row["mobile_code"] }} | {% endif %}{{ row["technician_name"] }}</td>
+                                <td>{{ row["item_label"] }}</td>
+                                <td><a class="table-link" href="{{ url_for('main.finding_detail', finding_id=row['id']) }}">Abrir</a></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </section>
     {% endif %}
 {% endif %}

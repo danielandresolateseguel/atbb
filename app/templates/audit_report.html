@@ -221,7 +221,7 @@
                     </div>
                     <div class="executive-list">
                         <p><strong>Tipo de trabajo:</strong> {{ audit["installation_type"] }}</p>
-                        <p><strong>Registro:</strong> {{ audit["created_at"] }}</p>
+                        <p><strong>Registro:</strong> {{ audit["created_at"]|ar_dt }}</p>
                         <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "Sin observación general registrada." }}</p>
                         <p>
                             <strong>Impacto supervisor:</strong>

@@ -42,7 +42,7 @@
                             {% endif %}
                         </td>
                         <td>{{ "Sí" if row["is_active"] else "No" }}</td>
-                        <td>{{ row["created_at"] }}</td>
+                        <td>{{ row["created_at"]|ar_dt }}</td>
                         <td>
                             {% if can_edit_users %}
                                 <a class="table-link" href="{{ url_for('main.users_edit', user_id=row['id']) }}">Editar</a>

@@ -35,8 +35,8 @@
             <p><strong>Prioridad:</strong> {{ finding["priority"]|capitalize }}</p>
             <p><strong>Supervisor:</strong> {{ finding["supervisor_name"] or finding["technician_supervisor_snapshot"] or "-" }}</p>
             <p><strong>Responsable:</strong> {{ finding["owner_username"] or "Sin asignar" }}</p>
-            <p><strong>Creado:</strong> {{ finding["created_at"] or "-" }}</p>
-            <p><strong>Actualizado:</strong> {{ finding["updated_at"] or "-" }}</p>
+            <p><strong>Creado:</strong> {{ finding["created_at"]|ar_dt }}</p>
+            <p><strong>Actualizado:</strong> {{ finding["updated_at"]|ar_dt }}</p>
         </div>
     </article>
 
@@ -74,8 +74,8 @@
             <p><strong>Respuesta:</strong> {{ finding["response_notes"] or "-" }}</p>
             <p><strong>Criterio de cierre:</strong> {{ finding["closure_criteria"] or "-" }}</p>
             <p><strong>Respondido por:</strong> {{ finding["responded_by_username"] or "-" }}</p>
-            <p><strong>Respondido el:</strong> {{ finding["responded_at"] or "-" }}</p>
-            <p><strong>Resuelto el:</strong> {{ finding["resolved_at"] or "-" }}</p>
+            <p><strong>Respondido el:</strong> {{ finding["responded_at"]|ar_dt }}</p>
+            <p><strong>Resuelto el:</strong> {{ finding["resolved_at"]|ar_dt }}</p>
         </div>
         {% set response_evidence = finding["evidence_path"]|audit_photo_paths %}
         {% if response_evidence %}
@@ -105,7 +105,7 @@
             <p><strong>Estado validación:</strong> {{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "-" }}</p>
             <p><strong>Notas validación:</strong> {{ finding["validation_notes"] or "-" }}</p>
             <p><strong>Validado por:</strong> {{ finding["validated_by_username"] or "-" }}</p>
-            <p><strong>Validado el:</strong> {{ finding["validated_at"] or "-" }}</p>
+            <p><strong>Validado el:</strong> {{ finding["validated_at"]|ar_dt }}</p>
         </div>
     </article>
 </section>
@@ -119,11 +119,20 @@
             </div>
         </div>
         <div class="info-list">
-            <p><strong>Fecha objetivo:</strong> {{ finding["effectiveness_due_date"] or "-" }}</p>
+            <p>
+                <strong>Fecha objetivo:</strong>
+                {% if finding["effectiveness_due_date"] %}
+                    <span class="metric-pill {% if finding['effectiveness_due_bucket'] == 'overdue' %}metric-danger{% elif finding['effectiveness_due_bucket'] == 'due_soon' %}metric-warning{% elif finding['effectiveness_due_bucket'] == 'ok' %}metric-ok{% else %}metric-neutral{% endif %}">
+                        {{ finding["effectiveness_due_date"] }}
+                    </span>
+                {% else %}
+                    -
+                {% endif %}
+            </p>
             <p><strong>Estado:</strong> {{ finding["effectiveness_status"]|replace('_', ' ')|capitalize if finding["effectiveness_status"] else "-" }}</p>
             <p><strong>Notas:</strong> {{ finding["effectiveness_notes"] or "-" }}</p>
             <p><strong>Verificado por:</strong> {{ finding["effectiveness_verified_by_username"] or "-" }}</p>
-            <p><strong>Verificado el:</strong> {{ finding["effectiveness_verified_at"] or "-" }}</p>
+            <p><strong>Verificado el:</strong> {{ finding["effectiveness_verified_at"]|ar_dt }}</p>
         </div>
     </article>
 </section>
@@ -285,7 +294,7 @@
                 <tbody>
                     {% for ev in finding_events %}
                         <tr>
-                            <td>{{ ev["created_at"] or "-" }}</td>
+                            <td>{{ ev["created_at"]|ar_dt }}</td>
                             <td>{{ ev["actor_username"] or "-" }}</td>
                             <td>{{ ev["event_type"]|replace('_', ' ')|capitalize }}</td>
                             <td>{{ ev["detail"] or "-" }}</td>

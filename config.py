@@ -39,6 +39,7 @@ def env_bool(name, default=False):
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
+    APP_TIMEZONE = (os.environ.get("APP_TIMEZONE") or "America/Argentina/Buenos_Aires").strip() or "America/Argentina/Buenos_Aires"
     DATABASE_URL = os.environ.get("DATABASE_URL")
     DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", str(BASE_DIR / "audit_app.db")))
     UPLOADS_DIR = Path(os.environ.get("UPLOADS_DIR", str(BASE_DIR / "app" / "static" / "uploads")))
@@ -51,6 +52,7 @@ class Config:
     REPORT_TARGET_APPROVAL_RATE = env_int("REPORT_TARGET_APPROVAL_RATE", 85)
     REPORT_TARGET_AVERAGE_SCORE = env_float("REPORT_TARGET_AVERAGE_SCORE", 95.0)
     FINDING_EFFECTIVENESS_CHECK_DAYS = env_int("FINDING_EFFECTIVENESS_CHECK_DAYS", 30)
+    FINDING_EFFECTIVENESS_ALERT_DAYS = env_int("FINDING_EFFECTIVENESS_ALERT_DAYS", 7)
     AUDIT_OFFICIAL_FROM_DATE = (os.environ.get("AUDIT_OFFICIAL_FROM_DATE") or "").strip() or None
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=env_int("SESSION_LIFETIME_MINUTES", 720))
     SESSION_REFRESH_EACH_REQUEST = True

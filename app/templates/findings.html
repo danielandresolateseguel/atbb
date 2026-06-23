@@ -93,6 +93,15 @@
             </select>
         </label>
         <label>
+            <span>Eficacia</span>
+            <select name="effectiveness">
+                <option value="" {% if not filters.effectiveness %}selected{% endif %}>Todas</option>
+                <option value="pendiente" {% if filters.effectiveness == "pendiente" %}selected{% endif %}>Pendiente (validado)</option>
+                <option value="por_vencer" {% if filters.effectiveness == "por_vencer" %}selected{% endif %}>Por vencer</option>
+                <option value="vencida" {% if filters.effectiveness == "vencida" %}selected{% endif %}>Vencida</option>
+            </select>
+        </label>
+        <label>
             <span>Búsqueda</span>
             <input type="text" name="q" value="{{ filters.q }}" placeholder="Móvil, técnico, sección, ítem o supervisor">
         </label>
@@ -118,6 +127,7 @@
                         <th>Prioridad</th>
                         <th>Estado</th>
                         <th>Validación</th>
+                        <th>Eficacia</th>
                         <th>Detalle</th>
                     </tr>
                 </thead>
@@ -133,6 +143,15 @@
                             <td><span class="metric-pill {% if finding['priority'] == 'alta' %}metric-danger{% else %}metric-warning{% endif %}">{{ finding["priority"]|capitalize }}</span></td>
                             <td><span class="metric-pill metric-wrap {% if finding['finding_status'] == 'cerrado_definitivo' or finding['finding_status'] == 'validado' %}metric-ok{% elif finding['finding_status'] == 'reabierto' %}metric-danger{% elif finding['finding_status'] == 'resuelto' %}metric-warning{% else %}metric-neutral{% endif %}">{{ finding["finding_status"]|finding_status_label }}</span></td>
                             <td><span class="metric-pill {% if finding['validation_status'] == 'validado' %}metric-ok{% elif finding['validation_status'] == 'rechazado' %}metric-danger{% else %}metric-neutral{% endif %}">{{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "Sin validar" }}</span></td>
+                            <td>
+                                {% if finding["effectiveness_due_date"] %}
+                                    <span class="metric-pill {% if finding['effectiveness_due_bucket'] == 'overdue' %}metric-danger{% elif finding['effectiveness_due_bucket'] == 'due_soon' %}metric-warning{% elif finding['effectiveness_due_bucket'] == 'ok' %}metric-ok{% else %}metric-neutral{% endif %}">
+                                        {{ finding["effectiveness_due_date"] }}
+                                    </span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
                             <td><a class="table-link" href="{{ url_for('main.finding_detail', finding_id=finding['id']) }}">Ver detalle</a></td>
                         </tr>
                     {% endfor %}

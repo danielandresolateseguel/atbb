@@ -1,12 +1,17 @@
 import sqlite3
 import unicodedata
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
 
 from app.checklist import TOOL_MATCH_RULES
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 
 def is_postgres():
@@ -24,6 +29,24 @@ def _normalize_bool(value):
         return value
     normalized = str(value).strip().lower()
     return normalized in {"1", "true", "yes", "y", "on"}
+
+
+def _app_timezone():
+    name = (current_app.config.get("APP_TIMEZONE") or "").strip() or "America/Argentina/Buenos_Aires"
+    if ZoneInfo:
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            return timezone(timedelta(hours=-3))
+    return timezone(timedelta(hours=-3))
+
+
+def _today_in_app_tz():
+    return datetime.now(timezone.utc).astimezone(_app_timezone()).date()
+
+
+def _date_range_end_in_app_tz(days):
+    return _today_in_app_tz() + timedelta(days=int(days or 0))
 
 
 AUDIT_SCOPE_OFFICIAL = "oficial"
@@ -946,7 +969,7 @@ def fetch_user_by_username(username):
 
 
 def fetch_users():
-    created_at_expr = "created_at" if is_postgres() else "datetime(created_at, 'localtime')"
+    created_at_expr = "created_at"
     rows = get_db().execute(
         f"""
         SELECT
@@ -1586,11 +1609,7 @@ def create_finding_event(finding_id, actor_user_id, event_type, detail=None):
 
 
 def fetch_finding_events(finding_id, limit=100):
-    created_at_expr = (
-        "audit_finding_events.created_at"
-        if is_postgres()
-        else "datetime(audit_finding_events.created_at, 'localtime')"
-    )
+    created_at_expr = "audit_finding_events.created_at"
     rows = get_db().execute(
         f"""
         SELECT
@@ -3065,11 +3084,7 @@ def fetch_tnps_responses(filters=None, limit=200):
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
-    created_at_expr = (
-        "tnps_responses.created_at"
-        if is_postgres()
-        else "datetime(tnps_responses.created_at, 'localtime')"
-    )
+    created_at_expr = "tnps_responses.created_at"
     rows = get_db().execute(
         f"""
         SELECT
@@ -3099,11 +3114,7 @@ def fetch_tnps_responses(filters=None, limit=200):
 
 
 def fetch_tnps_response_for_audit(audit_id):
-    created_at_expr = (
-        "tnps_responses.created_at"
-        if is_postgres()
-        else "datetime(tnps_responses.created_at, 'localtime')"
-    )
+    created_at_expr = "tnps_responses.created_at"
     row = get_db().execute(
         f"""
         SELECT
@@ -3134,11 +3145,7 @@ def fetch_tnps_response_for_audit(audit_id):
 
 
 def fetch_tnps_response_for_qc(qc_session_id):
-    created_at_expr = (
-        "tnps_responses.created_at"
-        if is_postgres()
-        else "datetime(tnps_responses.created_at, 'localtime')"
-    )
+    created_at_expr = "tnps_responses.created_at"
     row = get_db().execute(
         f"""
         SELECT
@@ -4195,7 +4202,7 @@ def fetch_audit_reports_supply_requests_summary(filters=None, auditor_user_id=No
 
 
 def fetch_audit_detail(audit_id, supervisor_scope_names=None):
-    created_at_expr = "audits.created_at" if is_postgres() else "datetime(audits.created_at, 'localtime')"
+    created_at_expr = "audits.created_at"
     where_clauses = ["audits.id = ?"]
     params = [audit_id]
     append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
@@ -4278,7 +4285,7 @@ def fetch_audit_items(audit_id):
 
 
 def fetch_audit_supply_requests(audit_id):
-    created_at_expr = "created_at" if is_postgres() else "datetime(created_at, 'localtime')"
+    created_at_expr = "created_at"
     rows = get_db().execute(
         f"""
         SELECT
@@ -4358,11 +4365,7 @@ def fetch_supply_requests_feed(filters=None, auditor_user_id=None, supervisor_sc
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
-    request_created_at_expr = (
-        "audit_supply_requests.created_at"
-        if is_postgres()
-        else "datetime(audit_supply_requests.created_at, 'localtime')"
-    )
+    request_created_at_expr = "audit_supply_requests.created_at"
     rows = get_db().execute(
         f"""
         SELECT
@@ -4392,15 +4395,16 @@ def fetch_supply_requests_feed(filters=None, auditor_user_id=None, supervisor_sc
         """,
         tuple(list(params) + [int(limit or 200)]),
     ).fetchall()
-    return [dict(row) for row in rows]
+    normalized = [dict(row) for row in rows]
+    return normalized
 
 
 def fetch_audit_findings(audit_id):
-    created_at_expr = "audit_findings.created_at" if is_postgres() else "datetime(audit_findings.created_at, 'localtime')"
-    updated_at_expr = "audit_findings.updated_at" if is_postgres() else "datetime(audit_findings.updated_at, 'localtime')"
-    responded_at_expr = "audit_findings.responded_at" if is_postgres() else "datetime(audit_findings.responded_at, 'localtime')"
-    validated_at_expr = "audit_findings.validated_at" if is_postgres() else "datetime(audit_findings.validated_at, 'localtime')"
-    resolved_at_expr = "audit_findings.resolved_at" if is_postgres() else "datetime(audit_findings.resolved_at, 'localtime')"
+    created_at_expr = "audit_findings.created_at"
+    updated_at_expr = "audit_findings.updated_at"
+    responded_at_expr = "audit_findings.responded_at"
+    validated_at_expr = "audit_findings.validated_at"
+    resolved_at_expr = "audit_findings.resolved_at"
     rows = get_db().execute(
         f"""
         SELECT
@@ -4461,6 +4465,7 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
     validation_status = (filters.get("validation_status") or "").strip()
     audit_id = (filters.get("audit_id") or "").strip()
     q = (filters.get("q") or "").strip()
+    effectiveness = (filters.get("effectiveness") or "").strip().lower()
 
     if from_date:
         where_clauses.append("audits.audit_date >= ?")
@@ -4514,6 +4519,31 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
             )
             lowered = like_value.lower()
             params.extend([lowered] * 5)
+
+    if effectiveness in {"pendiente", "por_vencer", "vencida"}:
+        where_clauses.append("COALESCE(audit_findings.validation_status, '') = 'validado'")
+        where_clauses.append("COALESCE(audit_findings.effectiveness_status, '') = 'pendiente'")
+        where_clauses.append("COALESCE(audit_findings.effectiveness_due_date, '') != ''")
+
+        alert_days = _effectiveness_alert_window_days()
+        today_iso = _today_in_app_tz().isoformat()
+        end_iso = _date_range_end_in_app_tz(alert_days).isoformat()
+        if effectiveness == "vencida":
+            if is_postgres():
+                where_clauses.append("audit_findings.effectiveness_due_date::date < ?::date")
+                params.append(today_iso)
+            else:
+                where_clauses.append("date(audit_findings.effectiveness_due_date) < date(?)")
+                params.append(today_iso)
+        elif effectiveness == "por_vencer":
+            if is_postgres():
+                where_clauses.append("audit_findings.effectiveness_due_date::date >= ?::date")
+                where_clauses.append("audit_findings.effectiveness_due_date::date <= ?::date")
+                params.extend([today_iso, end_iso])
+            else:
+                where_clauses.append("date(audit_findings.effectiveness_due_date) >= date(?)")
+                where_clauses.append("date(audit_findings.effectiveness_due_date) <= date(?)")
+                params.extend([today_iso, end_iso])
 
     where_sql = ""
     if where_clauses:
@@ -4585,8 +4615,8 @@ def fetch_finding_status_breakdown(filters=None, auditor_user_id=None, superviso
 
 
 def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300):
-    created_at_expr = "audit_findings.created_at" if is_postgres() else "datetime(audit_findings.created_at, 'localtime')"
-    updated_at_expr = "audit_findings.updated_at" if is_postgres() else "datetime(audit_findings.updated_at, 'localtime')"
+    created_at_expr = "audit_findings.created_at"
+    updated_at_expr = "audit_findings.updated_at"
     where_sql, params = _build_findings_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
@@ -4629,20 +4659,18 @@ def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=No
         """,
         tuple(list(params) + [limit]),
     ).fetchall()
-    return [dict(row) for row in rows]
+    normalized = [dict(row) for row in rows]
+    _annotate_findings_effectiveness(normalized)
+    return normalized
 
 
 def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_names=None):
-    created_at_expr = "audit_findings.created_at" if is_postgres() else "datetime(audit_findings.created_at, 'localtime')"
-    updated_at_expr = "audit_findings.updated_at" if is_postgres() else "datetime(audit_findings.updated_at, 'localtime')"
-    responded_at_expr = "audit_findings.responded_at" if is_postgres() else "datetime(audit_findings.responded_at, 'localtime')"
-    validated_at_expr = "audit_findings.validated_at" if is_postgres() else "datetime(audit_findings.validated_at, 'localtime')"
-    resolved_at_expr = "audit_findings.resolved_at" if is_postgres() else "datetime(audit_findings.resolved_at, 'localtime')"
-    effectiveness_verified_at_expr = (
-        "audit_findings.effectiveness_verified_at"
-        if is_postgres()
-        else "datetime(audit_findings.effectiveness_verified_at, 'localtime')"
-    )
+    created_at_expr = "audit_findings.created_at"
+    updated_at_expr = "audit_findings.updated_at"
+    responded_at_expr = "audit_findings.responded_at"
+    validated_at_expr = "audit_findings.validated_at"
+    resolved_at_expr = "audit_findings.resolved_at"
+    effectiveness_verified_at_expr = "audit_findings.effectiveness_verified_at"
     where_sql, params = _build_findings_where_sql(
         {"finding_id": finding_id},
         auditor_user_id=auditor_user_id,
@@ -4721,12 +4749,111 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
         """,
         tuple(query_params),
     ).fetchone()
-    return dict(row) if row else None
+    result = dict(row) if row else None
+    if result:
+        _annotate_effectiveness_due(result)
+    return result
+
+
+def fetch_effectiveness_alerts(auditor_user_id=None, supervisor_scope_names=None, limit=8):
+    where_clauses = []
+    params = []
+
+    append_audit_visibility_filters(where_clauses, params)
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
+
+    if auditor_user_id is not None:
+        where_clauses.append("audits.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    where_clauses.append("COALESCE(audit_findings.validation_status, '') = 'validado'")
+    where_clauses.append("COALESCE(audit_findings.effectiveness_status, '') = 'pendiente'")
+    where_clauses.append("COALESCE(audit_findings.effectiveness_due_date, '') != ''")
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    alert_days = _effectiveness_alert_window_days()
+    today_iso = _today_in_app_tz().isoformat()
+    end_iso = _date_range_end_in_app_tz(alert_days).isoformat()
+
+    if is_postgres():
+        overdue_expr = "audit_findings.effectiveness_due_date::date < ?::date"
+        due_soon_expr = (
+            "audit_findings.effectiveness_due_date::date >= ?::date "
+            "AND audit_findings.effectiveness_due_date::date <= ?::date"
+        )
+        count_params = tuple(list(params) + [today_iso, today_iso, end_iso])
+    else:
+        overdue_expr = "date(audit_findings.effectiveness_due_date) < date(?)"
+        due_soon_expr = (
+            "date(audit_findings.effectiveness_due_date) >= date(?) "
+            "AND date(audit_findings.effectiveness_due_date) <= date(?)"
+        )
+        count_params = tuple(list(params) + [today_iso, today_iso, end_iso])
+
+    count_row = get_db().execute(
+        f"""
+        SELECT
+            SUM(CASE WHEN {overdue_expr} THEN 1 ELSE 0 END) AS overdue_count,
+            SUM(CASE WHEN {due_soon_expr} THEN 1 ELSE 0 END) AS due_soon_count
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        {where_sql}
+        """,
+        count_params,
+    ).fetchone()
+
+    overdue_count = (count_row.get("overdue_count") if isinstance(count_row, dict) else count_row[0]) or 0
+    due_soon_count = (count_row.get("due_soon_count") if isinstance(count_row, dict) else count_row[1]) or 0
+
+    preview_where_sql = where_sql
+    preview_params_prefix = list(params) + [today_iso, today_iso, end_iso]
+    if preview_where_sql:
+        preview_where_sql = preview_where_sql + f" AND ({overdue_expr} OR {due_soon_expr})"
+    else:
+        preview_where_sql = f"WHERE ({overdue_expr} OR {due_soon_expr})"
+
+    preview_rows = get_db().execute(
+        f"""
+        SELECT
+            audit_findings.id,
+            audit_findings.audit_id,
+            audits.audit_date,
+            mobile_units.mobile_code,
+            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
+            audit_items.section_title,
+            audit_items.item_label,
+            audit_findings.effectiveness_due_date,
+            audit_findings.effectiveness_status
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        {preview_where_sql}
+        ORDER BY audit_findings.effectiveness_due_date ASC, audit_findings.id ASC
+        LIMIT ?
+        """,
+        tuple(preview_params_prefix + [int(limit or 0) or 8]),
+    ).fetchall()
+
+    preview = [dict(row) for row in preview_rows]
+    _annotate_findings_effectiveness(preview)
+
+    return {
+        "alert_days": alert_days,
+        "overdue_count": overdue_count,
+        "due_soon_count": due_soon_count,
+        "total": overdue_count + due_soon_count,
+        "rows": preview,
+    }
 
 
 def _default_effectiveness_due_date_iso():
     days = int(current_app.config.get("FINDING_EFFECTIVENESS_CHECK_DAYS") or 30)
-    return (datetime.utcnow().date() + timedelta(days=days)).isoformat()
+    return (_today_in_app_tz() + timedelta(days=days)).isoformat()
 
 
 def _normalize_effectiveness_due_date(value):
@@ -4737,6 +4864,61 @@ def _normalize_effectiveness_due_date(value):
         return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
     except ValueError as exc:
         raise ValueError("La fecha de verificación de eficacia no es válida (usa AAAA-MM-DD).") from exc
+
+
+def _effectiveness_alert_window_days():
+    try:
+        return max(1, int(current_app.config.get("FINDING_EFFECTIVENESS_ALERT_DAYS") or 7))
+    except (TypeError, ValueError):
+        return 7
+
+
+def _parse_iso_date(value):
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _annotate_effectiveness_due(row, today=None):
+    if not isinstance(row, dict):
+        return row
+
+    today = today or _today_in_app_tz()
+    alert_days = _effectiveness_alert_window_days()
+    due_date = _parse_iso_date(row.get("effectiveness_due_date"))
+    effectiveness_status = (row.get("effectiveness_status") or "").strip().lower()
+    finding_status = (row.get("finding_status") or "").strip().lower()
+
+    bucket = "none"
+    days_to_due = None
+
+    if effectiveness_status == "eficaz" or finding_status == "cerrado_definitivo":
+        bucket = "ok"
+    elif due_date:
+        days_to_due = (due_date - today).days
+        if days_to_due < 0:
+            bucket = "overdue"
+        elif days_to_due <= alert_days:
+            bucket = "due_soon"
+        else:
+            bucket = "upcoming"
+
+    row["effectiveness_due_bucket"] = bucket
+    row["effectiveness_days_to_due"] = days_to_due
+    return row
+
+
+def _annotate_findings_effectiveness(rows):
+    if not rows:
+        return rows
+    today = _today_in_app_tz()
+    for row in rows:
+        _annotate_effectiveness_due(row, today=today)
+    return rows
 
 
 def update_finding_response(
@@ -5407,7 +5589,7 @@ def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
-    created_at_expr = "qc_sessions.created_at" if is_postgres() else "datetime(qc_sessions.created_at, 'localtime')"
+    created_at_expr = "qc_sessions.created_at"
     rows = get_db().execute(
         f"""
         SELECT
@@ -5437,7 +5619,7 @@ def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names
 
 
 def fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None):
-    created_at_expr = "qc_sessions.created_at" if is_postgres() else "datetime(qc_sessions.created_at, 'localtime')"
+    created_at_expr = "qc_sessions.created_at"
     where_clauses = ["qc_sessions.id = ?"]
     params = [qc_session_id]
     append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names, audit_table_alias="qc_sessions")
