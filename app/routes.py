@@ -2717,25 +2717,42 @@ def dashboard():
     user = current_user()
     auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
     supervisor_scope_names = current_supervisor_scope_names()
-    recent_audits = fetch_recent_audits(
-        auditor_user_id=auditor_user_id,
-        supervisor_scope_names=supervisor_scope_names,
-    )
-    stats = fetch_dashboard_stats(
-        auditor_user_id=auditor_user_id,
-        supervisor_scope_names=supervisor_scope_names,
-    )
-    finding_stats = fetch_finding_stats(
-        auditor_user_id=auditor_user_id,
-        supervisor_scope_names=supervisor_scope_names,
-    ) if can_view_findings() else None
+    try:
+        recent_audits = fetch_recent_audits(
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+        )
+    except Exception:
+        recent_audits = []
+
+    try:
+        stats = fetch_dashboard_stats(
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+        )
+    except Exception:
+        stats = {"total_audits": 0, "approved_count": 0, "critical_count": 0, "approval_rate": 0}
+
+    if can_view_findings():
+        try:
+            finding_stats = fetch_finding_stats(
+                auditor_user_id=auditor_user_id,
+                supervisor_scope_names=supervisor_scope_names,
+            )
+        except Exception:
+            finding_stats = None
+    else:
+        finding_stats = None
 
     effectiveness_alerts = None
     if user and user.get("role") == "auditor":
-        effectiveness_alerts = fetch_effectiveness_alerts(
-            auditor_user_id=user["id"],
-            supervisor_scope_names=None,
-        )
+        try:
+            effectiveness_alerts = fetch_effectiveness_alerts(
+                auditor_user_id=user["id"],
+                supervisor_scope_names=None,
+            )
+        except Exception:
+            effectiveness_alerts = None
 
     finding_donut = None
     if user and user.get("role") == "supervisor" and can_view_findings():
