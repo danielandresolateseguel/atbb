@@ -263,6 +263,59 @@ def init_db():
             FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id)
         );
 
+        CREATE TABLE IF NOT EXISTS import_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL DEFAULT 'completed',
+            import_type TEXT NOT NULL,
+            import_label TEXT NOT NULL,
+            filename TEXT,
+            file_sha256 TEXT,
+            uploaded_by_user_id INTEGER,
+            uploaded_by_username TEXT,
+            uploaded_by_role TEXT,
+            row_count INTEGER NOT NULL DEFAULT 0,
+            created_count INTEGER NOT NULL DEFAULT 0,
+            updated_count INTEGER NOT NULL DEFAULT 0,
+            skipped_rows_json TEXT,
+            scope_json TEXT,
+            can_rollback INTEGER NOT NULL DEFAULT 0,
+            rolled_back_at TEXT,
+            rolled_back_by_user_id INTEGER,
+            error_message TEXT,
+            FOREIGN KEY (uploaded_by_user_id) REFERENCES users (id),
+            FOREIGN KEY (rolled_back_by_user_id) REFERENCES users (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS material_stock_import_backups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            mobile_unit_id INTEGER NOT NULL,
+            material_id INTEGER NOT NULL,
+            quantity REAL NOT NULL DEFAULT 0,
+            UNIQUE(batch_id, mobile_unit_id, material_id),
+            FOREIGN KEY (batch_id) REFERENCES import_batches (id),
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id),
+            FOREIGN KEY (material_id) REFERENCES materials (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS equipment_inventory_import_backups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            storage_location_id INTEGER,
+            mobile_unit_id INTEGER,
+            center_name TEXT NOT NULL,
+            warehouse_code TEXT NOT NULL,
+            warehouse_name TEXT NOT NULL,
+            material_code TEXT NOT NULL,
+            material_name TEXT NOT NULL,
+            serial_number TEXT NOT NULL,
+            UNIQUE(batch_id, serial_number),
+            FOREIGN KEY (batch_id) REFERENCES import_batches (id),
+            FOREIGN KEY (storage_location_id) REFERENCES storage_locations (id),
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id)
+        );
+
         CREATE TABLE IF NOT EXISTS audits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -582,6 +635,64 @@ def init_db_postgres():
             material_code TEXT NOT NULL,
             material_name TEXT NOT NULL,
             serial_number TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS import_batches (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            status TEXT NOT NULL DEFAULT 'completed',
+            import_type TEXT NOT NULL,
+            import_label TEXT NOT NULL,
+            filename TEXT,
+            file_sha256 TEXT,
+            uploaded_by_user_id INTEGER REFERENCES users (id),
+            uploaded_by_username TEXT,
+            uploaded_by_role TEXT,
+            row_count INTEGER NOT NULL DEFAULT 0,
+            created_count INTEGER NOT NULL DEFAULT 0,
+            updated_count INTEGER NOT NULL DEFAULT 0,
+            skipped_rows_json TEXT,
+            scope_json TEXT,
+            can_rollback INTEGER NOT NULL DEFAULT 0,
+            rolled_back_at TIMESTAMPTZ,
+            rolled_back_by_user_id INTEGER REFERENCES users (id),
+            error_message TEXT
+        )
+        """
+    )
+    cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS scope_json TEXT")
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS material_stock_import_backups (
+            id SERIAL PRIMARY KEY,
+            batch_id INTEGER NOT NULL REFERENCES import_batches (id) ON DELETE CASCADE,
+            mobile_unit_id INTEGER NOT NULL REFERENCES mobile_units (id),
+            material_id INTEGER NOT NULL REFERENCES materials (id),
+            quantity DOUBLE PRECISION NOT NULL DEFAULT 0,
+            UNIQUE(batch_id, mobile_unit_id, material_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS equipment_inventory_import_backups (
+            id SERIAL PRIMARY KEY,
+            batch_id INTEGER NOT NULL REFERENCES import_batches (id) ON DELETE CASCADE,
+            storage_location_id INTEGER REFERENCES storage_locations (id),
+            mobile_unit_id INTEGER REFERENCES mobile_units (id),
+            center_name TEXT NOT NULL,
+            warehouse_code TEXT NOT NULL,
+            warehouse_name TEXT NOT NULL,
+            material_code TEXT NOT NULL,
+            material_name TEXT NOT NULL,
+            serial_number TEXT NOT NULL,
+            UNIQUE(batch_id, serial_number)
         )
         """
     )
@@ -1054,6 +1165,69 @@ def ensure_legacy_columns(connection):
             is_active INTEGER NOT NULL DEFAULT 1,
             UNIQUE(user_id, supervisor_name),
             FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS import_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL DEFAULT 'completed',
+            import_type TEXT NOT NULL,
+            import_label TEXT NOT NULL,
+            filename TEXT,
+            file_sha256 TEXT,
+            uploaded_by_user_id INTEGER,
+            uploaded_by_username TEXT,
+            uploaded_by_role TEXT,
+            row_count INTEGER NOT NULL DEFAULT 0,
+            created_count INTEGER NOT NULL DEFAULT 0,
+            updated_count INTEGER NOT NULL DEFAULT 0,
+            skipped_rows_json TEXT,
+            scope_json TEXT,
+            can_rollback INTEGER NOT NULL DEFAULT 0,
+            rolled_back_at TEXT,
+            rolled_back_by_user_id INTEGER,
+            error_message TEXT,
+            FOREIGN KEY (uploaded_by_user_id) REFERENCES users (id),
+            FOREIGN KEY (rolled_back_by_user_id) REFERENCES users (id)
+        )
+        """
+    )
+    add_column_if_missing(connection, "import_batches", "scope_json", "TEXT")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS material_stock_import_backups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            mobile_unit_id INTEGER NOT NULL,
+            material_id INTEGER NOT NULL,
+            quantity REAL NOT NULL DEFAULT 0,
+            UNIQUE(batch_id, mobile_unit_id, material_id),
+            FOREIGN KEY (batch_id) REFERENCES import_batches (id),
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id),
+            FOREIGN KEY (material_id) REFERENCES materials (id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS equipment_inventory_import_backups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            storage_location_id INTEGER,
+            mobile_unit_id INTEGER,
+            center_name TEXT NOT NULL,
+            warehouse_code TEXT NOT NULL,
+            warehouse_name TEXT NOT NULL,
+            material_code TEXT NOT NULL,
+            material_name TEXT NOT NULL,
+            serial_number TEXT NOT NULL,
+            UNIQUE(batch_id, serial_number),
+            FOREIGN KEY (batch_id) REFERENCES import_batches (id),
+            FOREIGN KEY (storage_location_id) REFERENCES storage_locations (id),
+            FOREIGN KEY (mobile_unit_id) REFERENCES mobile_units (id)
         )
         """
     )
@@ -6500,7 +6674,7 @@ def import_vehicles(rows):
     }
 
 
-def import_material_stock(rows):
+def import_material_stock(rows, *, import_batch_id=None):
     connection = get_db()
     created_materials = 0
     updated_stock_rows = 0
@@ -6525,6 +6699,34 @@ def import_material_stock(rows):
         if not normalized_mobile_code:
             continue
         mobile_id_map[mobile_code] = ensure_mobile_unit(connection, normalized_mobile_code)
+
+    if import_batch_id and mobile_id_map:
+        mobile_ids = list(mobile_id_map.values())
+        placeholders = ", ".join(["?"] * len(mobile_ids))
+        previous_rows = connection.execute(
+            f"""
+            SELECT material_id, mobile_unit_id, quantity
+            FROM material_stock
+            WHERE mobile_unit_id IN ({placeholders})
+            """,
+            mobile_ids,
+        ).fetchall()
+        if previous_rows:
+            connection.executemany(
+                """
+                INSERT INTO material_stock_import_backups (batch_id, mobile_unit_id, material_id, quantity)
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (
+                        import_batch_id,
+                        row["mobile_unit_id"],
+                        row["material_id"],
+                        row["quantity"],
+                    )
+                    for row in previous_rows
+                ],
+            )
 
     connection.executemany(
         "DELETE FROM material_stock WHERE mobile_unit_id = ?",
@@ -6657,7 +6859,7 @@ def import_storage_locations(rows):
     }
 
 
-def import_equipment_inventory(rows):
+def import_equipment_inventory(rows, *, import_batch_id=None):
     connection = get_db()
     created_count = 0
     updated_count = 0
@@ -6671,6 +6873,57 @@ def import_equipment_inventory(rows):
         for row in rows
         if (row.get("codigo_almacen") or "").strip() and (row.get("almacen") or "").strip()
     }
+
+    if import_batch_id and warehouse_codes:
+        codes = sorted(warehouse_codes)
+        placeholders = ", ".join(["?"] * len(codes))
+        previous_rows = connection.execute(
+            f"""
+            SELECT
+                storage_location_id,
+                mobile_unit_id,
+                center_name,
+                warehouse_code,
+                warehouse_name,
+                material_code,
+                material_name,
+                serial_number
+            FROM equipment_inventory
+            WHERE warehouse_code IN ({placeholders})
+            """,
+            codes,
+        ).fetchall()
+        if previous_rows:
+            connection.executemany(
+                """
+                INSERT INTO equipment_inventory_import_backups (
+                    batch_id,
+                    storage_location_id,
+                    mobile_unit_id,
+                    center_name,
+                    warehouse_code,
+                    warehouse_name,
+                    material_code,
+                    material_name,
+                    serial_number
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        import_batch_id,
+                        row["storage_location_id"],
+                        row["mobile_unit_id"],
+                        row["center_name"],
+                        row["warehouse_code"],
+                        row["warehouse_name"],
+                        row["material_code"],
+                        row["material_name"],
+                        row["serial_number"],
+                    )
+                    for row in previous_rows
+                ],
+            )
+
     if warehouse_codes:
         connection.executemany(
             "DELETE FROM equipment_inventory WHERE warehouse_code = ?",
@@ -6761,6 +7014,330 @@ def import_equipment_inventory(rows):
         "updated_count": updated_count,
         "skipped_rows": skipped_rows,
     }
+
+
+def create_import_batch(
+    import_type,
+    import_label,
+    *,
+    filename=None,
+    file_sha256=None,
+    uploaded_by_user=None,
+    row_count=0,
+    can_rollback=0,
+    scope=None,
+):
+    safe_type = (import_type or "").strip()
+    safe_label = (import_label or "").strip()
+    if not safe_type or not safe_label:
+        raise ValueError("Tipo de importación inválido.")
+
+    uploaded_by_user_id = None
+    uploaded_by_username = None
+    uploaded_by_role = None
+    if uploaded_by_user:
+        uploaded_by_user_id = uploaded_by_user.get("id")
+        uploaded_by_username = uploaded_by_user.get("username")
+        uploaded_by_role = uploaded_by_user.get("role")
+
+    scope_json = json.dumps(scope or {}, ensure_ascii=False) if scope is not None else None
+
+    connection = get_db()
+    if is_postgres():
+        row = connection.execute(
+            """
+            INSERT INTO import_batches (
+                status,
+                import_type,
+                import_label,
+                filename,
+                file_sha256,
+                uploaded_by_user_id,
+                uploaded_by_username,
+                uploaded_by_role,
+                row_count,
+                can_rollback,
+                scope_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                "running",
+                safe_type,
+                safe_label,
+                filename,
+                file_sha256,
+                uploaded_by_user_id,
+                uploaded_by_username,
+                uploaded_by_role,
+                int(row_count or 0),
+                1 if can_rollback else 0,
+                scope_json,
+            ),
+        ).fetchone()
+        batch_id = row["id"] if isinstance(row, dict) else row[0]
+    else:
+        cursor = connection.execute(
+            """
+            INSERT INTO import_batches (
+                status,
+                import_type,
+                import_label,
+                filename,
+                file_sha256,
+                uploaded_by_user_id,
+                uploaded_by_username,
+                uploaded_by_role,
+                row_count,
+                can_rollback,
+                scope_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "running",
+                safe_type,
+                safe_label,
+                filename,
+                file_sha256,
+                uploaded_by_user_id,
+                uploaded_by_username,
+                uploaded_by_role,
+                int(row_count or 0),
+                1 if can_rollback else 0,
+                scope_json,
+            ),
+        )
+        batch_id = cursor.lastrowid
+
+    connection.commit()
+    return batch_id
+
+
+def finalize_import_batch(
+    batch_id,
+    *,
+    status="completed",
+    created_count=0,
+    updated_count=0,
+    skipped_rows=None,
+    error_message=None,
+):
+    connection = get_db()
+    skipped_json = None
+    if skipped_rows is not None:
+        skipped_json = json.dumps(list(skipped_rows or []), ensure_ascii=False)
+
+    connection.execute(
+        """
+        UPDATE import_batches
+        SET status = ?,
+            created_count = ?,
+            updated_count = ?,
+            skipped_rows_json = COALESCE(?, skipped_rows_json),
+            error_message = ?
+        WHERE id = ?
+        """,
+        (
+            (status or "completed").strip(),
+            int(created_count or 0),
+            int(updated_count or 0),
+            skipped_json,
+            (error_message or None),
+            int(batch_id),
+        ),
+    )
+    connection.commit()
+
+
+def fetch_import_batches(limit=50):
+    connection = get_db()
+    rows = connection.execute(
+        """
+        SELECT *
+        FROM import_batches
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (int(limit or 50),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_import_batch_by_id(batch_id):
+    row = get_db().execute(
+        "SELECT * FROM import_batches WHERE id = ?",
+        (int(batch_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def rollback_import_batch(batch_id, actor_user_id):
+    connection = get_db()
+    batch = fetch_import_batch_by_id(batch_id)
+    if not batch:
+        raise ValueError("Importación no encontrada.")
+    if not batch.get("can_rollback"):
+        raise ValueError("Esta importación no admite reversión.")
+    if batch.get("rolled_back_at"):
+        raise ValueError("Esta importación ya fue revertida.")
+    if (batch.get("status") or "").strip().lower() != "completed":
+        raise ValueError("Solo se pueden revertir importaciones completadas.")
+
+    scope = {}
+    raw_scope = batch.get("scope_json")
+    if raw_scope:
+        try:
+            parsed = json.loads(raw_scope)
+            scope = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            scope = {}
+
+    now_value = datetime.utcnow().replace(microsecond=0).isoformat()
+    import_type = (batch.get("import_type") or "").strip()
+
+    if import_type == "material_stock":
+        mobile_unit_ids = scope.get("mobile_unit_ids") or []
+        mobile_codes = scope.get("mobile_codes") or []
+        if not mobile_unit_ids and mobile_codes:
+            resolved_ids = []
+            for raw_code in mobile_codes:
+                normalized_code = normalize_mobile_code(raw_code)
+                if not normalized_code:
+                    continue
+                row = connection.execute(
+                    "SELECT id FROM mobile_units WHERE mobile_code = ?",
+                    (normalized_code,),
+                ).fetchone()
+                if row:
+                    resolved_ids.append(row["id"] if isinstance(row, dict) else row[0])
+            mobile_unit_ids = resolved_ids
+        if not mobile_unit_ids:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT mobile_unit_id
+                FROM material_stock_import_backups
+                WHERE batch_id = ?
+                """,
+                (int(batch_id),),
+            ).fetchall()
+            mobile_unit_ids = [row["mobile_unit_id"] for row in rows]
+
+        if mobile_unit_ids:
+            placeholders = ", ".join(["?"] * len(mobile_unit_ids))
+            connection.execute(
+                f"DELETE FROM material_stock WHERE mobile_unit_id IN ({placeholders})",
+                list(mobile_unit_ids),
+            )
+
+        backup_rows = connection.execute(
+            """
+            SELECT material_id, mobile_unit_id, quantity
+            FROM material_stock_import_backups
+            WHERE batch_id = ?
+            """,
+            (int(batch_id),),
+        ).fetchall()
+        if backup_rows:
+            connection.executemany(
+                """
+                INSERT INTO material_stock (material_id, mobile_unit_id, quantity)
+                VALUES (?, ?, ?)
+                ON CONFLICT(material_id, mobile_unit_id)
+                DO UPDATE SET quantity = excluded.quantity
+                """,
+                [
+                    (
+                        row["material_id"],
+                        row["mobile_unit_id"],
+                        row["quantity"],
+                    )
+                    for row in backup_rows
+                ],
+            )
+
+    elif import_type == "equipment_inventory":
+        warehouse_codes = scope.get("warehouse_codes") or []
+        if warehouse_codes:
+            placeholders = ", ".join(["?"] * len(warehouse_codes))
+            connection.execute(
+                f"DELETE FROM equipment_inventory WHERE warehouse_code IN ({placeholders})",
+                list(warehouse_codes),
+            )
+
+        backup_rows = connection.execute(
+            """
+            SELECT
+                storage_location_id,
+                mobile_unit_id,
+                center_name,
+                warehouse_code,
+                warehouse_name,
+                material_code,
+                material_name,
+                serial_number
+            FROM equipment_inventory_import_backups
+            WHERE batch_id = ?
+            """,
+            (int(batch_id),),
+        ).fetchall()
+        if backup_rows:
+            serials = [row["serial_number"] for row in backup_rows if row.get("serial_number")]
+            if serials:
+                placeholders = ", ".join(["?"] * len(serials))
+                connection.execute(
+                    f"DELETE FROM equipment_inventory WHERE serial_number IN ({placeholders})",
+                    serials,
+                )
+            connection.executemany(
+                """
+                INSERT INTO equipment_inventory (
+                    storage_location_id,
+                    mobile_unit_id,
+                    center_name,
+                    warehouse_code,
+                    warehouse_name,
+                    material_code,
+                    material_name,
+                    serial_number
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(serial_number)
+                DO UPDATE SET
+                    storage_location_id = excluded.storage_location_id,
+                    mobile_unit_id = excluded.mobile_unit_id,
+                    center_name = excluded.center_name,
+                    warehouse_code = excluded.warehouse_code,
+                    warehouse_name = excluded.warehouse_name,
+                    material_code = excluded.material_code,
+                    material_name = excluded.material_name
+                """,
+                [
+                    (
+                        row["storage_location_id"],
+                        row["mobile_unit_id"],
+                        row["center_name"],
+                        row["warehouse_code"],
+                        row["warehouse_name"],
+                        row["material_code"],
+                        row["material_name"],
+                        row["serial_number"],
+                    )
+                    for row in backup_rows
+                ],
+            )
+    else:
+        raise ValueError("Tipo de importación no soportado para reversión.")
+
+    connection.execute(
+        """
+        UPDATE import_batches
+        SET status = ?,
+            rolled_back_at = ?,
+            rolled_back_by_user_id = ?
+        WHERE id = ?
+        """,
+        ("rolled_back", now_value, int(actor_user_id), int(batch_id)),
+    )
+    connection.commit()
 
 
 def detect_material_column(fieldnames):

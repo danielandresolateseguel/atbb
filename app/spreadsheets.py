@@ -59,25 +59,30 @@ def parse_tabular_upload(uploaded_file):
     if not uploaded_file or not uploaded_file.filename:
         raise ValueError("Debes seleccionar un archivo para importar.")
 
-    filename = uploaded_file.filename.lower()
+    original_filename = uploaded_file.filename
+    filename = original_filename.lower()
     raw_content = uploaded_file.stream.read()
     if not raw_content:
         raise ValueError("El archivo seleccionado esta vacio.")
 
     if filename.endswith(".csv"):
-        return parse_csv_bytes(raw_content)
+        fieldnames, rows = parse_csv_bytes(raw_content)
+        return fieldnames, rows, {"filename": original_filename, "raw_content": raw_content}
 
     if filename.endswith(".xlsx"):
-        return parse_xlsx_bytes(raw_content)
+        fieldnames, rows = parse_xlsx_bytes(raw_content)
+        return fieldnames, rows, {"filename": original_filename, "raw_content": raw_content}
 
     if zipfile.is_zipfile(io.BytesIO(raw_content)):
         try:
-            return parse_xlsx_bytes(raw_content)
+            fieldnames, rows = parse_xlsx_bytes(raw_content)
+            return fieldnames, rows, {"filename": original_filename, "raw_content": raw_content}
         except Exception:
             pass
 
     try:
-        return parse_csv_bytes(raw_content)
+        fieldnames, rows = parse_csv_bytes(raw_content)
+        return fieldnames, rows, {"filename": original_filename, "raw_content": raw_content}
     except UnicodeDecodeError:
         pass
 

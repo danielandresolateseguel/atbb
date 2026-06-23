@@ -1,6 +1,7 @@
 import base64
 import binascii
 import csv
+import hashlib
 import hmac
 import io
 import json
@@ -28,9 +29,11 @@ from app.models import (
     count_users,
     create_audit,
     create_audit_supply_requests,
+    create_import_batch,
     create_qc_session,
     create_user,
     create_tnps_response,
+    finalize_import_batch,
     get_audit_official_from_date,
     update_user,
     fetch_user_by_id,
@@ -112,6 +115,8 @@ from app.models import (
     import_technician_information,
     import_technicians,
     import_vehicles,
+    fetch_import_batches,
+    rollback_import_batch,
     replace_user_supervisor_scopes,
     update_finding_response,
     update_finding_effectiveness,
@@ -4353,19 +4358,71 @@ def imports():
     if not can_import():
         abort(403)
     import_summary = None
+    import_types = CSV_IMPORT_TYPES
+    if is_auditor():
+        allowed = {"material_stock", "equipment_inventory"}
+        import_types = {key: value for key, value in CSV_IMPORT_TYPES.items() if key in allowed}
 
     if request.method == "POST":
+        if not validate_csrf_token(request.form.get("csrf_token")):
+            flash("Token inválido. Refresca la página y vuelve a intentar.", "error")
+            return redirect(url_for("main.imports"))
+
         import_type = request.form.get("import_type", "")
-        import_config = CSV_IMPORT_TYPES.get(import_type)
+        import_config = import_types.get(import_type)
 
         if not import_config:
             flash("Selecciona un tipo de importacion valido.", "error")
             return redirect(url_for("main.imports"))
 
+        batch_id = None
         try:
-            fieldnames, rows = parse_tabular_upload(request.files.get("csv_file"))
+            fieldnames, rows, meta = parse_tabular_upload(request.files.get("csv_file"))
             validate_required_columns(fieldnames, import_config["required_columns"])
-            import_summary = import_config["importer"](rows)
+            file_sha256 = hashlib.sha256(meta.get("raw_content") or b"").hexdigest()
+            user = current_user()
+            can_rollback = import_type in {"material_stock", "equipment_inventory"}
+
+            scope = {}
+            if import_type == "material_stock":
+                material_col = "material" if "material" in fieldnames else ("material_name" if "material_name" in fieldnames else (fieldnames[0] if fieldnames else ""))
+                scope = {
+                    "mobile_codes": [
+                        str(col)
+                        for col in fieldnames
+                        if col and col not in {material_col, "total"}
+                    ]
+                }
+            elif import_type == "equipment_inventory":
+                warehouse_codes = {
+                    (row.get("codigo_almacen") or "").strip()
+                    for row in rows
+                    if (row.get("codigo_almacen") or "").strip() and (row.get("almacen") or "").strip()
+                }
+                scope = {"warehouse_codes": sorted(warehouse_codes)}
+
+            batch_id = create_import_batch(
+                import_type,
+                import_config["label"],
+                filename=meta.get("filename"),
+                file_sha256=file_sha256,
+                uploaded_by_user=user,
+                row_count=len(rows),
+                can_rollback=can_rollback,
+                scope=scope,
+            )
+
+            if import_type in {"material_stock", "equipment_inventory"}:
+                import_summary = import_config["importer"](rows, import_batch_id=batch_id)
+            else:
+                import_summary = import_config["importer"](rows)
+            finalize_import_batch(
+                batch_id,
+                status="completed",
+                created_count=import_summary["created_count"],
+                updated_count=import_summary["updated_count"],
+                skipped_rows=import_summary["skipped_rows"],
+            )
 
             flash(
                 f"{import_config['label']} importados: {import_summary['created_count']} creados, "
@@ -4378,8 +4435,16 @@ def imports():
                     "error",
                 )
         except ValueError as exc:
+            if batch_id:
+                finalize_import_batch(batch_id, status="failed", error_message=str(exc)[:400])
             flash(str(exc), "error")
         except Exception as exc:
+            if batch_id:
+                finalize_import_batch(
+                    batch_id,
+                    status="failed",
+                    error_message=f"{type(exc).__name__}: {str(exc)[:400]}",
+                )
             current_app.logger.exception("Error importando %s", import_type)
             flash(
                 "Error interno importando el archivo. "
@@ -4387,9 +4452,10 @@ def imports():
                 "error",
             )
 
+    import_batches = fetch_import_batches(50) if is_admin() else []
     return render_template(
         "imports.html",
-        import_types=CSV_IMPORT_TYPES,
+        import_types=import_types,
         technicians_count=len(fetch_technicians()),
         vehicles_count=len(fetch_vehicles()),
         mobile_units_count=len(fetch_mobile_units()),
@@ -4398,7 +4464,33 @@ def imports():
         storage_locations_summary=fetch_storage_locations_summary(),
         equipment_summary=fetch_equipment_summary(),
         import_summary=import_summary,
+        import_batches=import_batches,
     )
+
+
+@main.route("/imports/<int:batch_id>/rollback", methods=["POST"])
+def rollback_import(batch_id):
+    if not is_admin():
+        abort(403)
+    if not validate_csrf_token(request.form.get("csrf_token")):
+        flash("Token inválido. Refresca la página y vuelve a intentar.", "error")
+        return redirect(url_for("main.imports"))
+
+    user = current_user()
+    try:
+        rollback_import_batch(batch_id, user["id"])
+        flash("Importación revertida. El inventario volvió al estado anterior.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    except Exception as exc:
+        current_app.logger.exception("Error revirtiendo importación %s", batch_id)
+        flash(
+            "Error interno revirtiendo la importación. "
+            f"Detalle: {type(exc).__name__}: {str(exc)[:180]}",
+            "error",
+        )
+
+    return redirect(url_for("main.imports"))
 
 
 @main.route("/storage-locations")
