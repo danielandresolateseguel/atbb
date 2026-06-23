@@ -28,6 +28,10 @@
                             <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
                             <a href="{{ url_for('main.tnps') }}">tNPS</a>
                         {% endif %}
+                        <a href="{{ url_for('main.qc_sessions') }}">QC Instalaciones</a>
+                        {% if can_view_reports %}
+                            <a href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
+                        {% endif %}
                         {% if can_view_reports %}
                             <a href="{{ url_for('main.reports') }}">Reportes</a>
                         {% endif %}

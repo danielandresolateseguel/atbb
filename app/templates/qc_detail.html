@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}QC {{ qc["id"] }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Control</p>
+        <h2>QC {{ qc["id"] }}</h2>
+        <p class="hero-copy">
+            {{ qc["qc_date"] }} | {{ qc["technician_name"] }}
+        </p>
+    </div>
+    <div class="hero-actions no-print">
+        <span class="badge badge-{{ qc['result_status']|lower|replace(' ', '-') }}">{{ qc["result_status"] }}</span>
+        {% if qc["record_scope"] == "pruebas" %}
+            <span class="badge badge-pruebas">Pruebas</span>
+        {% endif %}
+        {% if qc.get("audit_id") %}
+            <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=qc['audit_id']) }}">Ver auditoría {{ qc["audit_id"] }}</a>
+        {% endif %}
+        {% if can_create_audit %}
+            <a class="button button-secondary" href="{{ url_for('main.tnps', qc_id=qc['id']) }}">Agregar tNPS</a>
+        {% endif %}
+        {% if can_view_reports %}
+            <a class="button button-secondary" href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
+        {% endif %}
+        <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Volver</a>
+        <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
+    </div>
+</section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Contexto</p>
+                <h3>Datos</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Auditor:</strong> {{ qc["auditor_name"] }}</p>
+            <p><strong>SA:</strong> {{ qc["sa_number"] or "-" }}</p>
+            <p><strong>Técnico:</strong> {{ qc["technician_name"] }}{% if qc["employee_code"] %} | {{ qc["employee_code"] }}{% endif %}</p>
+            <p><strong>Empresa:</strong> {{ qc["technician_company"] or "-" }}</p>
+            <p><strong>Supervisor:</strong> {{ qc["technician_supervisor"] or "-" }}</p>
+            <p><strong>Centro:</strong> {{ qc["technician_center"] or "-" }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Resultado</p>
+                <h3>Resumen</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Ubicación:</strong> {{ qc["location"] }}</p>
+            <p><strong>Dirección:</strong> {{ qc["address"] or "-" }}</p>
+            <p><strong>Tipo:</strong> {{ qc["installation_type"] }}</p>
+            <p><strong>Puntaje QC:</strong> {{ qc["total_score"] }}</p>
+            <p><strong>Notas:</strong> {{ qc["general_notes"] or "-" }}</p>
+        </div>
+        {% set qc_photos = qc["photo_path"]|audit_photo_paths %}
+        {% if qc_photos %}
+            <div class="evidence-block">
+                <strong>Foto del QC</strong>
+                {% for photo_src in qc_photos %}
+                    {% if photo_src.startswith("http") %}
+                        <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                        <img src="{{ photo_src }}" alt="Foto QC {{ loop.index }}" class="evidence-image">
+                    {% else %}
+                        <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                        <img src="{{ url_for('static', filename=photo_src) }}" alt="Foto QC {{ loop.index }}" class="evidence-image">
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% endif %}
+    </article>
+</section>
+
+<section class="card info-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Experiencia</p>
+            <h3>tNPS</h3>
+        </div>
+        <div class="hero-actions">
+            {% if can_create_audit %}
+                <a class="button button-secondary" href="{{ url_for('main.tnps', qc_id=qc['id']) }}">
+                    {% if tnps_response %}Editar tNPS{% else %}Agregar tNPS{% endif %}
+                </a>
+            {% endif %}
+        </div>
+    </div>
+    {% if tnps_response %}
+        <div class="info-list">
+            <p><strong>Fecha:</strong> {{ tnps_response["response_date"] }}</p>
+            <p><strong>Puntaje:</strong> {{ tnps_response["score"] }}</p>
+            <p><strong>Cliente:</strong> {{ tnps_response["customer_name"] or "-" }}</p>
+            <p><strong>Comentario:</strong> {{ tnps_response["comment"] or "-" }}</p>
+            {% if tnps_source == "audit" %}
+                <p><strong>Origen:</strong> Vinculado por auditoría</p>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">Todavía no hay un tNPS asociado a este QC.</p>
+    {% endif %}
+</section>
+
+{% for section_title, items in grouped_items.items() %}
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Checklist</p>
+                <h3>{{ section_title }}</h3>
+            </div>
+        </div>
+        <div class="audit-detail-grid">
+            {% for item in items %}
+                <article class="checklist-item">
+                    <div class="checklist-header">
+                        <div>
+                            <strong>{{ item["item_label"] }}</strong>
+                        </div>
+                        <span class="metric-pill metric-wrap {% if item['status'] == 'conforme' %}metric-ok{% elif item['status'] == 'no_aplica' %}metric-neutral{% elif item['status'] == 'nc_menor' %}metric-warning{% else %}metric-danger{% endif %}">
+                            {{ item["status"]|replace('_', ' ')|capitalize }}
+                        </span>
+                    </div>
+                    <p><strong>Detalle:</strong> {{ item["notes"] or "-" }}</p>
+                    {% set photos = item["photo_path"]|audit_photo_paths %}
+                    {% if photos %}
+                        <div class="evidence-block">
+                            <strong>Evidencia</strong>
+                            {% for photo_src in photos %}
+                                {% if photo_src.startswith("http") %}
+                                    <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                                    <img src="{{ photo_src }}" alt="Evidencia {{ loop.index }}" class="evidence-image">
+                                {% else %}
+                                    <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                                    <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia {{ loop.index }}" class="evidence-image">
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% endfor %}
+{% endblock %}

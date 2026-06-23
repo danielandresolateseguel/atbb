@@ -28,6 +28,7 @@ from app.models import (
     count_users,
     create_audit,
     create_audit_supply_requests,
+    create_qc_session,
     create_user,
     create_tnps_response,
     get_audit_official_from_date,
@@ -94,6 +95,14 @@ from app.models import (
     fetch_technicians,
     fetch_vehicles,
     fetch_mobile_units,
+    fetch_qc_sessions,
+    fetch_qc_session_detail,
+    fetch_qc_items,
+    fetch_qc_reports_management_summary,
+    fetch_qc_reports_status_breakdown,
+    fetch_qc_reports_time_series,
+    fetch_qc_reports_technician_ranking,
+    fetch_tnps_response_for_qc,
     count_audit_picker_audits,
     import_checklist_del_dia,
     import_equipment_inventory,
@@ -2176,6 +2185,129 @@ def persist_item_evidence(items, audit_date):
             item["photo_path"] = f"uploads/audits/{date_folder}/{generated_filename}".replace("\\", "/")
 
 
+def persist_qc_item_evidence(items, qc_date):
+    date_folder = datetime.fromisoformat(qc_date).strftime("%Y/%m")
+    if not cloudinary_enabled():
+        target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "qc" / date_folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in items:
+        existing_photo_path = item.get("photo_path")
+        photo_files = item.pop("photo_files", None)
+        photo_file = item.pop("photo_file", None)
+
+        if photo_files:
+            photo_paths = []
+            for index, entry in enumerate(photo_files):
+                filename, extension = validate_photo_file(entry, item["item_label"])
+                safe_stem = secure_filename(item["item_key"]) or "evidencia"
+                generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
+
+                raw_bytes = entry.stream.read()
+                if not raw_bytes:
+                    raise ValueError(f"La evidencia de {item['item_label']} no contiene datos validos.")
+
+                optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+                if cloudinary_enabled():
+                    base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+                    folder = f"{base_folder}/qc/{date_folder}"
+                    uploaded = upload_private_image_to_cloudinary(
+                        optimized_bytes,
+                        folder=folder,
+                        public_id=generated_name,
+                    )
+                    photo_paths.append(
+                        encode_cloudinary_ref(
+                            uploaded.get("public_id"),
+                            version=uploaded.get("version"),
+                            delivery_type="private",
+                            resource_type="image",
+                            file_format=optimized_extension,
+                        )
+                    )
+                else:
+                    generated_filename = f"{generated_name}.{optimized_extension}"
+                    saved_path = target_dir / generated_filename
+                    saved_path.write_bytes(optimized_bytes)
+                    photo_paths.append(
+                        f"uploads/audits/qc/{date_folder}/{generated_filename}".replace("\\", "/")
+                    )
+            item["photo_path"] = json.dumps(photo_paths, ensure_ascii=False) if photo_paths else None
+            continue
+
+        if not photo_file:
+            item["photo_path"] = existing_photo_path or None
+            continue
+
+        filename, extension = validate_photo_file(photo_file, item["item_label"])
+        safe_stem = secure_filename(item["item_key"]) or "evidencia"
+        generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{uuid4().hex[:8]}"
+
+        raw_bytes = photo_file.stream.read()
+        if not raw_bytes:
+            raise ValueError(f"La evidencia de {item['item_label']} no contiene datos validos.")
+
+        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+        if cloudinary_enabled():
+            base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+            folder = f"{base_folder}/qc/{date_folder}"
+            uploaded = upload_private_image_to_cloudinary(
+                optimized_bytes,
+                folder=folder,
+                public_id=generated_name,
+            )
+            item["photo_path"] = encode_cloudinary_ref(
+                uploaded.get("public_id"),
+                version=uploaded.get("version"),
+                delivery_type="private",
+                resource_type="image",
+                file_format=optimized_extension,
+            )
+        else:
+            generated_filename = f"{generated_name}.{optimized_extension}"
+            saved_path = target_dir / generated_filename
+            saved_path.write_bytes(optimized_bytes)
+            item["photo_path"] = f"uploads/audits/qc/{date_folder}/{generated_filename}".replace("\\", "/")
+
+
+def persist_qc_session_evidence(photo_file, qc_date, qc_session_id=None):
+    if not has_uploaded_file(photo_file):
+        return None
+
+    _filename, extension = validate_photo_file(photo_file, "foto QC")
+    raw_bytes = photo_file.stream.read()
+    if not raw_bytes:
+        raise ValueError("La foto del QC no contiene datos validos.")
+
+    optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+    date_folder = datetime.fromisoformat(qc_date).strftime("%Y/%m")
+    stable_id = str(qc_session_id) if qc_session_id is not None else uuid4().hex[:8]
+    generated_name = f"qc_session_{stable_id}_{uuid4().hex[:8]}"
+
+    if cloudinary_enabled():
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        folder = f"{base_folder}/qc-sessions/{date_folder}"
+        uploaded = upload_private_image_to_cloudinary(
+            optimized_bytes,
+            folder=folder,
+            public_id=generated_name,
+        )
+        return encode_cloudinary_ref(
+            uploaded.get("public_id"),
+            version=uploaded.get("version"),
+            delivery_type="private",
+            resource_type="image",
+            file_format=optimized_extension,
+        )
+
+    target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "qc-sessions" / date_folder
+    target_dir.mkdir(parents=True, exist_ok=True)
+    generated_filename = f"{generated_name}.{optimized_extension}"
+    saved_path = target_dir / generated_filename
+    saved_path.write_bytes(optimized_bytes)
+    return f"uploads/audits/qc-sessions/{date_folder}/{generated_filename}".replace("\\", "/")
+
+
 def persist_finding_evidence(photo_file, audit_date, finding_id):
     if not has_uploaded_file(photo_file):
         return None
@@ -2672,6 +2804,21 @@ def tnps():
     if request.method == "POST" and not can_import():
         abort(403)
 
+    qc_context = None
+    qc_id_context_raw = request.args.get("qc_id", "").strip()
+    if qc_id_context_raw:
+        try:
+            qc_id_context = int(qc_id_context_raw)
+        except ValueError:
+            flash("El ID de QC no es valido.", "error")
+            qc_id_context = None
+        if qc_id_context is not None:
+            qc_context = fetch_qc_session_detail(qc_id_context, supervisor_scope_names=current_supervisor_scope_names())
+            if qc_context and is_auditor() and qc_context.get("auditor_user_id") != current_user()["id"]:
+                qc_context = None
+            if not qc_context:
+                flash("No se encontro el QC indicado para vincular el tNPS.", "error")
+
     audit_context = None
     audit_id_context_raw = request.args.get("audit_id", "").strip()
     if audit_id_context_raw:
@@ -2754,8 +2901,26 @@ def tnps():
                 except ValueError as exc:
                     raise ValueError("El ID de auditoria no es valido.") from exc
 
+            qc_session_id_raw = (request.form.get("qc_session_id") or request.args.get("qc_id") or "").strip()
+            qc_session_id = None
+            qc_locked = None
+            if qc_session_id_raw:
+                try:
+                    qc_session_id = int(qc_session_id_raw)
+                except ValueError as exc:
+                    raise ValueError("El ID de QC no es valido.") from exc
+                qc_locked = fetch_qc_session_detail(qc_session_id, supervisor_scope_names=current_supervisor_scope_names())
+                if not qc_locked:
+                    raise ValueError("No se encontro el QC indicado para vincular el tNPS.")
+                if is_auditor() and qc_locked.get("auditor_user_id") != current_user()["id"]:
+                    raise ValueError("No tienes permiso para vincular este QC.")
+                if audit_id is None and qc_locked.get("audit_id"):
+                    audit_id = qc_locked.get("audit_id")
+
             locked_technician_id = None
-            if audit_id is not None:
+            if qc_locked is not None:
+                locked_technician_id = qc_locked.get("technician_id")
+            elif audit_id is not None:
                 locked_audit = fetch_audit_detail(audit_id)
                 if not locked_audit:
                     raise ValueError("No se encontro la auditoria indicada para vincular el tNPS.")
@@ -2782,10 +2947,13 @@ def tnps():
                 customer_name=(request.form.get("customer_name") or "").strip(),
                 technician_id=locked_technician_id,
                 audit_id=audit_id,
+                qc_session_id=qc_session_id,
             )
             flash("Respuesta tNPS registrada.", "success")
             if audit_id is not None:
                 return redirect(url_for("main.audit_report", audit_id=audit_id))
+            if qc_session_id is not None:
+                return redirect(url_for("main.qc_detail", qc_session_id=qc_session_id))
             return redirect(url_for("main.tnps"))
         except (KeyError, ValueError) as exc:
             flash(str(exc), "error")
@@ -2804,9 +2972,340 @@ def tnps():
         min_n=min_n,
         responses=responses,
         audit_context=audit_context,
-        today=datetime.now().date().isoformat(),
+        qc_context=qc_context,
+        today=(qc_context.get("qc_date") if qc_context else datetime.now().date().isoformat()),
         page_class="page-wide",
     )
+
+
+def qc_section_definition():
+    section = next((entry for entry in CHECKLIST_SECTIONS if entry.get("key") == "calidad_instalaciones"), None)
+    if not section:
+        raise RuntimeError("No existe la sección 'calidad_instalaciones' en el checklist.")
+    return section
+
+
+@main.route("/qc")
+def qc_sessions():
+    if not current_user():
+        return redirect(url_for("main.login"))
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
+        "technician_id": request.args.get("technician_id", "").strip(),
+        "q": request.args.get("q", "").strip(),
+        "include_pruebas": "1" if request.args.get("include_pruebas") else "",
+    }
+
+    technician_id = None
+    if filters["technician_id"]:
+        try:
+            technician_id = int(filters["technician_id"])
+        except ValueError:
+            flash("El técnico seleccionado no es válido.", "error")
+            filters["technician_id"] = ""
+
+    query_filters = {
+        "from_date": filters["from_date"],
+        "to_date": filters["to_date"],
+        "status": filters["status"],
+        "technician_id": technician_id,
+        "q": filters["q"],
+        "include_pruebas": filters["include_pruebas"],
+    }
+
+    sessions = fetch_qc_sessions(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    technicians = fetch_technicians()
+    filter_active = any(
+        [
+            filters["from_date"],
+            filters["to_date"],
+            filters["status"],
+            filters["technician_id"],
+            filters["q"],
+            filters["include_pruebas"],
+        ]
+    )
+
+    return render_template(
+        "qc_sessions.html",
+        sessions=sessions,
+        filters=filters,
+        technicians=technicians,
+        filter_active=filter_active,
+        audit_official_from_date=get_audit_official_from_date(),
+        page_class="page-wide",
+    )
+
+
+@main.route("/qc/new", methods=["GET", "POST"])
+def qc_new():
+    if not can_create_audit():
+        abort(403)
+
+    audit_context = None
+    audit_id_context_raw = request.args.get("audit_id", "").strip()
+    if audit_id_context_raw:
+        try:
+            audit_id_context = int(audit_id_context_raw)
+        except ValueError:
+            flash("El ID de auditoría no es válido.", "error")
+            audit_id_context = None
+        if audit_id_context is not None:
+            audit_context = fetch_audit_detail(audit_id_context, supervisor_scope_names=current_supervisor_scope_names())
+            if audit_context and is_auditor() and audit_context.get("auditor_user_id") != current_user()["id"]:
+                audit_context = None
+            if not audit_context:
+                flash("No se encontró la auditoría indicada para vincular el QC.", "error")
+
+    section = qc_section_definition()
+    technicians = fetch_technicians()
+    today = datetime.now().date().isoformat()
+
+    if request.method == "POST":
+        try:
+            qc_date = (request.form.get("qc_date") or "").strip() or today
+            datetime.fromisoformat(qc_date)
+
+            audit_id_raw = (request.form.get("audit_id") or "").strip()
+            audit_id = None
+            if audit_id_raw:
+                try:
+                    audit_id = int(audit_id_raw)
+                except ValueError as exc:
+                    raise ValueError("El ID de auditoría no es válido.") from exc
+
+            locked_audit = None
+            locked_technician_id = None
+            if audit_id is not None:
+                locked_audit = fetch_audit_detail(audit_id, supervisor_scope_names=current_supervisor_scope_names())
+                if not locked_audit:
+                    raise ValueError("No se encontró la auditoría indicada para vincular el QC.")
+                if is_auditor() and locked_audit.get("auditor_user_id") != current_user()["id"]:
+                    raise ValueError("No tienes permiso para vincular esta auditoría.")
+                locked_technician_id = locked_audit.get("technician_id")
+
+            if locked_technician_id is None:
+                technician_id_raw = (request.form.get("technician_id") or "").strip()
+                if not technician_id_raw:
+                    raise ValueError("Debes seleccionar un técnico.")
+                try:
+                    locked_technician_id = int(technician_id_raw)
+                except ValueError as exc:
+                    raise ValueError("El técnico seleccionado no es válido.") from exc
+
+            location = (request.form.get("location") or "").strip()
+            installation_type = (request.form.get("installation_type") or "").strip()
+            if locked_audit:
+                if not location:
+                    location = locked_audit.get("location") or ""
+                if not installation_type:
+                    installation_type = locked_audit.get("installation_type") or ""
+
+            if not location:
+                raise ValueError("La ubicación es obligatoria.")
+            if not installation_type:
+                raise ValueError("El tipo de instalación es obligatorio.")
+
+            address = (request.form.get("address") or "").strip()
+            sa_number = (request.form.get("sa_number") or "").strip()
+            record_scope = (request.form.get("record_scope") or "").strip().lower() or "oficial"
+            if record_scope not in {"oficial", "pruebas"}:
+                raise ValueError("El sector seleccionado no es válido.")
+
+            section_score, _has_critical, items = calculate_section_score(section, request.form, request.files)
+            ratio = 1 if section.get("weight") in {0, None} else (section_score / float(section["weight"]))
+            ratio = max(0.0, min(1.0, ratio))
+            qc_score = round(ratio * 100, 2)
+
+            has_major_nc = any(str(it.get("status") or "").strip().lower() == "nc_mayor" for it in items)
+            if has_major_nc:
+                result_status = "Rechazada"
+            elif qc_score >= 90:
+                result_status = "Aprobada"
+            elif qc_score >= 75:
+                result_status = "Aprobada con observaciones"
+            else:
+                result_status = "Rechazada"
+
+            persist_qc_item_evidence(items, qc_date)
+            session_photo_path = persist_qc_session_evidence(request.files.get("qc_photo"), qc_date)
+
+            technician_row = next((t for t in technicians if t.get("id") == locked_technician_id), None)
+            technician_name = (technician_row.get("name") if technician_row else "") or ""
+            technician_employee_code = (technician_row.get("employee_code") if technician_row else "") or ""
+            technician_company = (technician_row.get("company_name") if technician_row else "") or ""
+            technician_supervisor = (technician_row.get("supervisor_name") if technician_row else "") or ""
+            technician_center = (technician_row.get("center_name") if technician_row else "") or ""
+
+            if locked_audit:
+                technician_name = locked_audit.get("technician_name") or technician_name
+                technician_employee_code = locked_audit.get("employee_code") or technician_employee_code
+                technician_company = locked_audit.get("technician_company") or technician_company
+                technician_supervisor = locked_audit.get("technician_supervisor") or technician_supervisor
+                technician_center = locked_audit.get("technician_center") or technician_center
+                if not address:
+                    address = locked_audit.get("address") or ""
+                if not sa_number:
+                    sa_number = locked_audit.get("sa_number") or ""
+
+            qc_data = {
+                "qc_date": qc_date,
+                "auditor_name": current_user()["username"],
+                "auditor_user_id": current_user().get("id"),
+                "sa_number": sa_number or None,
+                "technician_display_name": technician_name or None,
+                "technician_employee_code": technician_employee_code or None,
+                "technician_company_snapshot": technician_company or None,
+                "technician_supervisor_snapshot": technician_supervisor or None,
+                "technician_center_snapshot": technician_center or None,
+                "technician_id": locked_technician_id,
+                "audit_id": audit_id,
+                "location": location,
+                "address": address or None,
+                "installation_type": installation_type,
+                "total_score": qc_score,
+                "result_status": result_status,
+                "record_scope": record_scope,
+                "general_notes": (request.form.get("general_notes") or "").strip() or None,
+                "photo_path": session_photo_path,
+            }
+
+            qc_session_id = create_qc_session(qc_data, items)
+            flash("QC de instalaciones registrado.", "success")
+            return redirect(url_for("main.qc_detail", qc_session_id=qc_session_id))
+        except (KeyError, ValueError) as exc:
+            flash(str(exc), "error")
+
+    return render_template(
+        "qc_form.html",
+        section=section,
+        technicians=technicians,
+        audit_context=audit_context,
+        today=today,
+        page_class="page-wide",
+    )
+
+
+@main.route("/qc/reports")
+def qc_reports():
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
+        "technician_id": request.args.get("technician_id", "").strip(),
+        "min_n": request.args.get("min_n", "").strip(),
+        "include_pruebas": "1" if request.args.get("include_pruebas") else "",
+    }
+
+    technician_id = None
+    if filters["technician_id"]:
+        try:
+            technician_id = int(filters["technician_id"])
+        except ValueError:
+            flash("El técnico seleccionado no es válido.", "error")
+            filters["technician_id"] = ""
+
+    min_n = 3
+    if filters["min_n"]:
+        try:
+            min_n = max(1, int(filters["min_n"]))
+        except ValueError:
+            flash("El mínimo de controles no es válido.", "error")
+            filters["min_n"] = ""
+
+    query_filters = {
+        "from_date": filters["from_date"],
+        "to_date": filters["to_date"],
+        "status": filters["status"],
+        "technician_id": technician_id,
+        "include_pruebas": filters["include_pruebas"],
+    }
+
+    summary = fetch_qc_reports_management_summary(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    status_breakdown = fetch_qc_reports_status_breakdown(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    time_series = fetch_qc_reports_time_series(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    technician_ranking = fetch_qc_reports_technician_ranking(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+        min_qc=min_n,
+    )
+
+    technicians = fetch_technicians()
+    filter_active = any([filters["from_date"], filters["to_date"], filters["status"], filters["technician_id"], filters["include_pruebas"]])
+
+    return render_template(
+        "qc_reports.html",
+        filters=filters,
+        technicians=technicians,
+        min_n=min_n,
+        summary=summary,
+        status_breakdown=status_breakdown,
+        time_series=time_series,
+        technician_ranking=technician_ranking,
+        filter_active=filter_active,
+        audit_official_from_date=get_audit_official_from_date(),
+        page_class="page-wide",
+    )
+
+
+@main.route("/qc/<int:qc_session_id>")
+def qc_detail(qc_session_id):
+    session_row = fetch_qc_session_detail(qc_session_id, supervisor_scope_names=current_supervisor_scope_names())
+    if not session_row:
+        abort(404)
+    if is_auditor():
+        user = current_user()
+        if session_row.get("auditor_user_id") != user["id"] and (session_row.get("auditor_name") or "") != user["username"]:
+            abort(404)
+
+    items = fetch_qc_items(qc_session_id)
+    grouped_items = build_grouped_audit_items(items)
+    tnps_response = fetch_tnps_response_for_qc(qc_session_id)
+    tnps_source = "qc"
+    if not tnps_response and session_row.get("audit_id"):
+        tnps_response = fetch_tnps_response_for_audit(session_row["audit_id"])
+        tnps_source = "audit"
+
+    response = make_response(
+        render_template(
+            "qc_detail.html",
+            qc=session_row,
+            grouped_items=grouped_items,
+            tnps_response=tnps_response,
+            tnps_source=tnps_source,
+        )
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @main.route("/supply-requests", methods=["GET", "POST"])

@@ -30,6 +30,26 @@
     </section>
 {% endif %}
 
+{% if qc_context %}
+    <section class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Vínculo</p>
+                <h3>QC {{ qc_context["id"] }}</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Fecha QC:</strong> {{ qc_context["qc_date"] }}</p>
+            <p><strong>Técnico:</strong> {{ qc_context["technician_name"] }}</p>
+            <p><strong>Ubicación:</strong> {{ qc_context["location"] }}</p>
+            {% if qc_context.get("audit_id") %}
+                <p><strong>Auditoría vinculada:</strong> {{ qc_context["audit_id"] }}</p>
+            {% endif %}
+            <p><a class="table-link" href="{{ url_for('main.qc_detail', qc_session_id=qc_context['id']) }}">Ver QC</a></p>
+        </div>
+    </section>
+{% endif %}
+
 <section class="stats-grid">
     <article class="card stat-card">
         <span class="stat-label">tNPS</span>
@@ -190,6 +210,13 @@
                 <span>Técnico (desde auditoría)</span>
                 <input type="text" value="{{ audit_context['technician_name'] if audit_context.get('technician_name') else 'Sin técnico asociado' }}" disabled>
             </label>
+        {% elif qc_context %}
+            <input type="hidden" name="qc_session_id" value="{{ qc_context['id'] }}">
+            <input type="hidden" name="technician_id" value="{{ qc_context.get('technician_id') or '' }}">
+            <label>
+                <span>Técnico (desde QC)</span>
+                <input type="text" value="{{ qc_context['technician_name'] if qc_context.get('technician_name') else 'Sin técnico asociado' }}" disabled>
+            </label>
         {% else %}
             <label class="tnps-half">
                 <span>Técnico (opcional)</span>
@@ -204,6 +231,8 @@
 
         {% if audit_context %}
             <input type="hidden" name="audit_id" value="{{ audit_context['id'] }}">
+        {% elif qc_context and qc_context.get("audit_id") %}
+            <input type="hidden" name="audit_id" value="{{ qc_context['audit_id'] }}">
         {% else %}
             <label>
                 <span>ID auditoría (opcional)</span>

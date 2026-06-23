@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}QC Instalaciones{% endblock %}
+
+{% block content %}
+<section class="section-heading">
+    <div>
+        <p class="eyebrow">Control</p>
+        <h2>QC Instalaciones</h2>
+    </div>
+    <div class="hero-actions">
+        {% if can_create_audit %}
+            <a class="button button-primary" href="{{ url_for('main.qc_new') }}">Nuevo QC</a>
+        {% endif %}
+        {% if can_view_reports %}
+            <a class="button button-secondary" href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.qc_sessions') }}">
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="status">
+                <option value="" {% if not filters.status %}selected{% endif %}>Todos</option>
+                <option value="Aprobada" {% if filters.status == "Aprobada" %}selected{% endif %}>Aprobada</option>
+                <option value="Aprobada con observaciones" {% if filters.status == "Aprobada con observaciones" %}selected{% endif %}>Aprobada con observaciones</option>
+                <option value="Rechazada" {% if filters.status == "Rechazada" %}selected{% endif %}>Rechazada</option>
+            </select>
+        </label>
+        <label>
+            <span>Técnico</span>
+            <select name="technician_id">
+                <option value="" {% if not filters.technician_id %}selected{% endif %}>Todos</option>
+                {% for technician in technicians %}
+                    <option value="{{ technician['id'] }}" {% if filters.technician_id|int == technician['id'] %}selected{% endif %}>
+                        {{ technician["name"] }} ({{ technician["employee_code"] }})
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Búsqueda</span>
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="ID, SA, técnico o ubicación">
+        </label>
+        <label class="checkbox-field">
+            <span>
+                {% if audit_official_from_date %}
+                    Incluir pruebas y registros previos al corte {{ audit_official_from_date }}
+                {% else %}
+                    Incluir pruebas
+                {% endif %}
+            </span>
+            <input type="checkbox" name="include_pruebas" value="1" {% if filters.include_pruebas %}checked{% endif %}>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="card table-card">
+    {% if sessions %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Auditor</th>
+                        <th>SA</th>
+                        <th>Técnico</th>
+                        <th>Ubicación</th>
+                        <th>Resultado</th>
+                        <th>Puntaje</th>
+                        <th>Auditoría</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in sessions %}
+                        <tr>
+                            <td>{{ row.qc_date }}</td>
+                            <td>{{ row.auditor_name or "-" }}</td>
+                            <td>{{ row.sa_number or "-" }}</td>
+                            <td>{{ row.technician_name or "-" }}</td>
+                            <td>{{ row.location or "-" }}</td>
+                            <td>
+                                <span class="badge badge-{{ row.result_status|lower|replace(' ', '-') }}">{{ row.result_status }}</span>
+                                {% if row.record_scope == "pruebas" %}
+                                    <span class="badge badge-pruebas">Pruebas</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.total_score }}</td>
+                            <td>
+                                {% if row.audit_id %}
+                                    <a class="table-link" href="{{ url_for('main.audit_detail', audit_id=row.audit_id) }}">{{ row.audit_id }}</a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td><a class="table-link" href="{{ url_for('main.qc_detail', qc_session_id=row.id) }}">Ver</a></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        {% if filter_active %}
+            <p class="empty-state">No hay resultados para los filtros aplicados.</p>
+        {% else %}
+            <p class="empty-state">Todavía no hay registros para mostrar.</p>
+        {% endif %}
+    {% endif %}
+</section>
+{% endblock %}

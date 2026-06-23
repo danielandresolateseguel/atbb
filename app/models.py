@@ -387,8 +387,52 @@ def init_db():
             customer_name TEXT,
             technician_id INTEGER,
             audit_id INTEGER,
+            qc_session_id INTEGER,
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
-            FOREIGN KEY (audit_id) REFERENCES audits (id)
+            FOREIGN KEY (audit_id) REFERENCES audits (id),
+            FOREIGN KEY (qc_session_id) REFERENCES qc_sessions (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS qc_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            qc_date TEXT NOT NULL,
+            auditor_name TEXT NOT NULL,
+            auditor_user_id INTEGER,
+            sa_number TEXT,
+            technician_display_name TEXT,
+            technician_employee_code TEXT,
+            technician_company_snapshot TEXT,
+            technician_supervisor_snapshot TEXT,
+            technician_center_snapshot TEXT,
+            technician_id INTEGER NOT NULL,
+            audit_id INTEGER,
+            location TEXT NOT NULL,
+            address TEXT,
+            installation_type TEXT NOT NULL,
+            total_score REAL NOT NULL DEFAULT 0,
+            result_status TEXT NOT NULL,
+            record_scope TEXT NOT NULL DEFAULT 'oficial',
+            general_notes TEXT,
+            photo_path TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (audit_id) REFERENCES audits (id),
+            FOREIGN KEY (auditor_user_id) REFERENCES users (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS qc_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            qc_session_id INTEGER NOT NULL,
+            section_key TEXT NOT NULL,
+            section_title TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            is_critical INTEGER NOT NULL DEFAULT 0,
+            non_compliance_reason TEXT,
+            notes TEXT,
+            photo_path TEXT,
+            FOREIGN KEY (qc_session_id) REFERENCES qc_sessions (id)
         );
         """
     )
@@ -672,7 +716,54 @@ def init_db_postgres():
             comment TEXT,
             customer_name TEXT,
             technician_id INTEGER REFERENCES technicians (id),
-            audit_id INTEGER REFERENCES audits (id)
+            audit_id INTEGER REFERENCES audits (id),
+            qc_session_id INTEGER
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS qc_sessions (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            qc_date TEXT NOT NULL,
+            auditor_name TEXT NOT NULL,
+            auditor_user_id INTEGER REFERENCES users (id),
+            sa_number TEXT,
+            technician_display_name TEXT,
+            technician_employee_code TEXT,
+            technician_company_snapshot TEXT,
+            technician_supervisor_snapshot TEXT,
+            technician_center_snapshot TEXT,
+            technician_id INTEGER NOT NULL REFERENCES technicians (id),
+            audit_id INTEGER REFERENCES audits (id),
+            location TEXT NOT NULL,
+            address TEXT,
+            installation_type TEXT NOT NULL,
+            total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+            result_status TEXT NOT NULL,
+            record_scope TEXT NOT NULL DEFAULT 'oficial',
+            general_notes TEXT,
+            photo_path TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS qc_items (
+            id SERIAL PRIMARY KEY,
+            qc_session_id INTEGER NOT NULL REFERENCES qc_sessions (id),
+            section_key TEXT NOT NULL,
+            section_title TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            is_critical INTEGER NOT NULL DEFAULT 0,
+            non_compliance_reason TEXT,
+            notes TEXT,
+            photo_path TEXT
         )
         """
     )
@@ -680,6 +771,8 @@ def init_db_postgres():
     ensure_technicians_columns_postgres(cursor)
     ensure_audits_columns_postgres(cursor)
     ensure_audit_findings_columns_postgres(cursor)
+    ensure_tnps_columns_postgres(cursor)
+    ensure_qc_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
     connection.commit()
     connection.close()
@@ -1071,6 +1164,8 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "tnps_responses", "punctuality_score", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "communication_clarity_score", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "issue_resolved_first_visit", "INTEGER")
+    add_column_if_missing(connection, "tnps_responses", "qc_session_id", "INTEGER")
+    add_column_if_missing(connection, "qc_sessions", "photo_path", "TEXT")
     migrate_tnps_experience_scores_to_ten_scale(connection)
     ensure_audits_nullable_technician(connection)
 
@@ -1285,6 +1380,14 @@ def ensure_audit_findings_columns_postgres(cursor):
         )
         """
     )
+
+
+def ensure_tnps_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE tnps_responses ADD COLUMN IF NOT EXISTS qc_session_id INTEGER")
+
+
+def ensure_qc_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE qc_sessions ADD COLUMN IF NOT EXISTS photo_path TEXT")
 
 
 def create_finding_event(finding_id, actor_user_id, event_type, detail=None):
@@ -2420,6 +2523,7 @@ def create_tnps_response(
     customer_name=None,
     technician_id=None,
     audit_id=None,
+    qc_session_id=None,
 ):
     connection = get_db()
     if audit_id is not None:
@@ -2440,7 +2544,8 @@ def create_tnps_response(
                     issue_resolved_first_visit = ?,
                     comment = ?,
                     customer_name = ?,
-                    technician_id = ?
+                    technician_id = ?,
+                    qc_session_id = COALESCE(?, qc_session_id)
                 WHERE id = ?
                 """,
                 (
@@ -2453,6 +2558,46 @@ def create_tnps_response(
                     (comment or "").strip() or None,
                     (customer_name or "").strip() or None,
                     technician_id,
+                    qc_session_id,
+                    existing["id"],
+                ),
+            )
+            connection.commit()
+            return existing["id"]
+
+    if qc_session_id is not None:
+        existing = connection.execute(
+            "SELECT id FROM tnps_responses WHERE qc_session_id = ? ORDER BY id DESC LIMIT 1",
+            (qc_session_id,),
+        ).fetchone()
+        if existing:
+            connection.execute(
+                """
+                UPDATE tnps_responses
+                SET
+                    response_date = ?,
+                    score = ?,
+                    booking_ease_score = ?,
+                    punctuality_score = ?,
+                    communication_clarity_score = ?,
+                    issue_resolved_first_visit = ?,
+                    comment = ?,
+                    customer_name = ?,
+                    technician_id = ?,
+                    audit_id = COALESCE(?, audit_id)
+                WHERE id = ?
+                """,
+                (
+                    response_date,
+                    score,
+                    booking_ease_score,
+                    punctuality_score,
+                    communication_clarity_score,
+                    issue_resolved_first_visit,
+                    (comment or "").strip() or None,
+                    (customer_name or "").strip() or None,
+                    technician_id,
+                    audit_id,
                     existing["id"],
                 ),
             )
@@ -2470,8 +2615,9 @@ def create_tnps_response(
             comment,
             customer_name,
             technician_id,
-            audit_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            audit_id,
+            qc_session_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         response_date,
@@ -2484,6 +2630,7 @@ def create_tnps_response(
         (customer_name or "").strip() or None,
         technician_id,
         audit_id,
+        qc_session_id,
     )
 
     if is_postgres():
@@ -2762,6 +2909,7 @@ def fetch_tnps_responses(filters=None, limit=200):
             tnps_responses.comment,
             tnps_responses.customer_name,
             tnps_responses.audit_id,
+            tnps_responses.qc_session_id,
             {created_at_expr} AS created_at,
             technicians.name AS technician_name,
             technicians.employee_code AS technician_employee_code
@@ -2795,6 +2943,7 @@ def fetch_tnps_response_for_audit(audit_id):
             tnps_responses.comment,
             tnps_responses.customer_name,
             tnps_responses.audit_id,
+            tnps_responses.qc_session_id,
             tnps_responses.technician_id,
             {created_at_expr} AS created_at,
             technicians.name AS technician_name,
@@ -2806,6 +2955,41 @@ def fetch_tnps_response_for_audit(audit_id):
         LIMIT 1
         """,
         (audit_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_tnps_response_for_qc(qc_session_id):
+    created_at_expr = (
+        "tnps_responses.created_at"
+        if is_postgres()
+        else "datetime(tnps_responses.created_at, 'localtime')"
+    )
+    row = get_db().execute(
+        f"""
+        SELECT
+            tnps_responses.id,
+            tnps_responses.response_date,
+            tnps_responses.score,
+            tnps_responses.booking_ease_score,
+            tnps_responses.punctuality_score,
+            tnps_responses.communication_clarity_score,
+            tnps_responses.issue_resolved_first_visit,
+            tnps_responses.comment,
+            tnps_responses.customer_name,
+            tnps_responses.audit_id,
+            tnps_responses.qc_session_id,
+            tnps_responses.technician_id,
+            {created_at_expr} AS created_at,
+            technicians.name AS technician_name,
+            technicians.employee_code AS technician_employee_code
+        FROM tnps_responses
+        LEFT JOIN technicians ON technicians.id = tnps_responses.technician_id
+        WHERE tnps_responses.qc_session_id = ?
+        ORDER BY tnps_responses.id DESC
+        LIMIT 1
+        """,
+        (qc_session_id,),
     ).fetchone()
     return dict(row) if row else None
 
@@ -4864,6 +5048,435 @@ def update_audit_record_scope(audit_id, record_scope):
     )
     connection.commit()
     return (cursor.rowcount or 0) > 0
+
+
+def append_qc_visibility_filters(where_clauses, params, include_pruebas=False, table_alias="qc_sessions"):
+    if not _normalize_bool(include_pruebas):
+        where_clauses.append(f"COALESCE({table_alias}.record_scope, ?) = ?")
+        params.extend([AUDIT_SCOPE_OFFICIAL, AUDIT_SCOPE_OFFICIAL])
+
+        official_from_date = get_audit_official_from_date()
+        if official_from_date:
+            where_clauses.append(f"{table_alias}.qc_date >= ?")
+            params.append(official_from_date)
+
+
+def build_qc_sessions_where_sql(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    filters = filters or {}
+    where_clauses = []
+    params = []
+
+    append_qc_visibility_filters(where_clauses, params, include_pruebas=filters.get("include_pruebas"), table_alias="qc_sessions")
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names, audit_table_alias="qc_sessions")
+
+    if auditor_user_id is not None:
+        where_clauses.append("qc_sessions.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    status = (filters.get("status") or "").strip()
+    technician_id = filters.get("technician_id")
+    q = (filters.get("q") or "").strip()
+
+    if from_date:
+        where_clauses.append("qc_sessions.qc_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where_clauses.append("qc_sessions.qc_date <= ?")
+        params.append(to_date)
+    if status:
+        where_clauses.append("qc_sessions.result_status = ?")
+        params.append(status)
+    if technician_id:
+        where_clauses.append("qc_sessions.technician_id = ?")
+        params.append(technician_id)
+
+    if q:
+        like_value = f"%{q}%"
+        if is_postgres():
+            where_clauses.append(
+                "("
+                "CAST(qc_sessions.id AS TEXT) ILIKE ? OR "
+                "COALESCE(qc_sessions.sa_number, '') ILIKE ? OR "
+                "COALESCE(technicians.name, qc_sessions.technician_display_name, '') ILIKE ? OR "
+                "COALESCE(qc_sessions.location, '') ILIKE ?"
+                ")"
+            )
+            params.extend([like_value] * 4)
+        else:
+            where_clauses.append(
+                "("
+                "CAST(qc_sessions.id AS TEXT) LIKE ? OR "
+                "LOWER(COALESCE(qc_sessions.sa_number, '')) LIKE ? OR "
+                "LOWER(COALESCE(technicians.name, qc_sessions.technician_display_name, '')) LIKE ? OR "
+                "LOWER(COALESCE(qc_sessions.location, '')) LIKE ?"
+                ")"
+            )
+            lowered = like_value.lower()
+            params.extend([lowered] * 4)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+    return where_sql, tuple(params)
+
+
+def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    created_at_expr = "qc_sessions.created_at" if is_postgres() else "datetime(qc_sessions.created_at, 'localtime')"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            qc_sessions.id,
+            qc_sessions.qc_date,
+            qc_sessions.auditor_name,
+            qc_sessions.auditor_user_id,
+            qc_sessions.sa_number,
+            qc_sessions.location,
+            qc_sessions.installation_type,
+            qc_sessions.total_score,
+            qc_sessions.result_status,
+            qc_sessions.record_scope,
+            qc_sessions.audit_id,
+            {created_at_expr} AS created_at,
+            COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS technician_employee_code
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        ORDER BY qc_sessions.created_at DESC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None):
+    created_at_expr = "qc_sessions.created_at" if is_postgres() else "datetime(qc_sessions.created_at, 'localtime')"
+    where_clauses = ["qc_sessions.id = ?"]
+    params = [qc_session_id]
+    append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names, audit_table_alias="qc_sessions")
+    row = get_db().execute(
+        f"""
+        SELECT
+            qc_sessions.id,
+            qc_sessions.qc_date,
+            qc_sessions.auditor_name,
+            qc_sessions.auditor_user_id,
+            qc_sessions.sa_number,
+            qc_sessions.technician_display_name,
+            qc_sessions.technician_employee_code,
+            qc_sessions.technician_company_snapshot,
+            qc_sessions.technician_supervisor_snapshot,
+            qc_sessions.technician_center_snapshot,
+            qc_sessions.technician_id,
+            qc_sessions.audit_id,
+            qc_sessions.location,
+            qc_sessions.address,
+            qc_sessions.installation_type,
+            qc_sessions.total_score,
+            qc_sessions.result_status,
+            qc_sessions.record_scope,
+            qc_sessions.general_notes,
+            qc_sessions.photo_path,
+            {created_at_expr} AS created_at,
+            COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS employee_code,
+            COALESCE(qc_sessions.technician_company_snapshot, technicians.company_name) AS technician_company,
+            COALESCE(qc_sessions.technician_supervisor_snapshot, technicians.supervisor_name) AS technician_supervisor,
+            COALESCE(qc_sessions.technician_center_snapshot, technicians.center_name) AS technician_center
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        WHERE {' AND '.join(where_clauses)}
+        """,
+        tuple(params),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_qc_items(qc_session_id):
+    rows = get_db().execute(
+        """
+        SELECT
+            id,
+            section_key,
+            section_title,
+            item_key,
+            item_label,
+            status,
+            is_critical,
+            non_compliance_reason,
+            notes,
+            photo_path
+        FROM qc_items
+        WHERE qc_session_id = ?
+        ORDER BY id ASC
+        """,
+        (qc_session_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_qc_session(qc_data, items):
+    connection = get_db()
+    insert_sql = """
+        INSERT INTO qc_sessions (
+            qc_date,
+            auditor_name,
+            auditor_user_id,
+            sa_number,
+            technician_display_name,
+            technician_employee_code,
+            technician_company_snapshot,
+            technician_supervisor_snapshot,
+            technician_center_snapshot,
+            technician_id,
+            audit_id,
+            location,
+            address,
+            installation_type,
+            total_score,
+            result_status,
+            record_scope,
+            general_notes,
+            photo_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+    insert_params = (
+        qc_data["qc_date"],
+        qc_data["auditor_name"],
+        qc_data.get("auditor_user_id"),
+        qc_data.get("sa_number"),
+        qc_data.get("technician_display_name"),
+        qc_data.get("technician_employee_code"),
+        qc_data.get("technician_company_snapshot"),
+        qc_data.get("technician_supervisor_snapshot"),
+        qc_data.get("technician_center_snapshot"),
+        qc_data["technician_id"],
+        qc_data.get("audit_id"),
+        qc_data["location"],
+        qc_data.get("address"),
+        qc_data["installation_type"],
+        qc_data["total_score"],
+        qc_data["result_status"],
+        normalize_audit_record_scope(qc_data.get("record_scope")),
+        qc_data.get("general_notes"),
+        qc_data.get("photo_path"),
+    )
+
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+        new_id_row = cursor.fetchone()
+        qc_session_id = (new_id_row["id"] if isinstance(new_id_row, dict) else new_id_row[0]) if new_id_row else None
+    else:
+        cursor = connection.execute(insert_sql, insert_params)
+        qc_session_id = cursor.lastrowid
+
+    for item in items:
+        item_params = (
+            qc_session_id,
+            item["section_key"],
+            item["section_title"],
+            item["item_key"],
+            item["item_label"],
+            item["status"],
+            1 if item.get("is_critical") else 0,
+            item.get("non_compliance_reason"),
+            item.get("notes"),
+            item.get("photo_path"),
+        )
+        if is_postgres():
+            connection.execute(
+                """
+                INSERT INTO qc_items (
+                    qc_session_id,
+                    section_key,
+                    section_title,
+                    item_key,
+                    item_label,
+                    status,
+                    is_critical,
+                    non_compliance_reason,
+                    notes,
+                    photo_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                item_params,
+            )
+        else:
+            connection.execute(
+                """
+                INSERT INTO qc_items (
+                    qc_session_id,
+                    section_key,
+                    section_title,
+                    item_key,
+                    item_label,
+                    status,
+                    is_critical,
+                    non_compliance_reason,
+                    notes,
+                    photo_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                item_params,
+            )
+    connection.commit()
+    return qc_session_id
+
+
+def fetch_qc_reports_management_summary(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    row = get_db().execute(
+        f"""
+        SELECT
+            COUNT(*) AS total_qc,
+            SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN qc_sessions.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            AVG(qc_sessions.total_score) AS average_score
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+
+    total_qc = row["total_qc"] or 0
+    approved_count = row["approved_count"] or 0
+    rejected_count = row["rejected_count"] or 0
+    average_score = 0 if total_qc == 0 else round((row["average_score"] or 0), 2)
+    approval_rate = 0 if total_qc == 0 else round((approved_count / total_qc) * 100)
+
+    return {
+        "total_qc": total_qc,
+        "approved_count": approved_count,
+        "rejected_count": rejected_count,
+        "approval_rate": approval_rate,
+        "average_score": average_score,
+    }
+
+
+def fetch_qc_reports_status_breakdown(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            qc_sessions.result_status,
+            COUNT(*) AS qc_count,
+            AVG(qc_sessions.total_score) AS average_score
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        GROUP BY qc_sessions.result_status
+        ORDER BY qc_count DESC, qc_sessions.result_status ASC
+        """,
+        params,
+    ).fetchall()
+
+    breakdown = []
+    for row in rows:
+        breakdown.append(
+            {
+                "result_status": row["result_status"],
+                "qc_count": row["qc_count"] or 0,
+                "average_score": round((row["average_score"] or 0), 2),
+            }
+        )
+    return breakdown
+
+
+def fetch_qc_reports_time_series(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=120):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    period_expr = "SUBSTRING(qc_sessions.qc_date FROM 1 FOR 7)" if is_postgres() else "substr(qc_sessions.qc_date, 1, 7)"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            {period_expr} AS period,
+            COUNT(*) AS qc_count,
+            AVG(qc_sessions.total_score) AS average_score,
+            SUM(CASE WHEN qc_sessions.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        GROUP BY period
+        ORDER BY period ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+
+    series = []
+    for row in rows:
+        series.append(
+            {
+                "period": row["period"] or "-",
+                "qc_count": row["qc_count"] or 0,
+                "average_score": round((row["average_score"] or 0), 2),
+                "rejected_count": row["rejected_count"] or 0,
+            }
+        )
+    return series
+
+
+def fetch_qc_reports_technician_ranking(filters=None, auditor_user_id=None, supervisor_scope_names=None, min_qc=3, limit=200):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            qc_sessions.technician_id,
+            COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS technician_employee_code,
+            COUNT(*) AS total_qc,
+            AVG(qc_sessions.total_score) AS average_score,
+            SUM(CASE WHEN qc_sessions.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
+            MAX(qc_sessions.qc_date) AS last_qc_date
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        GROUP BY qc_sessions.technician_id, technician_name, technician_employee_code
+        HAVING COUNT(*) >= ?
+        ORDER BY average_score DESC, total_qc DESC, technician_name ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [int(min_qc), int(limit)]),
+    ).fetchall()
+
+    ranking = []
+    for row in rows:
+        ranking.append(
+            {
+                "technician_id": row["technician_id"],
+                "technician_name": row["technician_name"] or "-",
+                "technician_employee_code": row["technician_employee_code"] or "-",
+                "total_qc": row["total_qc"] or 0,
+                "average_score": round((row["average_score"] or 0), 2),
+                "rejected_count": row["rejected_count"] or 0,
+                "last_qc_date": row["last_qc_date"] or "-",
+            }
+        )
+    return ranking
 
 
 def import_technicians(rows):

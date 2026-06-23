@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Reportes QC{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Reportes</p>
+        <h2>QC Instalaciones</h2>
+        <p class="hero-copy">KPIs y tendencias del módulo QC.</p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Volver a QC</a>
+    </div>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.qc_reports') }}">
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="status">
+                <option value="" {% if not filters.status %}selected{% endif %}>Todos</option>
+                <option value="Aprobada" {% if filters.status == "Aprobada" %}selected{% endif %}>Aprobada</option>
+                <option value="Aprobada con observaciones" {% if filters.status == "Aprobada con observaciones" %}selected{% endif %}>Aprobada con observaciones</option>
+                <option value="Rechazada" {% if filters.status == "Rechazada" %}selected{% endif %}>Rechazada</option>
+            </select>
+        </label>
+        <label>
+            <span>Técnico</span>
+            <select name="technician_id">
+                <option value="" {% if not filters.technician_id %}selected{% endif %}>Todos</option>
+                {% for technician in technicians %}
+                    <option value="{{ technician['id'] }}" {% if filters.technician_id|int == technician['id'] %}selected{% endif %}>
+                        {{ technician["name"] }} ({{ technician["employee_code"] }})
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Mínimo QC por técnico</span>
+            <input type="number" name="min_n" min="1" step="1" value="{{ min_n }}">
+        </label>
+        <label class="checkbox-field">
+            <span>
+                {% if audit_official_from_date %}
+                    Incluir pruebas y registros previos al corte {{ audit_official_from_date }}
+                {% else %}
+                    Incluir pruebas
+                {% endif %}
+            </span>
+            <input type="checkbox" name="include_pruebas" value="1" {% if filters.include_pruebas %}checked{% endif %}>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.qc_reports') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">QC</span>
+        <strong class="stat-value">{{ summary["total_qc"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Aprobación</span>
+        <strong class="stat-value">{{ summary["approval_rate"] }}%</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Promedio</span>
+        <strong class="stat-value">{{ summary["average_score"] }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Rechazadas</span>
+        <strong class="stat-value">{{ summary["rejected_count"] }}</strong>
+    </article>
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Distribución</p>
+            <h3>Por estado</h3>
+        </div>
+    </div>
+    {% if status_breakdown %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Estado</th>
+                        <th>Cantidad</th>
+                        <th>Promedio</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in status_breakdown %}
+                        <tr>
+                            <td>{{ row["result_status"] }}</td>
+                            <td>{{ row["qc_count"] }}</td>
+                            <td>{{ row["average_score"] }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin datos para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Ranking</p>
+            <h3>Técnicos</h3>
+        </div>
+    </div>
+    {% if technician_ranking %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Técnico</th>
+                        <th>QC</th>
+                        <th>Promedio</th>
+                        <th>Rechazadas</th>
+                        <th>Último QC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in technician_ranking %}
+                        <tr>
+                            <td>{{ row["technician_name"] }}{% if row["technician_employee_code"] and row["technician_employee_code"] != "-" %} | {{ row["technician_employee_code"] }}{% endif %}</td>
+                            <td>{{ row["total_qc"] }}</td>
+                            <td>{{ row["average_score"] }}</td>
+                            <td>{{ row["rejected_count"] }}</td>
+                            <td>{{ row["last_qc_date"] }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <small>Incluye técnicos con al menos {{ min_n }} QC según los filtros.</small>
+    {% else %}
+        <p class="empty-state">No hay técnicos con al menos {{ min_n }} QC para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Tendencia</p>
+            <h3>Serie mensual</h3>
+        </div>
+    </div>
+    {% if time_series %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Mes</th>
+                        <th>QC</th>
+                        <th>Promedio</th>
+                        <th>Rechazadas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in time_series %}
+                        <tr>
+                            <td>{{ row["period"] }}</td>
+                            <td>{{ row["qc_count"] }}</td>
+                            <td>{{ row["average_score"] }}</td>
+                            <td>{{ row["rejected_count"] }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin datos para la serie temporal.</p>
+    {% endif %}
+</section>
+{% endblock %}

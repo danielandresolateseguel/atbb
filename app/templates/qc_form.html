@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Nuevo QC{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Control</p>
+        <h2>Nuevo QC de Instalaciones</h2>
+        <p class="hero-copy">Registra un control de calidad de instalaciones sin afectar la auditoría completa.</p>
+    </div>
+</section>
+
+{% if audit_context %}
+    <section class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Vínculo</p>
+                <h3>Auditoría {{ audit_context["id"] }}</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Fecha auditoría:</strong> {{ audit_context["audit_date"] }}</p>
+            <p><strong>Técnico:</strong> {{ audit_context["technician_name"] }}</p>
+            <p><strong>Ubicación:</strong> {{ audit_context["location"] }}</p>
+            <p><a class="table-link" href="{{ url_for('main.audit_detail', audit_id=audit_context['id']) }}">Ver auditoría</a></p>
+        </div>
+    </section>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data">
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Formulario</p>
+                <h3>Datos del control</h3>
+            </div>
+        </div>
+        <div class="form-grid">
+            <label>
+                <span>Fecha QC</span>
+                <input type="date" name="qc_date" value="{{ request.form.get('qc_date', today) }}" required>
+            </label>
+
+            {% if audit_context %}
+                <input type="hidden" name="audit_id" value="{{ audit_context['id'] }}">
+                <label>
+                    <span>Técnico (desde auditoría)</span>
+                    <input type="text" value="{{ audit_context['technician_name'] if audit_context.get('technician_name') else 'Sin técnico asociado' }}" disabled>
+                </label>
+            {% else %}
+                <label>
+                    <span>Técnico</span>
+                    <select name="technician_id" required>
+                        <option value="" {% if not request.form.get('technician_id') %}selected{% endif %}>Seleccionar</option>
+                        {% for technician in technicians %}
+                            <option value="{{ technician['id'] }}" {% if request.form.get('technician_id')|int == technician['id'] %}selected{% endif %}>
+                                {{ technician["name"] }} ({{ technician["employee_code"] }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    <span>ID auditoría (opcional)</span>
+                    <input type="number" name="audit_id" min="1" step="1" value="{{ request.form.get('audit_id', '') }}" placeholder="Ej: 123">
+                </label>
+            {% endif %}
+
+            <label>
+                <span>SA (opcional)</span>
+                <input type="text" name="sa_number" value="{{ request.form.get('sa_number', audit_context.get('sa_number') if audit_context else '') }}" placeholder="Ej: SA-0001">
+            </label>
+
+            <label>
+                <span>Ubicación</span>
+                <input type="text" name="location" value="{{ request.form.get('location', audit_context.get('location') if audit_context else '') }}" required>
+            </label>
+
+            <label>
+                <span>Dirección (opcional)</span>
+                <input type="text" name="address" value="{{ request.form.get('address', audit_context.get('address') if audit_context else '') }}">
+            </label>
+
+            <label>
+                <span>Tipo de instalación</span>
+                <input type="text" name="installation_type" value="{{ request.form.get('installation_type', audit_context.get('installation_type') if audit_context else '') }}" required>
+            </label>
+
+            <label>
+                <span>Sector</span>
+                <select name="record_scope">
+                    <option value="oficial" {% if (request.form.get('record_scope') or 'oficial') == 'oficial' %}selected{% endif %}>Oficial</option>
+                    <option value="pruebas" {% if request.form.get('record_scope') == 'pruebas' %}selected{% endif %}>Pruebas</option>
+                </select>
+            </label>
+
+            <label>
+                <span>Notas generales (opcional)</span>
+                <textarea name="general_notes" rows="4">{{ request.form.get('general_notes', '') }}</textarea>
+            </label>
+
+            <label>
+                <span>Foto del QC (opcional)</span>
+                <input type="file" name="qc_photo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+            </label>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Checklist</p>
+                <h3>{{ section["title"] }}</h3>
+            </div>
+        </div>
+        <div class="audit-detail-grid">
+            {% for item in section["items"] %}
+                <article class="checklist-item">
+                    <div class="checklist-header">
+                        <div>
+                            <strong>{{ item["label"] }}</strong>
+                        </div>
+                    </div>
+                    <div class="status-group">
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="conforme" {% if request.form.get('status__' + item['key']) == 'conforme' %}checked{% endif %} required> Conforme</label>
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="nc_menor" {% if request.form.get('status__' + item['key']) == 'nc_menor' %}checked{% endif %}> NC menor</label>
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="nc_mayor" {% if request.form.get('status__' + item['key']) == 'nc_mayor' %}checked{% endif %}> NC mayor</label>
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                    </div>
+                    <label>
+                        <span>Detalle / Observación</span>
+                        <textarea name="notes__{{ item['key'] }}" rows="3">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
+                    </label>
+                    <label>
+                        <span>Evidencia (obligatoria en NC menor/mayor)</span>
+                        <input type="file" name="photo__{{ item['key'] }}" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+                    </label>
+                </article>
+            {% endfor %}
+        </div>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Guardar QC</button>
+            <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Cancelar</a>
+        </div>
+    </section>
+</form>
+{% endblock %}
