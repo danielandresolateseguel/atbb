@@ -4530,19 +4530,21 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
         end_iso = _date_range_end_in_app_tz(alert_days).isoformat()
         if effectiveness == "vencida":
             if is_postgres():
-                where_clauses.append("audit_findings.effectiveness_due_date::date < ?::date")
+                where_clauses.append("substring(audit_findings.effectiveness_due_date, 1, 10) ~ '^\\d{4}-\\d{2}-\\d{2}$'")
+                where_clauses.append("to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') < ?::date")
                 params.append(today_iso)
             else:
-                where_clauses.append("date(audit_findings.effectiveness_due_date) < date(?)")
+                where_clauses.append("date(substr(audit_findings.effectiveness_due_date, 1, 10)) < date(?)")
                 params.append(today_iso)
         elif effectiveness == "por_vencer":
             if is_postgres():
-                where_clauses.append("audit_findings.effectiveness_due_date::date >= ?::date")
-                where_clauses.append("audit_findings.effectiveness_due_date::date <= ?::date")
+                where_clauses.append("substring(audit_findings.effectiveness_due_date, 1, 10) ~ '^\\d{4}-\\d{2}-\\d{2}$'")
+                where_clauses.append("to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') >= ?::date")
+                where_clauses.append("to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') <= ?::date")
                 params.extend([today_iso, end_iso])
             else:
-                where_clauses.append("date(audit_findings.effectiveness_due_date) >= date(?)")
-                where_clauses.append("date(audit_findings.effectiveness_due_date) <= date(?)")
+                where_clauses.append("date(substr(audit_findings.effectiveness_due_date, 1, 10)) >= date(?)")
+                where_clauses.append("date(substr(audit_findings.effectiveness_due_date, 1, 10)) <= date(?)")
                 params.extend([today_iso, end_iso])
 
     where_sql = ""
@@ -4769,6 +4771,8 @@ def fetch_effectiveness_alerts(auditor_user_id=None, supervisor_scope_names=None
     where_clauses.append("COALESCE(audit_findings.validation_status, '') = 'validado'")
     where_clauses.append("COALESCE(audit_findings.effectiveness_status, '') = 'pendiente'")
     where_clauses.append("COALESCE(audit_findings.effectiveness_due_date, '') != ''")
+    if is_postgres():
+        where_clauses.append("substring(audit_findings.effectiveness_due_date, 1, 10) ~ '^\\d{4}-\\d{2}-\\d{2}$'")
 
     where_sql = ""
     if where_clauses:
@@ -4779,17 +4783,17 @@ def fetch_effectiveness_alerts(auditor_user_id=None, supervisor_scope_names=None
     end_iso = _date_range_end_in_app_tz(alert_days).isoformat()
 
     if is_postgres():
-        overdue_expr = "audit_findings.effectiveness_due_date::date < ?::date"
+        overdue_expr = "to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') < ?::date"
         due_soon_expr = (
-            "audit_findings.effectiveness_due_date::date >= ?::date "
-            "AND audit_findings.effectiveness_due_date::date <= ?::date"
+            "to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') >= ?::date "
+            "AND to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') <= ?::date"
         )
         count_params = tuple(list(params) + [today_iso, today_iso, end_iso])
     else:
-        overdue_expr = "date(audit_findings.effectiveness_due_date) < date(?)"
+        overdue_expr = "date(substr(audit_findings.effectiveness_due_date, 1, 10)) < date(?)"
         due_soon_expr = (
-            "date(audit_findings.effectiveness_due_date) >= date(?) "
-            "AND date(audit_findings.effectiveness_due_date) <= date(?)"
+            "date(substr(audit_findings.effectiveness_due_date, 1, 10)) >= date(?) "
+            "AND date(substr(audit_findings.effectiveness_due_date, 1, 10)) <= date(?)"
         )
         count_params = tuple(list(params) + [today_iso, today_iso, end_iso])
 

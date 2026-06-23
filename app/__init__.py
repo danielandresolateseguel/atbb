@@ -15,6 +15,84 @@ def create_app():
     app.config.from_object(Config)
     app.config["AUDIT_EVIDENCE_DIR"].mkdir(parents=True, exist_ok=True)
 
+    # #region debug-point post-commit-500
+    def _dbg_post_commit_500(hypothesis_id, msg, data=None, run_id="pre-fix", location="app/__init__.py"):
+        try:
+            if os.environ.get("DEBUG_POST_COMMIT_500") != "1":
+                return
+            import json as _json, urllib.request as _ur, time as _time
+
+            _p = ".dbg/post-commit-500.env"
+            _u, _s = "http://127.0.0.1:7777/event", "post-commit-500"
+            try:
+                with open(_p, encoding="utf-8") as _f:
+                    _c = _f.read()
+                for _line in _c.splitlines():
+                    if _line.startswith("DEBUG_SERVER_URL="):
+                        _u = _line.split("=", 1)[1].strip() or _u
+                    elif _line.startswith("DEBUG_SESSION_ID="):
+                        _s = _line.split("=", 1)[1].strip() or _s
+            except Exception:
+                pass
+
+            payload = {
+                "sessionId": _s,
+                "runId": run_id,
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "msg": f"[DEBUG] {msg}",
+                "data": data or {},
+                "ts": int(_time.time() * 1000),
+            }
+            _ur.urlopen(
+                _ur.Request(_u, data=_json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json"}),
+                timeout=1.5,
+            ).read()
+        except Exception:
+            return
+
+    @app.before_request
+    def _dbg_post_commit_500_before_request():
+        try:
+            _dbg_post_commit_500(
+                "E",
+                "request",
+                {
+                    "method": request.method,
+                    "path": request.path,
+                    "query": request.query_string.decode("utf-8", "ignore") if request.query_string else "",
+                    "accept": str(request.headers.get("Accept") or ""),
+                    "is_secure": bool(request.is_secure),
+                    "user_id": request.cookies.get(app.config.get("SESSION_COOKIE_NAME", "atbb_session"), "")[:16],
+                    "tz": str(app.config.get("APP_TIMEZONE") or ""),
+                },
+                location="app/__init__.py:before_request",
+            )
+        except Exception:
+            return
+
+    @app.teardown_request
+    def _dbg_post_commit_500_teardown_request(exc):
+        try:
+            if not exc:
+                return
+            import traceback as _tb
+
+            _dbg_post_commit_500(
+                "A",
+                "exception",
+                {
+                    "type": type(exc).__name__,
+                    "detail": str(exc),
+                    "path": request.path if request else None,
+                    "traceback": _tb.format_exc(),
+                },
+                location="app/__init__.py:teardown_request",
+            )
+        except Exception:
+            return
+    # #endregion
+
     try:
         from zoneinfo import ZoneInfo
     except ImportError:
