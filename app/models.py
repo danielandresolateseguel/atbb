@@ -4981,13 +4981,13 @@ def update_finding_response(
         raise ValueError("No puedes editar un hallazgo ya validado.")
 
     evidence_value = evidence_path if evidence_path is not None else previous_evidence
-    if not evidence_value:
-        raise ValueError("Debes adjuntar evidencia fotográfica para responder el hallazgo.")
     criteria_value = (closure_criteria or "").strip() or previous_criteria or None
     due_date_value = _normalize_effectiveness_due_date(effectiveness_due_date) or previous_due_date or None
     effectiveness_status_value = (previous_effectiveness_status or "").strip() or None
 
     if safe_status == "resuelto":
+        if not evidence_value:
+            raise ValueError("Debes adjuntar evidencia fotográfica para marcar el hallazgo como resuelto.")
         if not criteria_value:
             raise ValueError("Debes ingresar el criterio de cierre para marcar el hallazgo como resuelto.")
         if not due_date_value:

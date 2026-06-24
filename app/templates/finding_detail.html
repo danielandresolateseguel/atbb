@@ -188,7 +188,7 @@
             </label>
             <label>
                 <span>Evidencia{% if finding["evidence_path"] %} (ya cargada){% endif %}</span>
-                <input type="file" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" {% if not finding["evidence_path"] %}required{% endif %}>
+                <input type="file" id="evidence_file_input" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" data-has-existing="{% if finding['evidence_path'] %}1{% else %}0{% endif %}" {% if (finding["finding_status"] or "") == "resuelto" and not finding["evidence_path"] %}required{% endif %}>
             </label>
             <label>
                 <span>Respuesta del supervisor</span>
@@ -207,12 +207,15 @@
                 const statusSelect = document.getElementById("finding_status_select");
                 const closureCriteriaInput = document.getElementById("closure_criteria_input");
                 const dueDateInput = document.getElementById("effectiveness_due_date_input");
-                if (!statusSelect || !closureCriteriaInput || !dueDateInput) return;
+                const evidenceInput = document.getElementById("evidence_file_input");
+                if (!statusSelect || !closureCriteriaInput || !dueDateInput || !evidenceInput) return;
 
                 function syncRequirements() {
                     const isResolved = statusSelect.value === "resuelto";
                     closureCriteriaInput.required = isResolved;
                     dueDateInput.required = isResolved;
+                    const hasExistingEvidence = evidenceInput.dataset.hasExisting === "1";
+                    evidenceInput.required = isResolved && !hasExistingEvidence;
                 }
 
                 statusSelect.addEventListener("change", syncRequirements);

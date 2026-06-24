@@ -4792,6 +4792,36 @@ def new_audit():
             if material_stock_status == "missing" and not material_stock_notes:
                 raise ValueError("Si faltan materiales en stock, debes detallar los faltantes.")
 
+            if serialized_stock_status == "missing":
+                items.append(
+                    {
+                        "section_key": "stock_snapshot",
+                        "section_title": "Herramientas y stock",
+                        "item_key": "serialized_stock_missing",
+                        "item_label": "Equipos serializados del móvil",
+                        "status": "no_cumple",
+                        "is_critical": True,
+                        "non_compliance_reason": "faltantes_serializados",
+                        "notes": serialized_stock_notes,
+                        "photo_path": None,
+                    }
+                )
+
+            if material_stock_status == "missing":
+                items.append(
+                    {
+                        "section_key": "stock_snapshot",
+                        "section_title": "Herramientas y stock",
+                        "item_key": "material_stock_missing",
+                        "item_label": "Stock de materiales del inventario",
+                        "status": "no_cumple",
+                        "is_critical": False,
+                        "non_compliance_reason": "faltantes_stock_materiales",
+                        "notes": material_stock_notes,
+                        "photo_path": None,
+                    }
+                )
+
             supply_requests = []
             indices = []
             for key in request.form.keys():
