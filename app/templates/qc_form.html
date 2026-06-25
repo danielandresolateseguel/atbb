@@ -28,7 +28,7 @@
     </section>
 {% endif %}
 
-<form method="post" enctype="multipart/form-data">
+<form method="post" enctype="multipart/form-data" class="qc-form">
     <section class="card">
         <div class="section-heading">
             <div>
@@ -231,7 +231,7 @@
 
 <script>
     (function () {
-        const form = document.querySelector("form");
+        const form = document.querySelector("form.qc-form");
         if (!form) {
             return;
         }
