@@ -5622,6 +5622,42 @@ def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names
     return [dict(row) for row in rows]
 
 
+def fetch_qc_sessions_for_audit(audit_id, auditor_user_id=None, supervisor_scope_names=None, limit=50):
+    where_clauses = ["qc_sessions.audit_id = ?"]
+    params = [audit_id]
+
+    append_supervisor_scope_filters(
+        where_clauses,
+        params,
+        supervisor_scope_names=supervisor_scope_names,
+        audit_table_alias="qc_sessions",
+    )
+
+    if auditor_user_id is not None:
+        where_clauses.append("qc_sessions.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    where_sql = " WHERE " + " AND ".join(where_clauses)
+    created_at_expr = "qc_sessions.created_at"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            qc_sessions.id,
+            qc_sessions.qc_date,
+            qc_sessions.total_score,
+            qc_sessions.result_status,
+            qc_sessions.audit_id,
+            {created_at_expr} AS created_at
+        FROM qc_sessions
+        {where_sql}
+        ORDER BY qc_sessions.created_at DESC
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None):
     created_at_expr = "qc_sessions.created_at"
     where_clauses = ["qc_sessions.id = ?"]

@@ -250,6 +250,12 @@ CHECKLIST_SECTIONS = [
     },
 ]
 
+QC_SECTION_KEY = "calidad_instalaciones"
+
+AUDIT_CHECKLIST_SECTIONS = [
+    section for section in CHECKLIST_SECTIONS if section.get("key") != QC_SECTION_KEY
+]
+
 
 TOOL_MATCH_RULES = {
     "fusionadora": {

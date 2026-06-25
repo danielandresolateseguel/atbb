@@ -173,6 +173,35 @@
             {% endif %}
         </div>
     </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Instalación</p>
+                <h3>QC Instalaciones</h3>
+            </div>
+            {% if can_create_audit %}
+                <a class="button button-secondary" href="{{ url_for('main.qc_new', audit_id=audit['id']) }}">Crear QC</a>
+            {% endif %}
+        </div>
+        <div class="info-list">
+            {% if qc_sessions %}
+                <p><strong>Estado:</strong> QC existente</p>
+                <p><strong>Registros asociados:</strong> {{ qc_sessions|length }}</p>
+                {% for qc in qc_sessions %}
+                    <p>
+                        <strong>{{ qc["qc_date"] }}</strong>
+                        | {{ qc["result_status"] }}
+                        | {{ qc["total_score"] }}
+                        | <a class="table-link" href="{{ url_for('main.qc_detail', qc_session_id=qc['id']) }}">Ver</a>
+                    </p>
+                {% endfor %}
+            {% else %}
+                <p><strong>Estado:</strong> QC pendiente</p>
+                <p class="empty-state">Sin QC de instalaciones asociado a esta auditoría.</p>
+            {% endif %}
+        </div>
+    </article>
 </section>
 
 <section class="card table-card">

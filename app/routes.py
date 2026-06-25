@@ -23,7 +23,7 @@ except ImportError:
     Image = None
     ImageOps = None
 
-from app.checklist import CHECKLIST_SECTIONS
+from app.checklist import AUDIT_CHECKLIST_SECTIONS, CHECKLIST_SECTIONS, QC_SECTION_KEY
 from app.models import (
     count_active_admins,
     count_users,
@@ -101,6 +101,7 @@ from app.models import (
     fetch_vehicles,
     fetch_mobile_units,
     fetch_qc_sessions,
+    fetch_qc_sessions_for_audit,
     fetch_qc_session_detail,
     fetch_qc_items,
     fetch_qc_reports_management_summary,
@@ -1871,11 +1872,11 @@ def calculate_section_score(section, form_data, files):
 
 
 def calculate_audit_result(form_data, files):
-    total_score = 0
+    total_score = 0.0
     has_critical_failure = False
     all_items = []
 
-    for section in CHECKLIST_SECTIONS:
+    for section in AUDIT_CHECKLIST_SECTIONS:
         section_score, section_failure, items = calculate_section_score(section, form_data, files)
         total_score += section_score
         has_critical_failure = has_critical_failure or section_failure
@@ -1889,16 +1890,22 @@ def calculate_audit_result(form_data, files):
     total_score += serialized_weight * snapshot_status_scores.get(serialized_stock_status, 0.0)
     total_score += material_weight * snapshot_status_scores.get(material_stock_status, 0.0)
 
+    max_section_score = sum(float(section.get("weight") or 0.0) for section in AUDIT_CHECKLIST_SECTIONS)
+    max_total_score = max_section_score + serialized_weight + material_weight
+    normalized_total_score = (
+        total_score * (100.0 / max_total_score) if max_total_score else total_score
+    )
+
     if has_critical_failure:
         result_status = "Critica"
-    elif total_score >= 90:
+    elif normalized_total_score >= 90:
         result_status = "Aprobada"
-    elif total_score >= 75:
+    elif normalized_total_score >= 75:
         result_status = "Aprobada con observaciones"
     else:
         result_status = "Rechazada"
 
-    return round(total_score, 2), result_status, all_items
+    return round(normalized_total_score, 2), result_status, all_items
 
 
 def validate_required_columns(fieldnames, required_columns):
@@ -2471,6 +2478,215 @@ def upload_audit_evidence():
         raise
 
 
+def _resolve_uploads_relative_path(path_value):
+    raw = (path_value or "").strip()
+    if not raw.startswith("uploads/"):
+        return None
+    uploads_dir = current_app.config["UPLOADS_DIR"].resolve()
+    relative = raw[len("uploads/"):]
+    target = (uploads_dir / relative).resolve()
+    if target == uploads_dir:
+        return None
+    if uploads_dir not in target.parents:
+        return None
+    return target
+
+
+def delete_cloudinary_ref(ref):
+    decoded = decode_cloudinary_ref(ref)
+    if not decoded:
+        return False
+    raw_url = (current_app.config.get("CLOUDINARY_URL") or "").strip()
+    if not raw_url.startswith("cloudinary://"):
+        return False
+    import cloudinary
+    import cloudinary.uploader
+
+    cloudinary.config(cloudinary_url=raw_url, secure=True)
+    result = cloudinary.uploader.destroy(
+        decoded["public_id"],
+        resource_type=decoded["resource_type"],
+        type=decoded["delivery_type"],
+        invalidate=True,
+    )
+    status = (result or {}).get("result")
+    return status in {"ok", "not found"}
+
+
+@main.route("/api/audits/delete-evidence", methods=["POST"])
+def delete_audit_evidence():
+    if not can_create_audit():
+        abort(403)
+
+    payload = request.get_json(silent=True) or {}
+    paths = payload.get("photo_paths")
+    if paths is None:
+        paths = request.form.getlist("photo_paths") if hasattr(request.form, "getlist") else []
+    if paths is None:
+        paths = []
+    if isinstance(paths, str):
+        paths = [paths]
+
+    cleaned = []
+    for entry in paths:
+        value = str(entry or "").strip()
+        if not value or value == "-":
+            continue
+        cleaned.append(value)
+
+    deleted = 0
+    errors = []
+    for ref_or_path in cleaned:
+        try:
+            if decode_cloudinary_ref(ref_or_path):
+                if delete_cloudinary_ref(ref_or_path):
+                    deleted += 1
+                else:
+                    errors.append({"path": ref_or_path, "error": "No fue posible eliminar en Cloudinary."})
+                continue
+
+            target = _resolve_uploads_relative_path(ref_or_path)
+            if not target:
+                errors.append({"path": ref_or_path, "error": "Ruta de evidencia inválida."})
+                continue
+            if target.exists():
+                target.unlink()
+            deleted += 1
+        except Exception as exc:
+            errors.append({"path": ref_or_path, "error": str(exc) or "Error eliminando evidencia."})
+
+    return jsonify({"deleted_count": deleted, "errors": errors})
+
+
+@main.route("/api/qc/upload-evidence", methods=["POST"])
+def upload_qc_evidence():
+    try:
+        if not can_create_audit():
+            abort(403)
+
+        item_key = (request.form.get("item_key") or "").strip()
+        item_label = (request.form.get("item_label") or "evidencia").strip() or "evidencia"
+        qc_date = (request.form.get("qc_date") or "").strip()
+        if not qc_date:
+            qc_date = datetime.today().strftime("%Y-%m-%d")
+
+        try:
+            datetime.fromisoformat(qc_date)
+        except ValueError:
+            return jsonify({"error": "qc_date invalida."}), 400
+
+        files = request.files.getlist("file") if hasattr(request.files, "getlist") else []
+        if not files:
+            single = request.files.get("file")
+            if single:
+                files = [single]
+
+        files = [entry for entry in files if has_uploaded_file(entry)]
+        if not files:
+            return jsonify({"error": "Debes adjuntar al menos un archivo."}), 400
+
+        date_folder = datetime.fromisoformat(qc_date).strftime("%Y/%m")
+        if not cloudinary_enabled():
+            target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "qc" / date_folder
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_stem = secure_filename(item_key) or "evidencia"
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        cloud_folder = f"{base_folder}/qc/{date_folder}"
+
+        saved_paths = []
+        for index, entry in enumerate(files):
+            _filename, extension = validate_photo_file(entry, item_label)
+            generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
+            raw_bytes = entry.stream.read()
+            if not raw_bytes:
+                return jsonify({"error": f"La evidencia de {item_label} no contiene datos validos."}), 400
+
+            optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+            if cloudinary_enabled():
+                uploaded = upload_private_image_to_cloudinary(
+                    optimized_bytes,
+                    folder=cloud_folder,
+                    public_id=generated_name,
+                )
+                saved_paths.append(
+                    encode_cloudinary_ref(
+                        uploaded.get("public_id"),
+                        version=uploaded.get("version"),
+                        delivery_type="private",
+                        resource_type="image",
+                        file_format=optimized_extension,
+                    )
+                )
+            else:
+                generated_filename = f"{generated_name}.{optimized_extension}"
+                saved_path = target_dir / generated_filename
+                saved_path.write_bytes(optimized_bytes)
+                saved_paths.append(
+                    f"uploads/audits/qc/{date_folder}/{generated_filename}".replace("\\", "/")
+                )
+
+        if len(saved_paths) == 1:
+            return jsonify({"photo_path": saved_paths[0]})
+        return jsonify({"photo_paths": saved_paths})
+    except Exception:
+        raise
+
+
+@main.route("/api/qc/upload-session-photo", methods=["POST"])
+def upload_qc_session_photo():
+    try:
+        if not can_create_audit():
+            abort(403)
+
+        qc_date = (request.form.get("qc_date") or "").strip()
+        if not qc_date:
+            qc_date = datetime.today().strftime("%Y-%m-%d")
+        try:
+            datetime.fromisoformat(qc_date)
+        except ValueError:
+            return jsonify({"error": "qc_date invalida."}), 400
+
+        photo_file = request.files.get("file")
+        if not has_uploaded_file(photo_file):
+            return jsonify({"error": "Debes adjuntar un archivo."}), 400
+
+        _filename, extension = validate_photo_file(photo_file, "foto QC")
+        raw_bytes = photo_file.stream.read()
+        if not raw_bytes:
+            return jsonify({"error": "La foto del QC no contiene datos validos."}), 400
+
+        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+        date_folder = datetime.fromisoformat(qc_date).strftime("%Y/%m")
+        generated_name = f"qc_session_{uuid4().hex[:8]}_{uuid4().hex[:8]}"
+
+        if cloudinary_enabled():
+            base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+            folder = f"{base_folder}/qc-sessions/{date_folder}"
+            uploaded = upload_private_image_to_cloudinary(
+                optimized_bytes,
+                folder=folder,
+                public_id=generated_name,
+            )
+            path = encode_cloudinary_ref(
+                uploaded.get("public_id"),
+                version=uploaded.get("version"),
+                delivery_type="private",
+                resource_type="image",
+                file_format=optimized_extension,
+            )
+            return jsonify({"photo_path": path})
+
+        target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "qc-sessions" / date_folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+        generated_filename = f"{generated_name}.{optimized_extension}"
+        saved_path = target_dir / generated_filename
+        saved_path.write_bytes(optimized_bytes)
+        return jsonify({"photo_path": f"uploads/audits/qc-sessions/{date_folder}/{generated_filename}".replace("\\", "/")})
+    except Exception:
+        raise
+
+
 def persist_auditor_signature(signature_data, audit_date):
     raw_signature = (signature_data or "").strip()
     if not raw_signature:
@@ -3023,9 +3239,9 @@ def tnps():
 
 
 def qc_section_definition():
-    section = next((entry for entry in CHECKLIST_SECTIONS if entry.get("key") == "calidad_instalaciones"), None)
+    section = next((entry for entry in CHECKLIST_SECTIONS if entry.get("key") == QC_SECTION_KEY), None)
     if not section:
-        raise RuntimeError("No existe la sección 'calidad_instalaciones' en el checklist.")
+        raise RuntimeError(f"No existe la sección '{QC_SECTION_KEY}' en el checklist.")
     return section
 
 
@@ -3181,7 +3397,15 @@ def qc_new():
                 result_status = "Rechazada"
 
             persist_qc_item_evidence(items, qc_date)
-            session_photo_path = persist_qc_session_evidence(request.files.get("qc_photo"), qc_date)
+            uploaded_qc_photo_path_raw = (request.form.get("uploaded_qc_photo_path") or "").strip()
+            uploaded_qc_photo_path = uploaded_qc_photo_path_raw if uploaded_qc_photo_path_raw and uploaded_qc_photo_path_raw != "-" else None
+            if uploaded_qc_photo_path and not (decode_cloudinary_ref(uploaded_qc_photo_path) or _resolve_uploads_relative_path(uploaded_qc_photo_path)):
+                raise ValueError("La foto del QC no es válida.")
+
+            qc_photo_file = request.files.get("qc_photo")
+            if not has_uploaded_file(qc_photo_file):
+                qc_photo_file = request.files.get("qc_photo_camera")
+            session_photo_path = uploaded_qc_photo_path or persist_qc_session_evidence(qc_photo_file, qc_date)
 
             technician_row = next((t for t in technicians if t.get("id") == locked_technician_id), None)
             technician_name = (technician_row.get("name") if technician_row else "") or ""
@@ -4228,6 +4452,11 @@ def audit_detail(audit_id):
     supply_requests = fetch_audit_supply_requests(audit_id)
     findings = fetch_audit_findings(audit_id)
     tnps_response = fetch_tnps_response_for_audit(audit_id)
+    qc_sessions = fetch_qc_sessions_for_audit(
+        audit_id,
+        auditor_user_id=(current_user()["id"] if is_auditor() else None),
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
     response = make_response(
         render_template(
             "audit_detail.html",
@@ -4236,6 +4465,7 @@ def audit_detail(audit_id):
             supply_requests=supply_requests,
             findings=findings,
             tnps_response=tnps_response,
+            qc_sessions=qc_sessions,
         )
     )
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -4939,13 +5169,14 @@ def new_audit():
     response = make_response(
         render_template(
             "audit_form.html",
-            checklist_sections=CHECKLIST_SECTIONS,
+            checklist_sections=AUDIT_CHECKLIST_SECTIONS,
             mobile_units=mobile_units,
             vehicles=vehicles,
             material_index=material_index,
             herramientas_section=herramientas_section,
             hand_tools=hand_tools,
             auditor_rules={
+                "include_quality_section": False,
                 "impact_targets": [
                     {
                         "who": "Técnico",
@@ -5017,14 +5248,9 @@ def new_audit():
                         "only_items": ["carga_segura", "escalera_aluminio_extensible", "escalera_fibra_tijera_doble"],
                     },
                 ],
-                "quality_rules": {
-                    "section_key": "calidad_instalaciones",
-                    "impacts_statuses": ["nc_menor", "nc_mayor"],
-                },
                 "photo_rules": {
                     "optional_reasons": ["olvido", "perdida", "robo", "no_asignado"],
                     "optional_items": ["extintor", "seguro_vehicular", "oblea_gnc", "rto", "botiquin"],
-                    "required_for_quality_statuses": ["nc_menor", "nc_mayor"],
                 },
                 "critical_rules": {
                     "critical_statuses": ["no_cumple", "nc_mayor"],

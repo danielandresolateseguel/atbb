@@ -393,6 +393,11 @@
                                         <path fill="currentColor" d="M9 4l1.83 2H14l1.83-2H18a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h3zm3 5a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
                                     </svg>
                                 </button>
+                                <button type="button" class="button button-primary evidence-action" data-evidence-remove="1" aria-label="Quitar evidencia" title="Quitar evidencia">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path fill="currentColor" d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9z"/>
+                                    </svg>
+                                </button>
                             </div>
                             <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
                             <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`. En `Seguro vehicular`, `Oblea de GNC`, `RTO` y `Botiquín` no se exige foto.</small>
@@ -457,6 +462,11 @@
                                 <button type="button" class="button button-primary evidence-action" data-file-trigger="photos_camera__{{ item['key'] }}" aria-label="Abrir cámara" title="Abrir cámara">
                                     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                         <path fill="currentColor" d="M9 4l1.83 2H14l1.83-2H18a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h3zm3 5a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
+                                    </svg>
+                                </button>
+                                <button type="button" class="button button-primary evidence-action" data-evidence-remove="1" aria-label="Quitar evidencia" title="Quitar evidencia">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path fill="currentColor" d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9z"/>
                                     </svg>
                                 </button>
                             </div>
@@ -647,6 +657,11 @@
                                     <button type="button" class="button button-primary evidence-action" data-file-trigger="photo_camera__{{ item['key'] }}" aria-label="Abrir cámara" title="Abrir cámara">
                                         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                             <path fill="currentColor" d="M9 4l1.83 2H14l1.83-2H18a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h3zm3 5a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
+                                        </svg>
+                                    </button>
+                                    <button type="button" class="button button-primary evidence-action" data-evidence-remove="1" aria-label="Quitar evidencia" title="Quitar evidencia">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                            <path fill="currentColor" d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9z"/>
                                         </svg>
                                     </button>
                                 </div>
@@ -878,13 +893,15 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td>Control de Calidad</td>
-                                <td>
-                                    En la sección <strong>Control de Calidad de Instalaciones</strong>, las no conformidades
-                                    <strong>NC menor</strong> y <strong>NC mayor</strong> impactan el score (no usan motivo).
-                                </td>
-                            </tr>
+                            {% if auditor_rules.get("include_quality_section") %}
+                                <tr>
+                                    <td>Control de Calidad</td>
+                                    <td>
+                                        En la sección <strong>Control de Calidad de Instalaciones</strong>, las no conformidades
+                                        <strong>NC menor</strong> y <strong>NC mayor</strong> impactan el score (no usan motivo).
+                                    </td>
+                                </tr>
+                            {% endif %}
                             <tr>
                                 <td>Elementos de seguridad</td>
                                 <td>
@@ -910,13 +927,15 @@
                                     {% endfor %}.
                                 </td>
                             </tr>
-                            <tr>
-                                <td>Evidencia (Calidad)</td>
-                                <td>
-                                    En <strong>Control de Calidad</strong>, se exige evidencia en
-                                    <strong>NC menor</strong> / <strong>NC mayor</strong>.
-                                </td>
-                            </tr>
+                            {% if auditor_rules.get("include_quality_section") %}
+                                <tr>
+                                    <td>Evidencia (Calidad)</td>
+                                    <td>
+                                        En <strong>Control de Calidad</strong>, se exige evidencia en
+                                        <strong>NC menor</strong> / <strong>NC mayor</strong>.
+                                    </td>
+                                </tr>
+                            {% endif %}
                             {% for rule in auditor_rules.get("special_reasons", []) %}
                                 <tr>
                                     <td>Motivo: {{ rule.label }}</td>
@@ -1473,6 +1492,42 @@
             });
             const data = await response.json().catch(() => null);
             return { response, data };
+        }
+
+        function parseUploadedPaths(rawValue) {
+            const raw = String(rawValue || "").trim();
+            if (!raw || raw === "-") {
+                return [];
+            }
+            if (raw.startsWith("[") && raw.endsWith("]")) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                        return parsed.map((v) => String(v || "").trim()).filter((v) => v && v !== "-");
+                    }
+                } catch (_err) {
+                }
+            }
+            return [raw];
+        }
+
+        async function deleteEvidencePaths(paths) {
+            const response = await fetch("/api/audits/delete-evidence", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Accept": "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify({ photo_paths: paths }),
+            });
+            const data = await response.json().catch(() => null);
+            return { response, data };
+        }
+
+        async function clearEvidenceQueueForItem(itemKey) {
+            const entries = await evidenceQueueGetAll();
+            const matches = entries.filter((entry) => String(entry.item_key || "") === String(itemKey));
+            for (const entry of matches) {
+                await evidenceQueueDelete(entry.id);
+            }
         }
 
         async function applyUploadResultToForm(itemKey, paths, isMulti) {
@@ -2880,6 +2935,92 @@
                 evaluateClosure();
             }
             scheduleDraftSave();
+        });
+
+        form.addEventListener("click", function (event) {
+            const rawTarget = event.target;
+            if (!rawTarget || !(rawTarget instanceof HTMLElement)) {
+                return;
+            }
+            const button = rawTarget.closest("[data-evidence-remove]");
+            if (!button) {
+                return;
+            }
+            const checklistItem = button.closest(".checklist-item");
+            if (!checklistItem) {
+                return;
+            }
+            const itemKey = String(checklistItem.dataset.itemKey || "").trim();
+            if (!itemKey) {
+                return;
+            }
+            event.preventDefault();
+            const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
+            const uploadedInput = ensureUploadedPhotoField(checklistItem, itemKey);
+            const paths = uploadedInput ? parseUploadedPaths(uploadedInput.value) : [];
+            const hasPending = checklistItem.dataset.evidencePending === "1";
+            const shouldConfirm = paths.length > 0 || hasPending;
+            if (shouldConfirm) {
+                const ok = window.confirm("¿Quitar la evidencia cargada para este ítem?");
+                if (!ok) {
+                    return;
+                }
+            }
+
+            void (async () => {
+                const originalLabel = filenameTarget ? String(filenameTarget.textContent || "") : "";
+                button.setAttribute("disabled", "disabled");
+                if (filenameTarget) {
+                    filenameTarget.textContent = "Quitando evidencia...";
+                }
+                try {
+                    await clearEvidenceQueueForItem(itemKey);
+                    if (paths.length > 0) {
+                        const { response, data } = await deleteEvidencePaths(paths);
+                        if (!response.ok) {
+                            const message = data && data.error ? data.error : "No fue posible eliminar la evidencia.";
+                            if (filenameTarget) {
+                                filenameTarget.textContent = message;
+                            }
+                            return;
+                        }
+                        if (data && Array.isArray(data.errors) && data.errors.length > 0) {
+                            if (filenameTarget) {
+                                filenameTarget.textContent = "No fue posible eliminar toda la evidencia. Reintenta.";
+                            }
+                            return;
+                        }
+                    }
+
+                    if (uploadedInput) {
+                        uploadedInput.value = "";
+                    }
+                    const fileInput = checklistItem.querySelector('input[name^="photo__"], input[name^="photos__"]');
+                    const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"], input[name^="photos_camera__"]');
+                    if (fileInput && fileInput instanceof HTMLInputElement) {
+                        fileInput.value = "";
+                        delete fileInput.dataset.lastEvidenceIdentity;
+                    }
+                    if (cameraInput && cameraInput instanceof HTMLInputElement) {
+                        cameraInput.value = "";
+                        delete cameraInput.dataset.lastEvidenceIdentity;
+                    }
+                    delete checklistItem.dataset.evidencePending;
+                    if (filenameTarget) {
+                        filenameTarget.textContent = checklistItem.dataset.multiEvidence === "1"
+                            ? "Sin archivos seleccionados."
+                            : "Sin archivo seleccionado.";
+                    }
+                    evaluateClosure();
+                    scheduleDraftSave();
+                } catch (_err) {
+                    if (filenameTarget) {
+                        filenameTarget.textContent = originalLabel || "No fue posible quitar la evidencia.";
+                    }
+                } finally {
+                    button.removeAttribute("disabled");
+                }
+            })();
         });
 
         function formatVehicleExpiryText(label, expiry, baseDate) {
