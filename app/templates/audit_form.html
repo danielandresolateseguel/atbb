@@ -3215,6 +3215,38 @@
             return true;
         }
 
+        function navigateToChecklistTarget(targetId) {
+            const safeTargetId = String(targetId || "").trim();
+            if (!safeTargetId) {
+                return false;
+            }
+            const target = document.getElementById(safeTargetId);
+            if (!target) {
+                return false;
+            }
+            openChecklistSectionForElement(target);
+            requestAnimationFrame(() => {
+                target.scrollIntoView({ behavior: "smooth", block: "center" });
+                const focusable = target.querySelector("input, select, textarea, button");
+                if (focusable && typeof focusable.focus === "function") {
+                    try {
+                        focusable.focus({ preventScroll: true });
+                    } catch (_err) {
+                        focusable.focus();
+                    }
+                }
+            });
+            try {
+                if (window.history && typeof window.history.replaceState === "function") {
+                    window.history.replaceState(null, "", `#${safeTargetId}`);
+                } else {
+                    window.location.hash = `#${safeTargetId}`;
+                }
+            } catch (_err) {
+            }
+            return true;
+        }
+
         function initChecklistAccordion() {
             if (checklistSections.length === 0) {
                 return;
@@ -3271,6 +3303,26 @@
             const touched = getFirstTouchedChecklistSection();
             setChecklistSectionOpen(touched || checklistSections[0], true);
             closeOtherChecklistSections(touched || checklistSections[0]);
+        }
+
+        if (closureIssueList) {
+            closureIssueList.addEventListener("click", function (event) {
+                const rawTarget = event && event.target ? event.target : null;
+                const link = rawTarget && rawTarget.closest ? rawTarget.closest("a") : null;
+                if (!link) {
+                    return;
+                }
+                const href = String(link.getAttribute("href") || "");
+                if (!href.startsWith("#")) {
+                    return;
+                }
+                const targetId = href.slice(1);
+                if (!targetId) {
+                    return;
+                }
+                event.preventDefault();
+                navigateToChecklistTarget(targetId);
+            });
         }
 
         if (addSupplyRequestButton) {
