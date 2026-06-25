@@ -2939,7 +2939,7 @@
 
         form.addEventListener("click", function (event) {
             const rawTarget = event.target;
-            if (!rawTarget || !(rawTarget instanceof HTMLElement)) {
+            if (!rawTarget || !(rawTarget instanceof Element)) {
                 return;
             }
             const button = rawTarget.closest("[data-evidence-remove]");
