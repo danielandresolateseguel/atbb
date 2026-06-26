@@ -364,6 +364,48 @@
             </div>
         </fieldset>
 
+        <fieldset class="score-scale-field">
+            <legend>¿El router quedó ubicado en el lugar óptimo acordado? </legend>
+            <div class="score-scale-yn">
+                <div class="score-scale-item">
+                    <input type="radio" name="router_optimal_location" id="router-optimal-yes" value="1">
+                    <label class="score-scale-option" for="router-optimal-yes">Sí</label>
+                </div>
+                <div class="score-scale-item">
+                    <input type="radio" name="router_optimal_location" id="router-optimal-no" value="0">
+                    <label class="score-scale-option" for="router-optimal-no">No</label>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="score-scale-field">
+            <legend>¿Se mantuvo el orden y la limpieza en el entorno? </legend>
+            <div class="score-scale-yn">
+                <div class="score-scale-item">
+                    <input type="radio" name="environment_clean_order" id="clean-order-yes" value="1">
+                    <label class="score-scale-option" for="clean-order-yes">Sí</label>
+                </div>
+                <div class="score-scale-item">
+                    <input type="radio" name="environment_clean_order" id="clean-order-no" value="0">
+                    <label class="score-scale-option" for="clean-order-no">No</label>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="score-scale-field">
+            <legend>¿Se realizó la prueba de velocidad (Speedtest) frente al cliente? </legend>
+            <div class="score-scale-yn">
+                <div class="score-scale-item">
+                    <input type="radio" name="speedtest_done" id="speedtest-done-yes" value="1">
+                    <label class="score-scale-option" for="speedtest-done-yes">Sí</label>
+                </div>
+                <div class="score-scale-item">
+                    <input type="radio" name="speedtest_done" id="speedtest-done-no" value="0">
+                    <label class="score-scale-option" for="speedtest-done-no">No</label>
+                </div>
+            </div>
+        </fieldset>
+
         <label>
             <span>Comentario </span>
             <textarea name="comment" rows="3" placeholder="Detalle, motivo, mejora sugerida"></textarea>
@@ -431,6 +473,9 @@
                         <th>Punt.</th>
                         <th>Claridad</th>
                         <th>Resuelto</th>
+                        <th>Router</th>
+                        <th>Orden</th>
+                        <th>Speedtest</th>
                         <th>Comentario</th>
                     </tr>
                 </thead>
@@ -476,6 +521,33 @@
                                 {% if row["issue_resolved_first_visit"] is none %}
                                     -
                                 {% elif row["issue_resolved_first_visit"] %}
+                                    Sí
+                                {% else %}
+                                    No
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row["router_optimal_location"] is none %}
+                                    -
+                                {% elif row["router_optimal_location"] %}
+                                    Sí
+                                {% else %}
+                                    No
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row["environment_clean_order"] is none %}
+                                    -
+                                {% elif row["environment_clean_order"] %}
+                                    Sí
+                                {% else %}
+                                    No
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row["speedtest_done"] is none %}
+                                    -
+                                {% elif row["speedtest_done"] %}
                                     Sí
                                 {% else %}
                                     No

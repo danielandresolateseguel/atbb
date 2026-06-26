@@ -3203,6 +3203,18 @@ def tnps():
                     "issue_resolved_first_visit",
                     "Resolucion en primera visita",
                 ),
+                router_optimal_location=parse_optional_yes_no(
+                    "router_optimal_location",
+                    "Router en el lugar optimo",
+                ),
+                environment_clean_order=parse_optional_yes_no(
+                    "environment_clean_order",
+                    "Orden y limpieza del entorno",
+                ),
+                speedtest_done=parse_optional_yes_no(
+                    "speedtest_done",
+                    "Prueba de velocidad frente al cliente",
+                ),
                 comment=(request.form.get("comment") or "").strip(),
                 customer_name=(request.form.get("customer_name") or "").strip(),
                 technician_id=locked_technician_id,

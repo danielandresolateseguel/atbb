@@ -100,6 +100,33 @@
             <p><strong>Puntaje:</strong> {{ tnps_response["score"] }}</p>
             <p><strong>Cliente:</strong> {{ tnps_response["customer_name"] or "-" }}</p>
             <p><strong>Comentario:</strong> {{ tnps_response["comment"] or "-" }}</p>
+            <p>
+                <strong>Operativo:</strong>
+                Router
+                {% if tnps_response["router_optimal_location"] is none %}
+                    -
+                {% elif tnps_response["router_optimal_location"] %}
+                    Sí
+                {% else %}
+                    No
+                {% endif %}
+                | Orden
+                {% if tnps_response["environment_clean_order"] is none %}
+                    -
+                {% elif tnps_response["environment_clean_order"] %}
+                    Sí
+                {% else %}
+                    No
+                {% endif %}
+                | Speedtest
+                {% if tnps_response["speedtest_done"] is none %}
+                    -
+                {% elif tnps_response["speedtest_done"] %}
+                    Sí
+                {% else %}
+                    No
+                {% endif %}
+            </p>
             {% if tnps_source == "audit" %}
                 <p><strong>Origen:</strong> Vinculado por auditoría</p>
             {% endif %}

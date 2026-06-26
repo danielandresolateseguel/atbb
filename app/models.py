@@ -459,6 +459,9 @@ def init_db():
             punctuality_score INTEGER,
             communication_clarity_score INTEGER,
             issue_resolved_first_visit INTEGER,
+            router_optimal_location INTEGER,
+            environment_clean_order INTEGER,
+            speedtest_done INTEGER,
             comment TEXT,
             customer_name TEXT,
             technician_id INTEGER,
@@ -847,6 +850,9 @@ def init_db_postgres():
             punctuality_score INTEGER,
             communication_clarity_score INTEGER,
             issue_resolved_first_visit INTEGER,
+            router_optimal_location INTEGER,
+            environment_clean_order INTEGER,
+            speedtest_done INTEGER,
             comment TEXT,
             customer_name TEXT,
             technician_id INTEGER REFERENCES technicians (id),
@@ -1361,6 +1367,9 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "tnps_responses", "punctuality_score", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "communication_clarity_score", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "issue_resolved_first_visit", "INTEGER")
+    add_column_if_missing(connection, "tnps_responses", "router_optimal_location", "INTEGER")
+    add_column_if_missing(connection, "tnps_responses", "environment_clean_order", "INTEGER")
+    add_column_if_missing(connection, "tnps_responses", "speedtest_done", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "qc_session_id", "INTEGER")
     add_column_if_missing(connection, "qc_sessions", "photo_path", "TEXT")
     migrate_tnps_experience_scores_to_ten_scale(connection)
@@ -1581,6 +1590,9 @@ def ensure_audit_findings_columns_postgres(cursor):
 
 def ensure_tnps_columns_postgres(cursor):
     cursor.execute("ALTER TABLE tnps_responses ADD COLUMN IF NOT EXISTS qc_session_id INTEGER")
+    cursor.execute("ALTER TABLE tnps_responses ADD COLUMN IF NOT EXISTS router_optimal_location INTEGER")
+    cursor.execute("ALTER TABLE tnps_responses ADD COLUMN IF NOT EXISTS environment_clean_order INTEGER")
+    cursor.execute("ALTER TABLE tnps_responses ADD COLUMN IF NOT EXISTS speedtest_done INTEGER")
 
 
 def ensure_qc_columns_postgres(cursor):
@@ -2712,6 +2724,9 @@ def create_tnps_response(
     punctuality_score=None,
     communication_clarity_score=None,
     issue_resolved_first_visit=None,
+    router_optimal_location=None,
+    environment_clean_order=None,
+    speedtest_done=None,
     comment=None,
     customer_name=None,
     technician_id=None,
@@ -2735,6 +2750,9 @@ def create_tnps_response(
                     punctuality_score = ?,
                     communication_clarity_score = ?,
                     issue_resolved_first_visit = ?,
+                    router_optimal_location = ?,
+                    environment_clean_order = ?,
+                    speedtest_done = ?,
                     comment = ?,
                     customer_name = ?,
                     technician_id = ?,
@@ -2748,6 +2766,9 @@ def create_tnps_response(
                     punctuality_score,
                     communication_clarity_score,
                     issue_resolved_first_visit,
+                    router_optimal_location,
+                    environment_clean_order,
+                    speedtest_done,
                     (comment or "").strip() or None,
                     (customer_name or "").strip() or None,
                     technician_id,
@@ -2774,6 +2795,9 @@ def create_tnps_response(
                     punctuality_score = ?,
                     communication_clarity_score = ?,
                     issue_resolved_first_visit = ?,
+                    router_optimal_location = ?,
+                    environment_clean_order = ?,
+                    speedtest_done = ?,
                     comment = ?,
                     customer_name = ?,
                     technician_id = ?,
@@ -2787,6 +2811,9 @@ def create_tnps_response(
                     punctuality_score,
                     communication_clarity_score,
                     issue_resolved_first_visit,
+                    router_optimal_location,
+                    environment_clean_order,
+                    speedtest_done,
                     (comment or "").strip() or None,
                     (customer_name or "").strip() or None,
                     technician_id,
@@ -2805,12 +2832,15 @@ def create_tnps_response(
             punctuality_score,
             communication_clarity_score,
             issue_resolved_first_visit,
+            router_optimal_location,
+            environment_clean_order,
+            speedtest_done,
             comment,
             customer_name,
             technician_id,
             audit_id,
             qc_session_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         response_date,
@@ -2819,6 +2849,9 @@ def create_tnps_response(
         punctuality_score,
         communication_clarity_score,
         issue_resolved_first_visit,
+        router_optimal_location,
+        environment_clean_order,
+        speedtest_done,
         (comment or "").strip() or None,
         (customer_name or "").strip() or None,
         technician_id,
@@ -2929,7 +2962,16 @@ def fetch_tnps_stats(filters=None):
             SUM(CASE WHEN communication_clarity_score BETWEEN 1 AND 6 THEN 1 ELSE 0 END) AS clarity_detractors,
 
             COUNT(issue_resolved_first_visit) AS first_visit_total,
-            AVG(issue_resolved_first_visit) AS first_visit_yes_rate
+            AVG(issue_resolved_first_visit) AS first_visit_yes_rate,
+
+            COUNT(router_optimal_location) AS router_optimal_total,
+            AVG(router_optimal_location) AS router_optimal_yes_rate,
+
+            COUNT(environment_clean_order) AS clean_order_total,
+            AVG(environment_clean_order) AS clean_order_yes_rate,
+
+            COUNT(speedtest_done) AS speedtest_total,
+            AVG(speedtest_done) AS speedtest_yes_rate
         FROM tnps_responses
         {where_sql}
         """,
@@ -2946,11 +2988,19 @@ def fetch_tnps_stats(filters=None):
     punctuality_total = driver_row["punctuality_total"] or 0
     clarity_total = driver_row["clarity_total"] or 0
     first_visit_total = driver_row["first_visit_total"] or 0
+    router_optimal_total = driver_row["router_optimal_total"] or 0
+    clean_order_total = driver_row["clean_order_total"] or 0
+    speedtest_total = driver_row["speedtest_total"] or 0
 
     booking_ease_avg = None if booking_ease_total == 0 else round((driver_row["booking_ease_avg"] or 0), 2)
     punctuality_avg = None if punctuality_total == 0 else round((driver_row["punctuality_avg"] or 0), 2)
     clarity_avg = None if clarity_total == 0 else round((driver_row["clarity_avg"] or 0), 2)
     first_visit_yes_rate = None if first_visit_total == 0 else round(((driver_row["first_visit_yes_rate"] or 0) * 100), 1)
+    router_optimal_yes_rate = (
+        None if router_optimal_total == 0 else round(((driver_row["router_optimal_yes_rate"] or 0) * 100), 1)
+    )
+    clean_order_yes_rate = None if clean_order_total == 0 else round(((driver_row["clean_order_yes_rate"] or 0) * 100), 1)
+    speedtest_yes_rate = None if speedtest_total == 0 else round(((driver_row["speedtest_yes_rate"] or 0) * 100), 1)
 
     booking_ease_nps = calc_attr_nps(
         float(driver_row["booking_ease_promoters"] or 0),
@@ -2975,7 +3025,10 @@ def fetch_tnps_stats(filters=None):
             booking_ease_score,
             punctuality_score,
             communication_clarity_score,
-            issue_resolved_first_visit
+            issue_resolved_first_visit,
+            router_optimal_location,
+            environment_clean_order,
+            speedtest_done
         FROM tnps_responses
         {where_sql}
         """,
@@ -2993,6 +3046,15 @@ def fetch_tnps_stats(filters=None):
     )
     first_visit_corr, first_visit_corr_n = _pearson_correlation(
         [(row["issue_resolved_first_visit"], row["score"]) for row in impact_rows]
+    )
+    router_optimal_corr, router_optimal_corr_n = _pearson_correlation(
+        [(row["router_optimal_location"], row["score"]) for row in impact_rows]
+    )
+    clean_order_corr, clean_order_corr_n = _pearson_correlation(
+        [(row["environment_clean_order"], row["score"]) for row in impact_rows]
+    )
+    speedtest_corr, speedtest_corr_n = _pearson_correlation(
+        [(row["speedtest_done"], row["score"]) for row in impact_rows]
     )
 
     drivers = [
@@ -3035,6 +3097,36 @@ def fetch_tnps_stats(filters=None):
             "nps": None,
             "impact": None if first_visit_corr is None else round(first_visit_corr, 2),
             "impact_count": first_visit_corr_n,
+        },
+        {
+            "key": "router_optimal_location",
+            "label": "Router en el lugar óptimo",
+            "value": router_optimal_yes_rate,
+            "value_suffix": "% sí",
+            "count": router_optimal_total,
+            "nps": None,
+            "impact": None if router_optimal_corr is None else round(router_optimal_corr, 2),
+            "impact_count": router_optimal_corr_n,
+        },
+        {
+            "key": "environment_clean_order",
+            "label": "Orden y limpieza del entorno",
+            "value": clean_order_yes_rate,
+            "value_suffix": "% sí",
+            "count": clean_order_total,
+            "nps": None,
+            "impact": None if clean_order_corr is None else round(clean_order_corr, 2),
+            "impact_count": clean_order_corr_n,
+        },
+        {
+            "key": "speedtest_done",
+            "label": "Speedtest frente al cliente",
+            "value": speedtest_yes_rate,
+            "value_suffix": "% sí",
+            "count": speedtest_total,
+            "nps": None,
+            "impact": None if speedtest_corr is None else round(speedtest_corr, 2),
+            "impact_count": speedtest_corr_n,
         },
     ]
 
@@ -3095,6 +3187,9 @@ def fetch_tnps_responses(filters=None, limit=200):
             tnps_responses.punctuality_score,
             tnps_responses.communication_clarity_score,
             tnps_responses.issue_resolved_first_visit,
+            tnps_responses.router_optimal_location,
+            tnps_responses.environment_clean_order,
+            tnps_responses.speedtest_done,
             tnps_responses.comment,
             tnps_responses.customer_name,
             tnps_responses.audit_id,
@@ -3125,6 +3220,9 @@ def fetch_tnps_response_for_audit(audit_id):
             tnps_responses.punctuality_score,
             tnps_responses.communication_clarity_score,
             tnps_responses.issue_resolved_first_visit,
+            tnps_responses.router_optimal_location,
+            tnps_responses.environment_clean_order,
+            tnps_responses.speedtest_done,
             tnps_responses.comment,
             tnps_responses.customer_name,
             tnps_responses.audit_id,
@@ -3156,6 +3254,9 @@ def fetch_tnps_response_for_qc(qc_session_id):
             tnps_responses.punctuality_score,
             tnps_responses.communication_clarity_score,
             tnps_responses.issue_resolved_first_visit,
+            tnps_responses.router_optimal_location,
+            tnps_responses.environment_clean_order,
+            tnps_responses.speedtest_done,
             tnps_responses.comment,
             tnps_responses.customer_name,
             tnps_responses.audit_id,
