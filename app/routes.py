@@ -5147,9 +5147,7 @@ def new_audit():
                 auditor_name = user["username"].upper()
 
             sa_number = (request.form.get("sa_number") or "").strip()
-            if not sa_number:
-                raise ValueError("Debes ingresar el SA (número de orden).")
-            if not sa_number.isdigit():
+            if sa_number and not sa_number.isdigit():
                 raise ValueError("El SA debe contener solo números.")
 
             audit_id = create_audit(
@@ -5157,7 +5155,7 @@ def new_audit():
                     "audit_date": audit_date,
                     "auditor_name": auditor_name,
                     "auditor_user_id": auditor_user_id,
-                    "sa_number": sa_number,
+                    "sa_number": sa_number or None,
                     "auditor_signature_path": auditor_signature_path,
                     "technician_signature_path": technician_signature_path,
                     "technician_display_name": technician_display_name,

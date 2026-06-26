@@ -30,16 +30,15 @@
         </label>
 
         <label>
-            <span>SA</span>
+            <span>SA (opcional)</span>
             <input
                 type="text"
                 name="sa_number"
                 value="{{ request.form.get('sa_number', '') }}"
-                placeholder="Número de orden"
+                placeholder="Número"
                 inputmode="numeric"
                 pattern="[0-9]*"
                 maxlength="24"
-                required
             >
         </label>
 
