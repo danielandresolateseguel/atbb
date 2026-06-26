@@ -1142,6 +1142,30 @@ td {
     text-align: left;
 }
 
+th .table-sort {
+    color: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+th .table-sort:hover {
+    text-decoration: underline;
+}
+
+th .table-sort-indicator {
+    display: inline-block;
+    width: 0.9rem;
+    text-align: center;
+    opacity: 0.55;
+    font-size: 0.9em;
+}
+
+th .table-sort.is-active .table-sort-indicator {
+    opacity: 0.9;
+}
+
 .report-table {
     table-layout: fixed;
     min-width: 1600px;

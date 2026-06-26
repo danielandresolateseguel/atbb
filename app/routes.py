@@ -4256,11 +4256,15 @@ def findings_list():
         "from_date": request.args.get("from_date", "").strip(),
         "to_date": request.args.get("to_date", "").strip(),
         "audit_id": request.args.get("audit_id", "").strip(),
+        "mobile_code": request.args.get("mobile_code", "").strip(),
+        "section_key": request.args.get("section_key", "").strip(),
         "finding_status": request.args.get("finding_status", "").strip(),
         "priority": request.args.get("priority", "").strip(),
         "validation_status": request.args.get("validation_status", "").strip(),
         "effectiveness": request.args.get("effectiveness", "").strip(),
         "q": request.args.get("q", "").strip(),
+        "sort": request.args.get("sort", "").strip(),
+        "dir": request.args.get("dir", "").strip(),
     }
     auditor_user_id = current_auditor_user_id()
     supervisor_scope_names = current_supervisor_scope_names()
@@ -4275,12 +4279,16 @@ def findings_list():
         supervisor_scope_names=supervisor_scope_names,
     )
     filter_active = any(filters.values())
+    mobile_units = fetch_mobile_units()
+    section_options = [{"key": section["key"], "title": section["title"]} for section in CHECKLIST_SECTIONS]
     return render_template(
         "findings.html",
         findings=findings,
         finding_stats=finding_stats,
         filters=filters,
         filter_active=filter_active,
+        mobile_units=mobile_units,
+        section_options=section_options,
     )
 
 

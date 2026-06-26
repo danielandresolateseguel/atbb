@@ -5,6 +5,60 @@
       <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Auditoría Técnica{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <script>
+        (function () {
+            const key = "findings_scroll_y";
+            let y = null;
+            try {
+                const raw = sessionStorage.getItem(key);
+                if (!raw) {
+                    return;
+                }
+                const parsed = parseInt(raw, 10);
+                if (!Number.isFinite(parsed) || parsed <= 0) {
+                    return;
+                }
+                y = parsed;
+            } catch (e) {
+                return;
+            }
+
+            try {
+                if ("scrollRestoration" in history) {
+                    history.scrollRestoration = "manual";
+                }
+            } catch (e) {
+            }
+
+            function applyScroll() {
+                window.scrollTo(0, y);
+            }
+
+            applyScroll();
+            requestAnimationFrame(applyScroll);
+
+            document.addEventListener(
+                "DOMContentLoaded",
+                function () {
+                    applyScroll();
+                    requestAnimationFrame(applyScroll);
+                },
+                { once: true }
+            );
+
+            window.addEventListener(
+                "load",
+                function () {
+                    applyScroll();
+                    try {
+                        sessionStorage.removeItem(key);
+                    } catch (e) {
+                    }
+                },
+                { once: true }
+            );
+        })();
+    </script>
 </head>
 <body{% if page_class %} class="{{ page_class }}"{% endif %}>
     {% if page_class != "page-auth" %}

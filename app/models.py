@@ -4464,6 +4464,8 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
     priority = (filters.get("priority") or "").strip()
     validation_status = (filters.get("validation_status") or "").strip()
     audit_id = (filters.get("audit_id") or "").strip()
+    mobile_code = (filters.get("mobile_code") or "").strip()
+    section_key = (filters.get("section_key") or "").strip()
     q = (filters.get("q") or "").strip()
     effectiveness = (filters.get("effectiveness") or "").strip().lower()
 
@@ -4494,11 +4496,21 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
         where_clauses.append("CAST(audit_findings.audit_id AS TEXT) = ?")
         params.append(audit_id)
 
+    if mobile_code:
+        where_clauses.append("COALESCE(mobile_units.mobile_code, '') = ?")
+        params.append(mobile_code)
+
+    if section_key:
+        where_clauses.append("COALESCE(audit_items.section_key, '') = ?")
+        params.append(section_key)
+
     if q:
         like_value = f"%{q}%"
         if is_postgres():
             where_clauses.append(
                 "("
+                "CAST(audit_findings.audit_id AS TEXT) ILIKE ? OR "
+                "CAST(audit_findings.id AS TEXT) ILIKE ? OR "
                 "COALESCE(mobile_units.mobile_code, '') ILIKE ? OR "
                 "COALESCE(technicians.name, audits.technician_display_name, '') ILIKE ? OR "
                 "COALESCE(audit_items.section_title, '') ILIKE ? OR "
@@ -4506,10 +4518,12 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 "COALESCE(audit_findings.supervisor_name, '') ILIKE ?"
                 ")"
             )
-            params.extend([like_value] * 5)
+            params.extend([like_value] * 7)
         else:
             where_clauses.append(
                 "("
+                "LOWER(CAST(audit_findings.audit_id AS TEXT)) LIKE ? OR "
+                "LOWER(CAST(audit_findings.id AS TEXT)) LIKE ? OR "
                 "LOWER(COALESCE(mobile_units.mobile_code, '')) LIKE ? OR "
                 "LOWER(COALESCE(technicians.name, audits.technician_display_name, '')) LIKE ? OR "
                 "LOWER(COALESCE(audit_items.section_title, '')) LIKE ? OR "
@@ -4518,7 +4532,7 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 ")"
             )
             lowered = like_value.lower()
-            params.extend([lowered] * 5)
+            params.extend([lowered] * 7)
 
     if effectiveness in {"pendiente", "por_vencer", "vencida"}:
         where_clauses.append("COALESCE(audit_findings.validation_status, '') = 'validado'")
@@ -4576,6 +4590,8 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
             ) AS validated_count
         FROM audit_findings
         INNER JOIN audits ON audits.id = audit_findings.audit_id
+        INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
         {where_sql}
         """,
@@ -4608,6 +4624,9 @@ def fetch_finding_status_breakdown(filters=None, auditor_user_id=None, superviso
             COUNT(*) AS findings_count
         FROM audit_findings
         INNER JOIN audits ON audits.id = audit_findings.audit_id
+        INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
         {where_sql}
         GROUP BY audit_findings.finding_status
         """,
@@ -4617,6 +4636,7 @@ def fetch_finding_status_breakdown(filters=None, auditor_user_id=None, superviso
 
 
 def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300):
+    filters = filters or {}
     created_at_expr = "audit_findings.created_at"
     updated_at_expr = "audit_findings.updated_at"
     where_sql, params = _build_findings_where_sql(
@@ -4624,6 +4644,39 @@ def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=No
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+
+    sort_key = (filters.get("sort") or "").strip()
+    sort_dir = (filters.get("dir") or "").strip().lower()
+    direction_sql = "ASC" if sort_dir == "asc" else "DESC"
+
+    effectiveness_base = (
+        "substring(audit_findings.effectiveness_due_date, 1, 10)"
+        if is_postgres()
+        else "substr(audit_findings.effectiveness_due_date, 1, 10)"
+    )
+    effectiveness_fill = "'9999-12-31'" if direction_sql == "ASC" else "''"
+    effectiveness_expr = f"COALESCE(NULLIF({effectiveness_base}, ''), {effectiveness_fill})"
+
+    sort_map = {
+        "audit_date": "audits.audit_date",
+        "mobile_code": "COALESCE(mobile_units.mobile_code, '')",
+        "technician_name": "COALESCE(technicians.name, audits.technician_display_name, '')",
+        "section_title": "COALESCE(audit_items.section_title, '')",
+        "item_label": "COALESCE(audit_items.item_label, '')",
+        "non_compliance_reason": "COALESCE(audit_items.non_compliance_reason, '')",
+        "supervisor_name": "COALESCE(audit_findings.supervisor_name, '')",
+        "priority": "CASE COALESCE(audit_findings.priority, '') WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END",
+        "finding_status": "COALESCE(audit_findings.finding_status, '')",
+        "validation_status": "COALESCE(audit_findings.validation_status, '')",
+        "effectiveness_due_date": effectiveness_expr,
+    }
+
+    sort_expr = sort_map.get(sort_key)
+    if sort_expr:
+        order_by_sql = f"{sort_expr} {direction_sql}, audits.audit_date DESC, audit_findings.updated_at DESC, audit_findings.id DESC"
+    else:
+        order_by_sql = "audits.audit_date DESC, audit_findings.updated_at DESC, audit_findings.id DESC"
+
     rows = get_db().execute(
         f"""
         SELECT
@@ -4656,7 +4709,7 @@ def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=No
         LEFT JOIN technicians ON technicians.id = audits.technician_id
         LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
         {where_sql}
-        ORDER BY audits.audit_date DESC, audit_findings.updated_at DESC, audit_findings.id DESC
+        ORDER BY {order_by_sql}
         LIMIT ?
         """,
         tuple(list(params) + [limit]),
