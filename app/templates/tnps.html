@@ -24,7 +24,7 @@
         <div class="info-list">
             <p><strong>Fecha auditoría:</strong> {{ audit_context["audit_date"] }}</p>
             <p><strong>Técnico:</strong> {{ audit_context["technician_name"] }}</p>
-            <p><strong>Ubicación:</strong> {{ audit_context["location"] }}</p>
+            <p><strong>Provincia:</strong> {{ audit_context["location"] }}</p>
             <p><a class="table-link" href="{{ url_for('main.audit_report', audit_id=audit_context['id']) }}">Ver informe ejecutivo</a></p>
         </div>
     </section>
@@ -41,7 +41,7 @@
         <div class="info-list">
             <p><strong>Fecha QC:</strong> {{ qc_context["qc_date"] }}</p>
             <p><strong>Técnico:</strong> {{ qc_context["technician_name"] }}</p>
-            <p><strong>Ubicación:</strong> {{ qc_context["location"] }}</p>
+            <p><strong>Provincia:</strong> {{ qc_context["location"] }}</p>
             {% if qc_context.get("audit_id") %}
                 <p><strong>Auditoría vinculada:</strong> {{ qc_context["audit_id"] }}</p>
             {% endif %}

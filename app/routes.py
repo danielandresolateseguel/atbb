@@ -3371,7 +3371,7 @@ def qc_new():
                     installation_type = locked_audit.get("installation_type") or ""
 
             if not location:
-                raise ValueError("La ubicación es obligatoria.")
+                raise ValueError("La provincia es obligatoria.")
             if not installation_type:
                 raise ValueError("El tipo de instalación es obligatorio.")
 
@@ -3425,6 +3425,19 @@ def qc_new():
                 if not sa_number:
                     sa_number = locked_audit.get("sa_number") or ""
 
+            location = location.strip().upper()
+            installation_type = installation_type.strip().upper()
+            address = address.strip().upper()
+            sa_number = sa_number.strip()
+            if sa_number and not sa_number.isdigit():
+                raise ValueError("El SA debe contener solo números.")
+            technician_name = technician_name.strip().upper()
+            technician_employee_code = technician_employee_code.strip().upper()
+            technician_company = technician_company.strip().upper()
+            technician_supervisor = technician_supervisor.strip().upper()
+            technician_center = technician_center.strip().upper()
+            general_notes = (request.form.get("general_notes") or "").strip().upper() or None
+
             qc_data = {
                 "qc_date": qc_date,
                 "auditor_name": current_user()["username"],
@@ -3443,7 +3456,7 @@ def qc_new():
                 "total_score": qc_score,
                 "result_status": result_status,
                 "record_scope": record_scope,
-                "general_notes": (request.form.get("general_notes") or "").strip() or None,
+                "general_notes": general_notes,
                 "photo_path": session_photo_path,
             }
 

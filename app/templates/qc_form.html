@@ -22,7 +22,7 @@
         <div class="info-list">
             <p><strong>Fecha auditoría:</strong> {{ audit_context["audit_date"] }}</p>
             <p><strong>Técnico:</strong> {{ audit_context["technician_name"] }}</p>
-            <p><strong>Ubicación:</strong> {{ audit_context["location"] }}</p>
+            <p><strong>Provincia:</strong> {{ audit_context["location"]|upper }}</p>
             <p><a class="table-link" href="{{ url_for('main.audit_detail', audit_id=audit_context['id']) }}">Ver auditoría</a></p>
         </div>
     </section>
@@ -68,22 +68,22 @@
 
             <label>
                 <span>SA (opcional)</span>
-                <input type="text" name="sa_number" value="{{ request.form.get('sa_number', audit_context.get('sa_number') if audit_context else '') }}" placeholder="Ej: SA-0001">
+                <input type="text" name="sa_number" inputmode="numeric" pattern="[0-9]*" value="{{ request.form.get('sa_number', audit_context.get('sa_number') if audit_context else '') }}" placeholder="Ej: 1234">
             </label>
 
             <label>
-                <span>Ubicación</span>
-                <input type="text" name="location" value="{{ request.form.get('location', audit_context.get('location') if audit_context else '') }}" required>
+                <span>Provincia</span>
+                <input type="text" name="location" value="{{ request.form.get('location', audit_context.get('location') if audit_context else '')|upper }}" required>
             </label>
 
             <label>
                 <span>Dirección (opcional)</span>
-                <input type="text" name="address" value="{{ request.form.get('address', audit_context.get('address') if audit_context else '') }}">
+                <input type="text" name="address" value="{{ request.form.get('address', audit_context.get('address') if audit_context else '')|upper }}">
             </label>
 
             <label>
                 <span>Tipo de instalación</span>
-                <input type="text" name="installation_type" value="{{ request.form.get('installation_type', audit_context.get('installation_type') if audit_context else '') }}" required>
+                <input type="text" name="installation_type" value="{{ request.form.get('installation_type', audit_context.get('installation_type') if audit_context else '')|upper }}" required>
             </label>
 
             <label>
@@ -119,7 +119,7 @@
                     </div>
                     <label>
                         <span>Detalle / Observación</span>
-                        <textarea name="notes__{{ item['key'] }}" rows="3">{{ request.form.get('notes__' + item['key'], '') }}</textarea>
+                        <textarea name="notes__{{ item['key'] }}" rows="3">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
                     </label>
                     <label>
                         <span>Evidencia (obligatoria en NC menor/mayor)</span>
@@ -177,7 +177,7 @@
         <div class="form-grid">
             <label>
                 <span>Notas generales (opcional)</span>
-                <textarea name="general_notes" rows="4">{{ request.form.get('general_notes', '') }}</textarea>
+                <textarea name="general_notes" rows="4">{{ request.form.get('general_notes', '')|upper }}</textarea>
             </label>
 
             <label>
