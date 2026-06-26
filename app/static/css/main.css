@@ -20,6 +20,11 @@
     --warning-soft: #fef3c7;
     --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
     --radius: 18px;
+    --app-shell-background:
+        radial-gradient(900px circle at 18% 14%, rgba(var(--primary-rgb), 0.22), transparent 56%),
+        radial-gradient(800px circle at 82% 10%, rgba(245, 158, 11, 0.14), transparent 52%),
+        radial-gradient(900px circle at 70% 85%, rgba(99, 102, 241, 0.16), transparent 58%),
+        linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
 }
 
 * {
@@ -29,7 +34,7 @@
 body {
     margin: 0;
     font-family: Arial, Helvetica, sans-serif;
-    background: var(--bg);
+    background: var(--app-shell-background);
     color: var(--text);
 }
 
@@ -37,6 +42,24 @@ body {
     background: var(--bg);
     --shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
     --radius: 14px;
+}
+
+.report-body .card,
+.report-body .hero {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    backdrop-filter: none;
+}
+
+.report-body section.section-heading {
+    margin-bottom: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    color: var(--text);
 }
 
 a {
@@ -59,14 +82,15 @@ a {
     top: 0;
     z-index: 10;
     padding: 1rem;
-    background-color: rgba(255, 255, 255, 0.92);
+    background-color: rgba(15, 23, 42, 0.62);
     background-image: linear-gradient(
         180deg,
-        rgba(var(--primary-light-rgb), 0.16) 0%,
-        rgba(255, 255, 255, 0.92) 70%
+        rgba(var(--primary-rgb), 0.22) 0%,
+        rgba(15, 23, 42, 0.64) 70%
     );
-    border-bottom: 1px solid rgba(var(--primary-rgb), 0.14);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(10px);
+    color: rgba(255, 255, 255, 0.92);
 }
 
 .topbar-row {
@@ -124,9 +148,9 @@ a {
     justify-content: center;
     width: 48px;
     height: 48px;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
-    background: var(--surface);
+    background: rgba(255, 255, 255, 0.06);
     cursor: pointer;
 }
 
@@ -135,8 +159,8 @@ a {
     width: 5px;
     height: 5px;
     border-radius: 999px;
-    background: var(--text);
-    box-shadow: 0 -8px 0 var(--text), 0 8px 0 var(--text);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 -8px 0 rgba(255, 255, 255, 0.92), 0 8px 0 rgba(255, 255, 255, 0.92);
 }
 
 .user-menu {
@@ -150,9 +174,9 @@ a {
     justify-content: center;
     width: 48px;
     height: 48px;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
-    background: var(--surface);
+    background: rgba(255, 255, 255, 0.06);
     cursor: pointer;
 }
 
@@ -179,6 +203,7 @@ a {
     box-shadow: var(--shadow);
     display: grid;
     gap: 0.45rem;
+    color: var(--text);
 }
 
 .user-menu-meta {
@@ -211,27 +236,29 @@ a {
 }
 
 .nav a {
-    padding: 0.7rem 1rem;
+    padding: 0.55rem 0.75rem;
     border-radius: 999px;
-    background: var(--surface-alt);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
     font-weight: 700;
+    color: rgba(255, 255, 255, 0.92);
 }
 
 .nav a:hover {
-    background: var(--primary-soft);
-    color: var(--primary-strong);
+    background: rgba(var(--primary-light-rgb), 0.18);
+    color: rgba(255, 255, 255, 0.98);
 }
 
 @media (min-width: 721px) {
     .nav {
-        flex-wrap: nowrap;
-        gap: 0.55rem;
-        overflow-x: auto;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        overflow-x: visible;
     }
 
     .nav a {
-        padding: 0.55rem 0.8rem;
-        font-size: 0.9rem;
+        padding: 0.45rem 0.65rem;
+        font-size: 0.84rem;
         white-space: nowrap;
     }
 }
@@ -285,13 +312,38 @@ a {
     gap: 1rem;
 }
 
+section.section-heading {
+    margin-bottom: 1rem;
+    padding: 1.2rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.04) 100%) padding-box,
+        linear-gradient(135deg, rgba(var(--primary-light-rgb), 0.64), rgba(255, 255, 255, 0.22), rgba(99, 102, 241, 0.42)) border-box;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(12px);
+    color: rgba(255, 255, 255, 0.92);
+}
+
+section.section-heading h2,
+section.section-heading h3 {
+    color: rgba(255, 255, 255, 0.96);
+}
+
+section.section-heading .eyebrow {
+    color: rgba(var(--primary-light-rgb), 0.95);
+}
+
 .hero,
 .card {
     padding: 1.2rem;
-    border: 1px solid var(--border);
+    border: 1px solid transparent;
     border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: var(--shadow);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.78) 100%) padding-box,
+        linear-gradient(135deg, rgba(var(--primary-light-rgb), 0.68), rgba(255, 255, 255, 0.4), rgba(99, 102, 241, 0.36)) border-box;
+    box-shadow: 0 18px 46px rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(12px);
 }
 
 .card {
@@ -302,14 +354,7 @@ a {
     margin-bottom: 1rem;
     align-items: flex-start;
     flex-direction: column;
-    border-color: rgba(var(--primary-rgb), 0.16);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(var(--primary-light-rgb), 0.18) 0%,
-            rgba(255, 255, 255, 0.96) 60%,
-            rgba(255, 255, 255, 0.98) 100%
-        );
+    box-shadow: 0 18px 52px rgba(15, 23, 42, 0.24);
 }
 
 .hero-copy,
@@ -2525,6 +2570,7 @@ body.page-auth {
 
 .page.page-auth .card {
     background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.22);
     backdrop-filter: blur(10px);
 }
 
