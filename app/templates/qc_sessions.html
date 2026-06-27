@@ -20,6 +20,8 @@
 
 <section class="card filter-card">
     <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.qc_sessions') }}">
+        <input type="hidden" name="sort" value="{{ filters.sort }}">
+        <input type="hidden" name="dir" value="{{ filters.dir }}">
         <label>
             <span>Desde</span>
             <input type="date" name="from_date" value="{{ filters.from_date }}">
@@ -75,13 +77,55 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Fecha</th>
-                        <th>Auditor</th>
-                        <th>SA</th>
-                        <th>Técnico</th>
-                        <th>Provincia</th>
-                        <th>Resultado</th>
-                        <th>Puntaje</th>
+                        {% set next_dir = "asc" if filters.sort != "qc_date" or filters.dir == "desc" else "desc" %}
+                        <th>
+                            <a class="table-sort {% if filters.sort == 'qc_date' %}is-active{% endif %}" href="{{ url_for('main.qc_sessions', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, technician_id=filters.technician_id, q=filters.q, include_pruebas=filters.include_pruebas, sort='qc_date', dir=next_dir) }}">
+                                Fecha
+                                <span class="table-sort-indicator">{% if filters.sort == 'qc_date' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
+                            </a>
+                        </th>
+                        {% set next_dir = "asc" if filters.sort != "auditor_name" or filters.dir == "desc" else "desc" %}
+                        <th>
+                            <a class="table-sort {% if filters.sort == 'auditor_name' %}is-active{% endif %}" href="{{ url_for('main.qc_sessions', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, technician_id=filters.technician_id, q=filters.q, include_pruebas=filters.include_pruebas, sort='auditor_name', dir=next_dir) }}">
+                                Auditor
+                                <span class="table-sort-indicator">{% if filters.sort == 'auditor_name' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
+                            </a>
+                        </th>
+                        {% set next_dir = "asc" if filters.sort != "sa_number" or filters.dir == "desc" else "desc" %}
+                        <th>
+                            <a class="table-sort {% if filters.sort == 'sa_number' %}is-active{% endif %}" href="{{ url_for('main.qc_sessions', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, technician_id=filters.technician_id, q=filters.q, include_pruebas=filters.include_pruebas, sort='sa_number', dir=next_dir) }}">
+                                SA
+                                <span class="table-sort-indicator">{% if filters.sort == 'sa_number' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
+                            </a>
+                        </th>
+                        {% set next_dir = "asc" if filters.sort != "technician_name" or filters.dir == "desc" else "desc" %}
+                        <th>
+                            <a class="table-sort {% if filters.sort == 'technician_name' %}is-active{% endif %}" href="{{ url_for('main.qc_sessions', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, technician_id=filters.technician_id, q=filters.q, include_pruebas=filters.include_pruebas, sort='technician_name', dir=next_dir) }}">
+                                Técnico
+                                <span class="table-sort-indicator">{% if filters.sort == 'technician_name' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
+                            </a>
+                        </th>
+                        {% set next_dir = "asc" if filters.sort != "location" or filters.dir == "desc" else "desc" %}
+                        <th>
+                            <a class="table-sort {% if filters.sort == 'location' %}is-active{% endif %}" href="{{ url_for('main.qc_sessions', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, technician_id=filters.technician_id, q=filters.q, include_pruebas=filters.include_pruebas, sort='location', dir=next_dir) }}">
+                                Provincia
+                                <span class="table-sort-indicator">{% if filters.sort == 'location' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
+                            </a>
+                        </th>
+                        {% set next_dir = "asc" if filters.sort != "result_status" or filters.dir == "desc" else "desc" %}
+                        <th>
+                            <a class="table-sort {% if filters.sort == 'result_status' %}is-active{% endif %}" href="{{ url_for('main.qc_sessions', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, technician_id=filters.technician_id, q=filters.q, include_pruebas=filters.include_pruebas, sort='result_status', dir=next_dir) }}">
+                                Resultado
+                                <span class="table-sort-indicator">{% if filters.sort == 'result_status' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
+                            </a>
+                        </th>
+                        {% set next_dir = "asc" if filters.sort != "total_score" or filters.dir == "desc" else "desc" %}
+                        <th>
+                            <a class="table-sort {% if filters.sort == 'total_score' %}is-active{% endif %}" href="{{ url_for('main.qc_sessions', from_date=filters.from_date, to_date=filters.to_date, status=filters.status, technician_id=filters.technician_id, q=filters.q, include_pruebas=filters.include_pruebas, sort='total_score', dir=next_dir) }}">
+                                Puntaje
+                                <span class="table-sort-indicator">{% if filters.sort == 'total_score' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
+                            </a>
+                        </th>
                         <th>Auditoría</th>
                         <th>Detalle</th>
                     </tr>
@@ -108,7 +152,7 @@
                                     -
                                 {% endif %}
                             </td>
-                            <td><a class="table-link" href="{{ url_for('main.qc_detail', qc_session_id=row.id) }}">Ver</a></td>
+                            <td><a class="table-link" href="{{ url_for('main.qc_detail', qc_session_id=row.id) }}" target="_blank" rel="noopener noreferrer">Ver</a></td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -122,4 +166,96 @@
         {% endif %}
     {% endif %}
 </section>
+
+<script>
+    (function () {
+        let activeController = null;
+
+        function updateSortInputs(url) {
+            const sortInput = document.querySelector("form.audit-filters input[name='sort']");
+            const dirInput = document.querySelector("form.audit-filters input[name='dir']");
+            if (!sortInput || !dirInput) {
+                return;
+            }
+            let params = null;
+            try {
+                params = new URL(url, window.location.href).searchParams;
+            } catch (e) {
+                return;
+            }
+            sortInput.value = params.get("sort") || "";
+            dirInput.value = params.get("dir") || "";
+        }
+
+        document.addEventListener("click", async function (event) {
+            const sortLink = event.target.closest("a.table-sort");
+            if (!sortLink) {
+                return;
+            }
+
+            if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+            ) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const url = sortLink.href;
+            if (!url) {
+                return;
+            }
+
+            const tableCard = document.querySelector(".table-card");
+            if (!tableCard) {
+                window.location.href = url;
+                return;
+            }
+
+            if (activeController) {
+                activeController.abort();
+            }
+            const controller = new AbortController();
+            activeController = controller;
+
+            try {
+                const response = await fetch(url, {
+                    credentials: "same-origin",
+                    cache: "no-store",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                    signal: controller.signal,
+                });
+                if (!response.ok) {
+                    throw new Error("request_failed");
+                }
+
+                const html = await response.text();
+                const parsed = new DOMParser().parseFromString(html, "text/html");
+                const nextTableCard = parsed.querySelector(".table-card");
+                if (!nextTableCard) {
+                    throw new Error("missing_table");
+                }
+
+                const imported = document.importNode(nextTableCard, true);
+                tableCard.replaceWith(imported);
+                updateSortInputs(url);
+                window.history.replaceState(null, "", url);
+            } catch (error) {
+                if (error && error.name === "AbortError") {
+                    return;
+                }
+                window.location.href = url;
+            } finally {
+                if (activeController === controller) {
+                    activeController = null;
+                }
+            }
+        });
+    })();
+</script>
 {% endblock %}

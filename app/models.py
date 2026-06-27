@@ -3410,6 +3410,27 @@ def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+    filters = filters or {}
+    sort_key = (filters.get("sort") or "").strip()
+    sort_dir = (filters.get("dir") or "").strip().lower()
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "desc"
+
+    sort_columns = {
+        "audit_date": "audits.audit_date",
+        "auditor_name": "COALESCE(audits.auditor_name, '')",
+        "mobile_code": "COALESCE(mobile_units.mobile_code, '')",
+        "technician_name": "COALESCE(technicians.name, audits.technician_display_name, '')",
+        "vehicle_plate": "vehicles.plate",
+        "location": "audits.location",
+        "result_status": "audits.result_status",
+        "total_score": "audits.total_score",
+    }
+    sort_expr = sort_columns.get(sort_key)
+    if sort_expr:
+        order_sql = f"ORDER BY {sort_expr} {sort_dir.upper()}, audits.created_at DESC"
+    else:
+        order_sql = "ORDER BY audits.created_at DESC"
     rows = get_db().execute(
         f"""
         SELECT
@@ -3431,7 +3452,7 @@ def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=
         LEFT JOIN technicians ON technicians.id = audits.technician_id
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
         {where_sql}
-        ORDER BY audits.created_at DESC
+        {order_sql}
         """,
         params,
     ).fetchall()
@@ -5747,6 +5768,45 @@ def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+    filters = filters or {}
+    sort_key = (filters.get("sort") or "").strip()
+    sort_dir = (filters.get("dir") or "").strip().lower()
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "desc"
+
+    sa_number_sort_expr = "COALESCE(qc_sessions.sa_number, '')"
+    if is_postgres():
+        sa_number_sort_expr = (
+            "CASE "
+            "WHEN qc_sessions.sa_number ~ '^[0-9]+$' THEN qc_sessions.sa_number::BIGINT "
+            "ELSE NULL "
+            "END"
+        )
+    else:
+        sa_number_sort_expr = (
+            "CASE "
+            "WHEN qc_sessions.sa_number IS NOT NULL "
+            "AND qc_sessions.sa_number != '' "
+            "AND qc_sessions.sa_number NOT GLOB '*[^0-9]*' "
+            "THEN CAST(qc_sessions.sa_number AS INTEGER) "
+            "ELSE NULL "
+            "END"
+        )
+
+    sort_columns = {
+        "qc_date": "qc_sessions.qc_date",
+        "auditor_name": "COALESCE(qc_sessions.auditor_name, '')",
+        "sa_number": sa_number_sort_expr,
+        "technician_name": "COALESCE(technicians.name, qc_sessions.technician_display_name, '')",
+        "location": "COALESCE(qc_sessions.location, '')",
+        "result_status": "qc_sessions.result_status",
+        "total_score": "qc_sessions.total_score",
+    }
+    sort_expr = sort_columns.get(sort_key)
+    if sort_expr:
+        order_sql = f"ORDER BY {sort_expr} {sort_dir.upper()}, qc_sessions.created_at DESC"
+    else:
+        order_sql = "ORDER BY qc_sessions.created_at DESC"
     created_at_expr = "qc_sessions.created_at"
     rows = get_db().execute(
         f"""
@@ -5768,7 +5828,7 @@ def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names
         FROM qc_sessions
         LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
         {where_sql}
-        ORDER BY qc_sessions.created_at DESC
+        {order_sql}
         LIMIT ?
         """,
         tuple(list(params) + [limit]),

@@ -3271,6 +3271,8 @@ def qc_sessions():
         "technician_id": request.args.get("technician_id", "").strip(),
         "q": request.args.get("q", "").strip(),
         "include_pruebas": "1" if request.args.get("include_pruebas") else "",
+        "sort": request.args.get("sort", "").strip(),
+        "dir": request.args.get("dir", "").strip(),
     }
 
     technician_id = None
@@ -3288,6 +3290,8 @@ def qc_sessions():
         "technician_id": technician_id,
         "q": filters["q"],
         "include_pruebas": filters["include_pruebas"],
+        "sort": filters["sort"],
+        "dir": filters["dir"],
     }
 
     sessions = fetch_qc_sessions(
@@ -3787,6 +3791,8 @@ def audit_list():
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
         "include_pruebas": request.args.get("include_pruebas", "").strip(),
+        "sort": request.args.get("sort", "").strip(),
+        "dir": request.args.get("dir", "").strip(),
     }
 
     if auditor_user_id is not None:
