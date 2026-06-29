@@ -513,6 +513,56 @@ def init_db():
             photo_path TEXT,
             FOREIGN KEY (qc_session_id) REFERENCES qc_sessions (id)
         );
+
+        CREATE TABLE IF NOT EXISTS service_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            service_date TEXT NOT NULL,
+            auditor_name TEXT NOT NULL,
+            auditor_user_id INTEGER,
+            sa_number TEXT,
+            technician_display_name TEXT,
+            technician_employee_code TEXT,
+            technician_company_snapshot TEXT,
+            technician_supervisor_snapshot TEXT,
+            technician_center_snapshot TEXT,
+            technician_id INTEGER NOT NULL,
+            location TEXT NOT NULL,
+            address TEXT,
+            optical_expected_dbm REAL,
+            optical_measured_dbm REAL,
+            optical_delta_dbm REAL,
+            total_score REAL NOT NULL DEFAULT 0,
+            result_status TEXT NOT NULL,
+            record_scope TEXT NOT NULL DEFAULT 'oficial',
+            general_notes TEXT,
+            photo_path TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (auditor_user_id) REFERENCES users (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS service_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_session_id INTEGER NOT NULL,
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            is_critical INTEGER NOT NULL DEFAULT 0,
+            notes TEXT,
+            photo_path TEXT,
+            FOREIGN KEY (service_session_id) REFERENCES service_sessions (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS service_speedtests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_session_id INTEGER NOT NULL,
+            space_key TEXT NOT NULL,
+            space_label TEXT NOT NULL,
+            download_mbps REAL,
+            upload_mbps REAL,
+            ping_ms REAL,
+            FOREIGN KEY (service_session_id) REFERENCES service_sessions (id)
+        );
         """
     )
     ensure_legacy_columns(connection)
@@ -904,6 +954,64 @@ def init_db_postgres():
             non_compliance_reason TEXT,
             notes TEXT,
             photo_path TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS service_sessions (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            service_date TEXT NOT NULL,
+            auditor_name TEXT NOT NULL,
+            auditor_user_id INTEGER REFERENCES users (id),
+            sa_number TEXT,
+            technician_display_name TEXT,
+            technician_employee_code TEXT,
+            technician_company_snapshot TEXT,
+            technician_supervisor_snapshot TEXT,
+            technician_center_snapshot TEXT,
+            technician_id INTEGER NOT NULL REFERENCES technicians (id),
+            location TEXT NOT NULL,
+            address TEXT,
+            optical_expected_dbm DOUBLE PRECISION,
+            optical_measured_dbm DOUBLE PRECISION,
+            optical_delta_dbm DOUBLE PRECISION,
+            total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+            result_status TEXT NOT NULL,
+            record_scope TEXT NOT NULL DEFAULT 'oficial',
+            general_notes TEXT,
+            photo_path TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS service_items (
+            id SERIAL PRIMARY KEY,
+            service_session_id INTEGER NOT NULL REFERENCES service_sessions (id),
+            item_key TEXT NOT NULL,
+            item_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            is_critical INTEGER NOT NULL DEFAULT 0,
+            notes TEXT,
+            photo_path TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS service_speedtests (
+            id SERIAL PRIMARY KEY,
+            service_session_id INTEGER NOT NULL REFERENCES service_sessions (id),
+            space_key TEXT NOT NULL,
+            space_label TEXT NOT NULL,
+            download_mbps DOUBLE PRECISION,
+            upload_mbps DOUBLE PRECISION,
+            ping_ms DOUBLE PRECISION
         )
         """
     )
@@ -6044,6 +6152,360 @@ def create_qc_session(qc_data, items):
             )
     connection.commit()
     return qc_session_id
+
+
+def append_service_visibility_filters(where_clauses, params, include_pruebas=False, table_alias="service_sessions"):
+    if not _normalize_bool(include_pruebas):
+        where_clauses.append(f"COALESCE({table_alias}.record_scope, ?) = ?")
+        params.extend([AUDIT_SCOPE_OFFICIAL, AUDIT_SCOPE_OFFICIAL])
+
+        official_from_date = get_audit_official_from_date()
+        if official_from_date:
+            where_clauses.append(f"{table_alias}.service_date >= ?")
+            params.append(official_from_date)
+
+
+def build_service_sessions_where_sql(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    filters = filters or {}
+    where_clauses = []
+    params = []
+
+    append_service_visibility_filters(
+        where_clauses,
+        params,
+        include_pruebas=filters.get("include_pruebas"),
+        table_alias="service_sessions",
+    )
+    append_supervisor_scope_filters(
+        where_clauses,
+        params,
+        supervisor_scope_names=supervisor_scope_names,
+        audit_table_alias="service_sessions",
+    )
+
+    if auditor_user_id is not None:
+        where_clauses.append("service_sessions.auditor_user_id = ?")
+        params.append(auditor_user_id)
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+    status = (filters.get("status") or "").strip()
+    technician_id = filters.get("technician_id")
+    q = (filters.get("q") or "").strip()
+
+    if from_date:
+        where_clauses.append("service_sessions.service_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where_clauses.append("service_sessions.service_date <= ?")
+        params.append(to_date)
+    if status:
+        where_clauses.append("service_sessions.result_status = ?")
+        params.append(status)
+    if technician_id:
+        where_clauses.append("service_sessions.technician_id = ?")
+        params.append(technician_id)
+
+    if q:
+        like_value = f"%{q}%"
+        if is_postgres():
+            where_clauses.append(
+                "("
+                "CAST(service_sessions.id AS TEXT) ILIKE ? OR "
+                "COALESCE(service_sessions.sa_number, '') ILIKE ? OR "
+                "COALESCE(technicians.name, service_sessions.technician_display_name, '') ILIKE ? OR "
+                "COALESCE(service_sessions.location, '') ILIKE ?"
+                ")"
+            )
+            params.extend([like_value] * 4)
+        else:
+            where_clauses.append(
+                "("
+                "CAST(service_sessions.id AS TEXT) LIKE ? OR "
+                "LOWER(COALESCE(service_sessions.sa_number, '')) LIKE ? OR "
+                "LOWER(COALESCE(technicians.name, service_sessions.technician_display_name, '')) LIKE ? OR "
+                "LOWER(COALESCE(service_sessions.location, '')) LIKE ?"
+                ")"
+            )
+            lowered = like_value.lower()
+            params.extend([lowered] * 4)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+    return where_sql, tuple(params)
+
+
+def fetch_service_sessions(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300):
+    where_sql, params = build_service_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    filters = filters or {}
+    sort_key = (filters.get("sort") or "").strip()
+    sort_dir = (filters.get("dir") or "").strip().lower()
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = "desc"
+
+    sa_number_sort_expr = "COALESCE(service_sessions.sa_number, '')"
+    if is_postgres():
+        sa_number_sort_expr = (
+            "CASE "
+            "WHEN service_sessions.sa_number ~ '^[0-9]+$' THEN service_sessions.sa_number::BIGINT "
+            "ELSE NULL "
+            "END"
+        )
+    else:
+        sa_number_sort_expr = (
+            "CASE "
+            "WHEN service_sessions.sa_number IS NOT NULL "
+            "AND service_sessions.sa_number != '' "
+            "AND service_sessions.sa_number NOT GLOB '*[^0-9]*' "
+            "THEN CAST(service_sessions.sa_number AS INTEGER) "
+            "ELSE NULL "
+            "END"
+        )
+
+    sort_columns = {
+        "service_date": "service_sessions.service_date",
+        "auditor_name": "COALESCE(service_sessions.auditor_name, '')",
+        "sa_number": sa_number_sort_expr,
+        "technician_name": "COALESCE(technicians.name, service_sessions.technician_display_name, '')",
+        "location": "COALESCE(service_sessions.location, '')",
+        "result_status": "service_sessions.result_status",
+        "total_score": "service_sessions.total_score",
+        "optical_delta_dbm": "service_sessions.optical_delta_dbm",
+    }
+    sort_expr = sort_columns.get(sort_key)
+    if sort_expr:
+        order_sql = f"ORDER BY {sort_expr} {sort_dir.upper()}, service_sessions.created_at DESC"
+    else:
+        order_sql = "ORDER BY service_sessions.created_at DESC"
+
+    created_at_expr = "service_sessions.created_at"
+    rows = get_db().execute(
+        f"""
+        SELECT
+            service_sessions.id,
+            service_sessions.service_date,
+            service_sessions.auditor_name,
+            service_sessions.auditor_user_id,
+            service_sessions.sa_number,
+            service_sessions.location,
+            service_sessions.total_score,
+            service_sessions.result_status,
+            service_sessions.record_scope,
+            service_sessions.optical_delta_dbm,
+            {created_at_expr} AS created_at,
+            COALESCE(technicians.name, service_sessions.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, service_sessions.technician_employee_code) AS technician_employee_code
+        FROM service_sessions
+        LEFT JOIN technicians ON technicians.id = service_sessions.technician_id
+        {where_sql}
+        {order_sql}
+        LIMIT ?
+        """,
+        tuple(list(params) + [limit]),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_service_session_detail(service_session_id, supervisor_scope_names=None):
+    created_at_expr = "service_sessions.created_at"
+    where_clauses = ["service_sessions.id = ?"]
+    params = [service_session_id]
+    append_supervisor_scope_filters(
+        where_clauses,
+        params,
+        supervisor_scope_names=supervisor_scope_names,
+        audit_table_alias="service_sessions",
+    )
+    row = get_db().execute(
+        f"""
+        SELECT
+            service_sessions.id,
+            service_sessions.service_date,
+            service_sessions.auditor_name,
+            service_sessions.auditor_user_id,
+            service_sessions.sa_number,
+            service_sessions.technician_display_name,
+            service_sessions.technician_employee_code,
+            service_sessions.technician_company_snapshot,
+            service_sessions.technician_supervisor_snapshot,
+            service_sessions.technician_center_snapshot,
+            service_sessions.technician_id,
+            service_sessions.location,
+            service_sessions.address,
+            service_sessions.optical_expected_dbm,
+            service_sessions.optical_measured_dbm,
+            service_sessions.optical_delta_dbm,
+            service_sessions.total_score,
+            service_sessions.result_status,
+            service_sessions.record_scope,
+            service_sessions.general_notes,
+            service_sessions.photo_path,
+            {created_at_expr} AS created_at,
+            COALESCE(technicians.name, service_sessions.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, service_sessions.technician_employee_code) AS employee_code,
+            COALESCE(service_sessions.technician_company_snapshot, technicians.company_name) AS technician_company,
+            COALESCE(service_sessions.technician_supervisor_snapshot, technicians.supervisor_name) AS technician_supervisor,
+            COALESCE(service_sessions.technician_center_snapshot, technicians.center_name) AS technician_center
+        FROM service_sessions
+        LEFT JOIN technicians ON technicians.id = service_sessions.technician_id
+        WHERE {' AND '.join(where_clauses)}
+        """,
+        tuple(params),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_service_items(service_session_id):
+    rows = get_db().execute(
+        """
+        SELECT
+            id,
+            item_key,
+            item_label,
+            status,
+            is_critical,
+            notes,
+            photo_path
+        FROM service_items
+        WHERE service_session_id = ?
+        ORDER BY id ASC
+        """,
+        (service_session_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_service_speedtests(service_session_id):
+    rows = get_db().execute(
+        """
+        SELECT
+            id,
+            space_key,
+            space_label,
+            download_mbps,
+            upload_mbps,
+            ping_ms
+        FROM service_speedtests
+        WHERE service_session_id = ?
+        ORDER BY id ASC
+        """,
+        (service_session_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_service_session(service_data, items, speedtests):
+    connection = get_db()
+    insert_sql = """
+        INSERT INTO service_sessions (
+            service_date,
+            auditor_name,
+            auditor_user_id,
+            sa_number,
+            technician_display_name,
+            technician_employee_code,
+            technician_company_snapshot,
+            technician_supervisor_snapshot,
+            technician_center_snapshot,
+            technician_id,
+            location,
+            address,
+            optical_expected_dbm,
+            optical_measured_dbm,
+            optical_delta_dbm,
+            total_score,
+            result_status,
+            record_scope,
+            general_notes,
+            photo_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+    insert_params = (
+        service_data["service_date"],
+        service_data["auditor_name"],
+        service_data.get("auditor_user_id"),
+        service_data.get("sa_number"),
+        service_data.get("technician_display_name"),
+        service_data.get("technician_employee_code"),
+        service_data.get("technician_company_snapshot"),
+        service_data.get("technician_supervisor_snapshot"),
+        service_data.get("technician_center_snapshot"),
+        service_data["technician_id"],
+        service_data["location"],
+        service_data.get("address"),
+        service_data.get("optical_expected_dbm"),
+        service_data.get("optical_measured_dbm"),
+        service_data.get("optical_delta_dbm"),
+        service_data["total_score"],
+        service_data["result_status"],
+        normalize_audit_record_scope(service_data.get("record_scope")),
+        service_data.get("general_notes"),
+        service_data.get("photo_path"),
+    )
+
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+        new_id_row = cursor.fetchone()
+        service_session_id = (new_id_row["id"] if isinstance(new_id_row, dict) else new_id_row[0]) if new_id_row else None
+    else:
+        cursor = connection.execute(insert_sql, insert_params)
+        service_session_id = cursor.lastrowid
+
+    for item in items:
+        item_params = (
+            service_session_id,
+            item["item_key"],
+            item["item_label"],
+            item["status"],
+            1 if item.get("is_critical") else 0,
+            item.get("notes"),
+            item.get("photo_path"),
+        )
+        connection.execute(
+            """
+            INSERT INTO service_items (
+                service_session_id,
+                item_key,
+                item_label,
+                status,
+                is_critical,
+                notes,
+                photo_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            item_params,
+        )
+
+    for entry in speedtests:
+        speedtest_params = (
+            service_session_id,
+            entry.get("space_key") or "",
+            entry.get("space_label") or "",
+            entry.get("download_mbps"),
+            entry.get("upload_mbps"),
+            entry.get("ping_ms"),
+        )
+        connection.execute(
+            """
+            INSERT INTO service_speedtests (
+                service_session_id,
+                space_key,
+                space_label,
+                download_mbps,
+                upload_mbps,
+                ping_ms
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            speedtest_params,
+        )
+
+    connection.commit()
+    return service_session_id
 
 
 def fetch_qc_reports_management_summary(filters=None, auditor_user_id=None, supervisor_scope_names=None):

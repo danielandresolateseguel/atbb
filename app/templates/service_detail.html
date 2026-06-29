@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Service {{ service["id"] }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Gerencia</p>
+        <h2>Auditoría Service {{ service["id"] }}</h2>
+        <p class="hero-copy">
+            {{ service["service_date"] }} | {% if service["sa_number"] %}SA {{ service["sa_number"] }} | {% endif %}{{ service["technician_name"] }}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <span class="badge badge-{{ service['result_status']|lower|replace(' ', '-') }}">{{ service["result_status"] }}</span>
+        <a class="button button-secondary" href="{{ url_for('main.service_report', service_session_id=service['id']) }}" target="_blank" rel="noopener noreferrer">Informe</a>
+        <a class="button button-secondary" href="{{ url_for('main.service_report_pdf', service_session_id=service['id']) }}" target="_blank" rel="noopener noreferrer">PDF</a>
+        <a class="button button-secondary" href="{{ url_for('main.service_sessions') }}">Volver</a>
+    </div>
+</section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Contexto</p>
+                <h3>Datos</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Auditor:</strong> {{ service["auditor_name"] }}</p>
+            <p><strong>Técnico:</strong> {{ service["technician_name"] }}{% if service["employee_code"] %} | {{ service["employee_code"] }}{% endif %}</p>
+            <p><strong>Provincia:</strong> {{ service["location"] }}</p>
+            <p><strong>Dirección:</strong> {{ service["address"] or "-" }}</p>
+            <p><strong>SA:</strong> {{ service["sa_number"] or "-" }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Óptica</p>
+                <h3>Potencia</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Esperada:</strong> {{ service["optical_expected_dbm"] if service["optical_expected_dbm"] is not none else "-" }} dBm</p>
+            <p><strong>Medida:</strong> {{ service["optical_measured_dbm"] if service["optical_measured_dbm"] is not none else "-" }} dBm</p>
+            <p><strong>Diferencia:</strong> {{ service["optical_delta_dbm"] if service["optical_delta_dbm"] is not none else "-" }} dBm</p>
+        </div>
+        {% set service_photos = service["photo_path"]|audit_photo_paths %}
+        {% if service_photos %}
+            <div class="evidence-grid">
+                {% for photo_src in service_photos %}
+                    <div class="evidence-item">
+                        {% if photo_src.startswith("http") %}
+                            <a class="table-link" href="{{ photo_src }}" target="_blank" rel="noopener noreferrer">Abrir foto {{ loop.index }}</a>
+                            <img src="{{ photo_src }}" alt="Evidencia {{ loop.index }}" class="evidence-image">
+                        {% else %}
+                            <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank" rel="noopener noreferrer">Abrir foto {{ loop.index }}</a>
+                            <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia {{ loop.index }}" class="evidence-image">
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </article>
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">WiFi</p>
+            <h3>Tests de velocidad</h3>
+        </div>
+    </div>
+    {% if speedtests %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Espacio</th>
+                        <th>Descarga (Mbps)</th>
+                        <th>Subida (Mbps)</th>
+                        <th>Ping (ms)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in speedtests %}
+                        <tr>
+                            <td>{{ row.space_label }}</td>
+                            <td>{{ row.download_mbps if row.download_mbps is not none else "-" }}</td>
+                            <td>{{ row.upload_mbps if row.upload_mbps is not none else "-" }}</td>
+                            <td>{{ row.ping_ms if row.ping_ms is not none else "-" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin tests registrados.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Checklist</p>
+            <h3>Verificación</h3>
+        </div>
+    </div>
+    {% if items %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Ítem</th>
+                        <th>Estado</th>
+                        <th>Notas</th>
+                        <th>Evidencia</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in items %}
+                        <tr>
+                            <td>{{ row.item_label }}</td>
+                            <td>
+                                {% if row.status == "conforme" %}
+                                    Conforme
+                                {% elif row.status == "nc_menor" %}
+                                    NC menor
+                                {% elif row.status == "nc_mayor" %}
+                                    NC mayor
+                                {% elif row.status == "no_aplica" %}
+                                    No aplica
+                                {% else %}
+                                    {{ row.status }}
+                                {% endif %}
+                            </td>
+                            <td>{{ row.notes or "-" }}</td>
+                            <td>
+                                {% set photos = row.photo_path|audit_photo_paths %}
+                                {% if photos %}
+                                    {% for photo_src in photos %}
+                                        {% if photo_src.startswith("http") %}
+                                            <a class="table-link" href="{{ photo_src }}" target="_blank" rel="noopener noreferrer">Abrir {{ loop.index }}</a>
+                                        {% else %}
+                                            <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank" rel="noopener noreferrer">Abrir {{ loop.index }}</a>
+                                        {% endif %}
+                                        {% if not loop.last %} | {% endif %}
+                                    {% endfor %}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin ítems registrados.</p>
+    {% endif %}
+</section>
+{% endblock %}

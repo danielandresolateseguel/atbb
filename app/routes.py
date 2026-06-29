@@ -104,6 +104,11 @@ from app.models import (
     fetch_qc_sessions_for_audit,
     fetch_qc_session_detail,
     fetch_qc_items,
+    fetch_service_sessions,
+    fetch_service_session_detail,
+    fetch_service_items,
+    fetch_service_speedtests,
+    create_service_session,
     fetch_qc_reports_management_summary,
     fetch_qc_reports_status_breakdown,
     fetch_qc_reports_time_series,
@@ -433,6 +438,11 @@ def can_manage_supervisor_scopes():
 
 
 def can_view_findings():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "gerente", "auditor", "supervisor"}))
+
+
+def can_view_service():
     user = current_user()
     return bool(user and (user.get("role") in {"admin", "gerente", "auditor", "supervisor"}))
 
@@ -1429,6 +1439,7 @@ def inject_auth_context():
         "can_view_reports": can_view_reports(),
         "can_manage_supervisor_scopes": can_manage_supervisor_scopes(),
         "can_view_findings": can_view_findings(),
+        "can_view_service": can_view_service(),
         "can_respond_findings": can_respond_findings(),
         "can_validate_findings": can_validate_findings(),
         "can_verify_findings_effectiveness": can_verify_findings_effectiveness(),
@@ -2334,6 +2345,129 @@ def persist_qc_session_evidence(photo_file, qc_date, qc_session_id=None):
     return f"uploads/audits/qc-sessions/{date_folder}/{generated_filename}".replace("\\", "/")
 
 
+def persist_service_item_evidence(items, service_date):
+    date_folder = datetime.fromisoformat(service_date).strftime("%Y/%m")
+    if not cloudinary_enabled():
+        target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "service" / date_folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in items:
+        existing_photo_path = item.get("photo_path")
+        photo_files = item.pop("photo_files", None)
+        photo_file = item.pop("photo_file", None)
+
+        if photo_files:
+            photo_paths = []
+            for index, entry in enumerate(photo_files):
+                _filename, extension = validate_photo_file(entry, item["item_label"])
+                safe_stem = secure_filename(item["item_key"]) or "evidencia"
+                generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
+
+                raw_bytes = entry.stream.read()
+                if not raw_bytes:
+                    raise ValueError(f"La evidencia de {item['item_label']} no contiene datos validos.")
+
+                optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+                if cloudinary_enabled():
+                    base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+                    folder = f"{base_folder}/service/{date_folder}"
+                    uploaded = upload_private_image_to_cloudinary(
+                        optimized_bytes,
+                        folder=folder,
+                        public_id=generated_name,
+                    )
+                    photo_paths.append(
+                        encode_cloudinary_ref(
+                            uploaded.get("public_id"),
+                            version=uploaded.get("version"),
+                            delivery_type="private",
+                            resource_type="image",
+                            file_format=optimized_extension,
+                        )
+                    )
+                else:
+                    generated_filename = f"{generated_name}.{optimized_extension}"
+                    saved_path = target_dir / generated_filename
+                    saved_path.write_bytes(optimized_bytes)
+                    photo_paths.append(
+                        f"uploads/audits/service/{date_folder}/{generated_filename}".replace("\\", "/")
+                    )
+            item["photo_path"] = json.dumps(photo_paths, ensure_ascii=False) if photo_paths else None
+            continue
+
+        if not photo_file:
+            item["photo_path"] = existing_photo_path or None
+            continue
+
+        _filename, extension = validate_photo_file(photo_file, item["item_label"])
+        safe_stem = secure_filename(item["item_key"]) or "evidencia"
+        generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{uuid4().hex[:8]}"
+
+        raw_bytes = photo_file.stream.read()
+        if not raw_bytes:
+            raise ValueError(f"La evidencia de {item['item_label']} no contiene datos validos.")
+
+        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+        if cloudinary_enabled():
+            base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+            folder = f"{base_folder}/service/{date_folder}"
+            uploaded = upload_private_image_to_cloudinary(
+                optimized_bytes,
+                folder=folder,
+                public_id=generated_name,
+            )
+            item["photo_path"] = encode_cloudinary_ref(
+                uploaded.get("public_id"),
+                version=uploaded.get("version"),
+                delivery_type="private",
+                resource_type="image",
+                file_format=optimized_extension,
+            )
+        else:
+            generated_filename = f"{generated_name}.{optimized_extension}"
+            saved_path = target_dir / generated_filename
+            saved_path.write_bytes(optimized_bytes)
+            item["photo_path"] = f"uploads/audits/service/{date_folder}/{generated_filename}".replace("\\", "/")
+
+
+def persist_service_session_evidence(photo_file, service_date, service_session_id=None):
+    if not has_uploaded_file(photo_file):
+        return None
+
+    _filename, extension = validate_photo_file(photo_file, "foto Service")
+    raw_bytes = photo_file.stream.read()
+    if not raw_bytes:
+        raise ValueError("La foto del Service no contiene datos validos.")
+
+    optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+    date_folder = datetime.fromisoformat(service_date).strftime("%Y/%m")
+    stable_id = str(service_session_id) if service_session_id is not None else uuid4().hex[:8]
+    generated_name = f"service_session_{stable_id}_{uuid4().hex[:8]}"
+
+    if cloudinary_enabled():
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        folder = f"{base_folder}/service-sessions/{date_folder}"
+        uploaded = upload_private_image_to_cloudinary(
+            optimized_bytes,
+            folder=folder,
+            public_id=generated_name,
+        )
+        return encode_cloudinary_ref(
+            uploaded.get("public_id"),
+            version=uploaded.get("version"),
+            delivery_type="private",
+            resource_type="image",
+            file_format=optimized_extension,
+        )
+
+    target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "service-sessions" / date_folder
+    target_dir.mkdir(parents=True, exist_ok=True)
+    generated_filename = f"{generated_name}.{optimized_extension}"
+    saved_path = target_dir / generated_filename
+    saved_path.write_bytes(optimized_bytes)
+    return f"uploads/audits/service-sessions/{date_folder}/{generated_filename}".replace("\\", "/")
+
+
 def persist_finding_evidence(photo_file, audit_date, finding_id):
     if not has_uploaded_file(photo_file):
         return None
@@ -2683,6 +2817,135 @@ def upload_qc_session_photo():
         saved_path = target_dir / generated_filename
         saved_path.write_bytes(optimized_bytes)
         return jsonify({"photo_path": f"uploads/audits/qc-sessions/{date_folder}/{generated_filename}".replace("\\", "/")})
+    except Exception:
+        raise
+
+
+@main.route("/api/service/upload-evidence", methods=["POST"])
+def upload_service_evidence():
+    try:
+        if not can_create_audit():
+            abort(403)
+
+        item_key = (request.form.get("item_key") or "").strip()
+        item_label = (request.form.get("item_label") or "evidencia").strip() or "evidencia"
+        service_date = (request.form.get("service_date") or "").strip()
+        if not service_date:
+            service_date = datetime.today().strftime("%Y-%m-%d")
+
+        try:
+            datetime.fromisoformat(service_date)
+        except ValueError:
+            return jsonify({"error": "service_date invalida."}), 400
+
+        files = request.files.getlist("file") if hasattr(request.files, "getlist") else []
+        if not files:
+            single = request.files.get("file")
+            if single:
+                files = [single]
+
+        files = [entry for entry in files if has_uploaded_file(entry)]
+        if not files:
+            return jsonify({"error": "Debes adjuntar al menos un archivo."}), 400
+
+        date_folder = datetime.fromisoformat(service_date).strftime("%Y/%m")
+        if not cloudinary_enabled():
+            target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "service" / date_folder
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_stem = secure_filename(item_key) or "evidencia"
+        base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+        cloud_folder = f"{base_folder}/service/{date_folder}"
+
+        saved_paths = []
+        for index, entry in enumerate(files):
+            _filename, extension = validate_photo_file(entry, item_label)
+            generated_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_stem}_{index + 1}_{uuid4().hex[:8]}"
+            raw_bytes = entry.stream.read()
+            if not raw_bytes:
+                return jsonify({"error": f"La evidencia de {item_label} no contiene datos validos."}), 400
+
+            optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+            if cloudinary_enabled():
+                uploaded = upload_private_image_to_cloudinary(
+                    optimized_bytes,
+                    folder=cloud_folder,
+                    public_id=generated_name,
+                )
+                saved_paths.append(
+                    encode_cloudinary_ref(
+                        uploaded.get("public_id"),
+                        version=uploaded.get("version"),
+                        delivery_type="private",
+                        resource_type="image",
+                        file_format=optimized_extension,
+                    )
+                )
+            else:
+                generated_filename = f"{generated_name}.{optimized_extension}"
+                saved_path = target_dir / generated_filename
+                saved_path.write_bytes(optimized_bytes)
+                saved_paths.append(
+                    f"uploads/audits/service/{date_folder}/{generated_filename}".replace("\\", "/")
+                )
+
+        if len(saved_paths) == 1:
+            return jsonify({"photo_path": saved_paths[0]})
+        return jsonify({"photo_paths": saved_paths})
+    except Exception:
+        raise
+
+
+@main.route("/api/service/upload-session-photo", methods=["POST"])
+def upload_service_session_photo():
+    try:
+        if not can_create_audit():
+            abort(403)
+
+        service_date = (request.form.get("service_date") or "").strip()
+        if not service_date:
+            service_date = datetime.today().strftime("%Y-%m-%d")
+        try:
+            datetime.fromisoformat(service_date)
+        except ValueError:
+            return jsonify({"error": "service_date invalida."}), 400
+
+        photo_file = request.files.get("file")
+        if not has_uploaded_file(photo_file):
+            return jsonify({"error": "Debes adjuntar un archivo."}), 400
+
+        _filename, extension = validate_photo_file(photo_file, "foto Service")
+        raw_bytes = photo_file.stream.read()
+        if not raw_bytes:
+            return jsonify({"error": "La foto del Service no contiene datos validos."}), 400
+
+        optimized_bytes, optimized_extension = optimize_photo_bytes(raw_bytes, extension, max_dim=2400)
+        date_folder = datetime.fromisoformat(service_date).strftime("%Y/%m")
+        generated_name = f"service_session_{uuid4().hex[:8]}_{uuid4().hex[:8]}"
+
+        if cloudinary_enabled():
+            base_folder = (current_app.config.get("CLOUDINARY_FOLDER") or "atbb").strip().strip("/")
+            folder = f"{base_folder}/service-sessions/{date_folder}"
+            uploaded = upload_private_image_to_cloudinary(
+                optimized_bytes,
+                folder=folder,
+                public_id=generated_name,
+            )
+            path = encode_cloudinary_ref(
+                uploaded.get("public_id"),
+                version=uploaded.get("version"),
+                delivery_type="private",
+                resource_type="image",
+                file_format=optimized_extension,
+            )
+            return jsonify({"photo_path": path})
+
+        target_dir = current_app.config["AUDIT_EVIDENCE_DIR"] / "service-sessions" / date_folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+        generated_filename = f"{generated_name}.{optimized_extension}"
+        saved_path = target_dir / generated_filename
+        saved_path.write_bytes(optimized_bytes)
+        return jsonify({"photo_path": f"uploads/audits/service-sessions/{date_folder}/{generated_filename}".replace('\\', '/')})
     except Exception:
         raise
 
@@ -3255,6 +3518,459 @@ def qc_section_definition():
     if not section:
         raise RuntimeError(f"No existe la sección '{QC_SECTION_KEY}' en el checklist.")
     return section
+
+
+def service_item_definitions():
+    return [
+        {
+            "key": "modem_location",
+            "label": "Ubicación final del módem en punto principal del domicilio",
+            "critical": True,
+        },
+        {
+            "key": "coverage",
+            "label": "Cobertura WiFi corresponde en los distintos espacios",
+            "critical": True,
+        },
+        {
+            "key": "devices_verified",
+            "label": "Verificación de dispositivos del cliente",
+            "critical": False,
+        },
+        {
+            "key": "speedtests",
+            "label": "Test de velocidad realizado en diferentes espacios",
+            "critical": True,
+        },
+        {
+            "key": "optical_power",
+            "label": "Potencia óptica: diferencia <= 1 dBm",
+            "critical": True,
+        },
+    ]
+
+
+def service_speedtest_spaces():
+    return [
+        {"key": "principal", "label": "Punto principal"},
+        {"key": "habitacion", "label": "Habitación"},
+        {"key": "alejado", "label": "Punto más alejado"},
+    ]
+
+
+@main.route("/service")
+def service_sessions():
+    if not current_user():
+        return redirect(url_for("main.login"))
+    if not can_view_service():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "status": request.args.get("status", "").strip(),
+        "technician_id": request.args.get("technician_id", "").strip(),
+        "q": request.args.get("q", "").strip(),
+        "include_pruebas": "1" if request.args.get("include_pruebas") else "",
+        "sort": request.args.get("sort", "").strip(),
+        "dir": request.args.get("dir", "").strip(),
+    }
+
+    technician_id = None
+    if filters["technician_id"]:
+        try:
+            technician_id = int(filters["technician_id"])
+        except ValueError:
+            flash("El técnico seleccionado no es válido.", "error")
+            filters["technician_id"] = ""
+
+    query_filters = {
+        "from_date": filters["from_date"],
+        "to_date": filters["to_date"],
+        "status": filters["status"],
+        "technician_id": technician_id,
+        "q": filters["q"],
+        "include_pruebas": filters["include_pruebas"],
+        "sort": filters["sort"],
+        "dir": filters["dir"],
+    }
+
+    sessions = fetch_service_sessions(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    technicians = fetch_technicians()
+    filter_active = any(
+        [
+            filters["from_date"],
+            filters["to_date"],
+            filters["status"],
+            filters["technician_id"],
+            filters["q"],
+            filters["include_pruebas"],
+        ]
+    )
+
+    return render_template(
+        "service_sessions.html",
+        sessions=sessions,
+        filters=filters,
+        technicians=technicians,
+        filter_active=filter_active,
+        audit_official_from_date=get_audit_official_from_date(),
+        page_class="page-wide",
+    )
+
+
+@main.route("/service/new", methods=["GET", "POST"])
+def service_new():
+    if not can_create_audit():
+        abort(403)
+
+    technicians = fetch_technicians()
+    today = datetime.now().date().isoformat()
+    items_def = service_item_definitions()
+    spaces = service_speedtest_spaces()
+
+    if request.method == "POST":
+        try:
+            service_date = (request.form.get("service_date") or "").strip() or today
+            datetime.fromisoformat(service_date)
+
+            technician_id_raw = (request.form.get("technician_id") or "").strip()
+            if not technician_id_raw:
+                raise ValueError("Debes seleccionar un técnico.")
+            try:
+                technician_id = int(technician_id_raw)
+            except ValueError as exc:
+                raise ValueError("El técnico seleccionado no es válido.") from exc
+
+            location = (request.form.get("location") or "").strip()
+            if not location:
+                raise ValueError("La provincia es obligatoria.")
+            address = (request.form.get("address") or "").strip()
+            sa_number = (request.form.get("sa_number") or "").strip()
+            record_scope = (request.form.get("record_scope") or "").strip().lower() or "oficial"
+            if record_scope not in {"oficial", "pruebas"}:
+                raise ValueError("El sector seleccionado no es válido.")
+
+            location = location.strip().upper()
+            address = address.strip().upper()
+            sa_number = sa_number.strip()
+            if sa_number and not sa_number.isdigit():
+                raise ValueError("El SA debe contener solo números.")
+
+            def parse_optional_float(field_name, label):
+                raw = (request.form.get(field_name) or "").strip()
+                if raw == "":
+                    return None
+                try:
+                    return float(raw.replace(",", "."))
+                except ValueError as exc:
+                    raise ValueError(f"{label} debe ser un número válido.") from exc
+
+            optical_expected_dbm = parse_optional_float("optical_expected_dbm", "Potencia óptica esperada (dBm)")
+            optical_measured_dbm = parse_optional_float("optical_measured_dbm", "Potencia óptica medida (dBm)")
+            if optical_expected_dbm is None or optical_measured_dbm is None:
+                raise ValueError("Debes ingresar la potencia óptica esperada y la medida.")
+            optical_delta_dbm = round(abs(optical_measured_dbm - optical_expected_dbm), 2)
+
+            items = []
+            for entry in items_def:
+                key = entry["key"]
+                status = (request.form.get(f"status__{key}") or "").strip().lower()
+                if not status:
+                    raise ValueError("Debes completar el checklist de service.")
+                if status not in {"conforme", "nc_menor", "nc_mayor", "no_aplica"}:
+                    raise ValueError("El estado seleccionado no es válido.")
+                notes = (request.form.get(f"notes__{key}") or "").strip().upper() or None
+
+                uploaded_raw = (request.form.get(f"uploaded_photo_path__{key}") or "").strip()
+                uploaded_value = uploaded_raw if uploaded_raw and uploaded_raw != "-" else None
+                if uploaded_value and uploaded_value.startswith("[") and uploaded_value.endswith("]"):
+                    try:
+                        parsed = json.loads(uploaded_value)
+                        if isinstance(parsed, list):
+                            uploaded_value = json.dumps(parsed, ensure_ascii=False)
+                    except Exception:
+                        pass
+
+                photo_files = []
+                file_input = request.files.get(f"photo__{key}")
+                if has_uploaded_file(file_input):
+                    photo_files.append(file_input)
+                camera_input = request.files.get(f"photo_camera__{key}")
+                if has_uploaded_file(camera_input):
+                    photo_files.append(camera_input)
+
+                item_payload = {
+                    "item_key": key,
+                    "item_label": entry["label"],
+                    "status": status,
+                    "is_critical": bool(entry.get("critical")),
+                    "notes": notes,
+                    "photo_path": uploaded_value,
+                }
+                if photo_files:
+                    item_payload["photo_files"] = photo_files
+                items.append(item_payload)
+
+            optical_item = next((it for it in items if it.get("item_key") == "optical_power"), None)
+            if optical_item:
+                optical_item["status"] = "conforme" if optical_delta_dbm <= 1 else "nc_mayor"
+
+            persist_service_item_evidence(items, service_date)
+
+            for item in items:
+                photo_path = (item.get("photo_path") or "").strip()
+                status = str(item.get("status") or "").strip().lower()
+                needs_evidence = bool(item.get("is_critical")) and status in {"nc_menor", "nc_mayor"}
+                if item.get("item_key") == "optical_power" and optical_delta_dbm > 1:
+                    needs_evidence = True
+                if needs_evidence:
+                    if not photo_path or photo_path == "-":
+                        raise ValueError("Debes adjuntar evidencia en los ítems críticos no conformes.")
+                    if photo_path.startswith("[") and photo_path.endswith("]"):
+                        try:
+                            parsed = json.loads(photo_path)
+                        except Exception:
+                            parsed = []
+                        if not parsed:
+                            raise ValueError("Debes adjuntar evidencia en los ítems críticos no conformes.")
+                        for candidate in parsed:
+                            value = str(candidate or "").strip()
+                            if not value or value == "-":
+                                continue
+                            if not (decode_cloudinary_ref(value) or _resolve_uploads_relative_path(value)):
+                                raise ValueError("La evidencia adjunta no es válida.")
+                    else:
+                        if not (decode_cloudinary_ref(photo_path) or _resolve_uploads_relative_path(photo_path)):
+                            raise ValueError("La evidencia adjunta no es válida.")
+
+            def item_points(status_value):
+                raw = str(status_value or "").strip().lower()
+                if raw == "conforme":
+                    return 1.0
+                if raw == "nc_menor":
+                    return 0.6
+                if raw == "nc_mayor":
+                    return 0.0
+                return None
+
+            points = []
+            has_major_nc = False
+            for item in items:
+                status = str(item.get("status") or "").strip().lower()
+                if status == "nc_mayor":
+                    has_major_nc = True
+                p = item_points(status)
+                if p is None:
+                    continue
+                points.append(p)
+
+            ratio = 1.0 if not points else (sum(points) / float(len(points)))
+            ratio = max(0.0, min(1.0, ratio))
+            total_score = round(ratio * 100, 2)
+
+            if has_major_nc:
+                result_status = "Rechazada"
+            elif total_score >= 90:
+                result_status = "Aprobada"
+            elif total_score >= 75:
+                result_status = "Aprobada con observaciones"
+            else:
+                result_status = "Rechazada"
+
+            speedtests = []
+            for space in spaces:
+                key = space["key"]
+                label = space["label"]
+                down = parse_optional_float(f"speedtest_down__{key}", f"Descarga ({label})")
+                up = parse_optional_float(f"speedtest_up__{key}", f"Subida ({label})")
+                ping = parse_optional_float(f"speedtest_ping__{key}", f"Ping ({label})")
+                if down is None or up is None or ping is None:
+                    raise ValueError("Debes registrar los tests de velocidad en los espacios definidos.")
+                speedtests.append(
+                    {
+                        "space_key": key,
+                        "space_label": label,
+                        "download_mbps": down,
+                        "upload_mbps": up,
+                        "ping_ms": ping,
+                    }
+                )
+
+            uploaded_photo_path_raw = (request.form.get("uploaded_service_photo_path") or "").strip()
+            uploaded_photo_path = uploaded_photo_path_raw if uploaded_photo_path_raw and uploaded_photo_path_raw != "-" else None
+            if uploaded_photo_path and not (decode_cloudinary_ref(uploaded_photo_path) or _resolve_uploads_relative_path(uploaded_photo_path)):
+                raise ValueError("La foto del service no es válida.")
+
+            service_photo_file = request.files.get("service_photo")
+            if not has_uploaded_file(service_photo_file):
+                service_photo_file = request.files.get("service_photo_camera")
+            session_photo_path = uploaded_photo_path or persist_service_session_evidence(service_photo_file, service_date)
+
+            technician_row = next((t for t in technicians if t.get("id") == technician_id), None)
+            technician_name = (technician_row.get("name") if technician_row else "") or ""
+            technician_employee_code = (technician_row.get("employee_code") if technician_row else "") or ""
+            technician_company = (technician_row.get("company_name") if technician_row else "") or ""
+            technician_supervisor = (technician_row.get("supervisor_name") if technician_row else "") or ""
+            technician_center = (technician_row.get("center_name") if technician_row else "") or ""
+
+            technician_name = technician_name.strip().upper()
+            technician_employee_code = technician_employee_code.strip().upper()
+            technician_company = technician_company.strip().upper()
+            technician_supervisor = technician_supervisor.strip().upper()
+            technician_center = technician_center.strip().upper()
+
+            general_notes = (request.form.get("general_notes") or "").strip().upper() or None
+
+            service_data = {
+                "service_date": service_date,
+                "auditor_name": current_user()["username"],
+                "auditor_user_id": current_user().get("id"),
+                "sa_number": sa_number or None,
+                "technician_display_name": technician_name or None,
+                "technician_employee_code": technician_employee_code or None,
+                "technician_company_snapshot": technician_company or None,
+                "technician_supervisor_snapshot": technician_supervisor or None,
+                "technician_center_snapshot": technician_center or None,
+                "technician_id": technician_id,
+                "location": location,
+                "address": address or None,
+                "optical_expected_dbm": optical_expected_dbm,
+                "optical_measured_dbm": optical_measured_dbm,
+                "optical_delta_dbm": optical_delta_dbm,
+                "total_score": total_score,
+                "result_status": result_status,
+                "record_scope": record_scope,
+                "general_notes": general_notes,
+                "photo_path": session_photo_path,
+            }
+
+            service_session_id = create_service_session(service_data, items, speedtests)
+            flash("Auditoría Service registrada.", "success")
+            return redirect(url_for("main.service_detail", service_session_id=service_session_id))
+        except (KeyError, ValueError) as exc:
+            flash(str(exc), "error")
+
+    return render_template(
+        "service_form.html",
+        technicians=technicians,
+        today=today,
+        items=items_def,
+        spaces=spaces,
+        page_class="page-wide",
+    )
+
+
+@main.route("/service/<int:service_session_id>")
+def service_detail(service_session_id):
+    if not can_view_service():
+        abort(403)
+
+    session_row = fetch_service_session_detail(
+        service_session_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    if not session_row:
+        abort(404)
+    if is_auditor() and session_row.get("auditor_user_id") != current_user()["id"]:
+        abort(404)
+
+    items = fetch_service_items(service_session_id)
+    speedtests = fetch_service_speedtests(service_session_id)
+    return render_template(
+        "service_detail.html",
+        service=session_row,
+        items=items,
+        speedtests=speedtests,
+        page_class="page-wide",
+    )
+
+
+@main.route("/service/<int:service_session_id>/report")
+def service_report(service_session_id):
+    if not can_view_service():
+        abort(403)
+
+    session_row = fetch_service_session_detail(
+        service_session_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    if not session_row:
+        abort(404)
+    if is_auditor() and session_row.get("auditor_user_id") != current_user()["id"]:
+        abort(404)
+
+    expires_in_seconds = 3600 if request.args.get("print") == "1" else 900
+    items = fetch_service_items(service_session_id)
+    speedtests = fetch_service_speedtests(service_session_id)
+
+    response = make_response(
+        render_template(
+            "service_report.html",
+            service=session_row,
+            items=items,
+            speedtests=speedtests,
+            print_mode=request.args.get("print") == "1",
+            inline_css="",
+            expires_in_seconds=expires_in_seconds,
+        )
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@main.route("/service/<int:service_session_id>/report.pdf")
+def service_report_pdf(service_session_id):
+    if not can_view_service():
+        abort(403)
+
+    session_row = fetch_service_session_detail(
+        service_session_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    if not session_row:
+        abort(404)
+    if is_auditor() and session_row.get("auditor_user_id") != current_user()["id"]:
+        abort(404)
+
+    items = fetch_service_items(service_session_id)
+    speedtests = fetch_service_speedtests(service_session_id)
+
+    css_path = Path(current_app.root_path) / "static" / "css" / "main.css"
+    inline_css = css_path.read_text(encoding="utf-8") if css_path.exists() else ""
+
+    date_suffix = (session_row.get("service_date") or "sin_fecha").strip().replace("/", "-")
+    filename = secure_filename(f"service_{service_session_id}_{date_suffix}.pdf") or f"service_{service_session_id}.pdf"
+    filename_override = (request.args.get("filename") or "").strip()
+    if filename_override:
+        normalized_override = secure_filename(filename_override) or filename
+        if not normalized_override.lower().endswith(".pdf"):
+            normalized_override = f"{normalized_override}.pdf"
+        filename = normalized_override
+
+    html = render_template(
+        "service_report.html",
+        service=session_row,
+        items=items,
+        speedtests=speedtests,
+        print_mode=True,
+        inline_css=inline_css,
+        expires_in_seconds=3600,
+    )
+    try:
+        return build_pdf_from_html_response(html, filename)
+    except Exception as exc:
+        current_app.logger.exception("Error generando PDF Service %s", service_session_id)
+        flash(str(exc), "error")
+        return redirect(url_for("main.service_report", service_session_id=service_session_id, print=1))
 
 
 @main.route("/qc")

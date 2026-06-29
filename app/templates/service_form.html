@@ -1,0 +1,566 @@
+{% extends "base.html" %}
+
+{% block title %}Auditoría Service{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Gerencia</p>
+        <h2>Nueva auditoría service</h2>
+        <p class="hero-copy">Verificación de eficacia del service y cumplimiento de normas Telecom.</p>
+    </div>
+</section>
+
+<form method="post" enctype="multipart/form-data" class="qc-form">
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Contexto</p>
+                <h3>Datos</h3>
+            </div>
+        </div>
+        <div class="form-grid">
+            <label>
+                <span>Fecha</span>
+                <input type="date" name="service_date" value="{{ request.form.get('service_date', today) }}" required>
+            </label>
+            <label>
+                <span>Técnico</span>
+                <select name="technician_id" required>
+                    <option value="" {% if not request.form.get('technician_id') %}selected{% endif %}>Seleccionar</option>
+                    {% for technician in technicians %}
+                        <option value="{{ technician['id'] }}" {% if request.form.get('technician_id')|int == technician['id'] %}selected{% endif %}>
+                            {{ technician["name"] }} ({{ technician["employee_code"] }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                <span>Provincia</span>
+                <input type="text" name="location" value="{{ request.form.get('location', '')|upper }}" required>
+            </label>
+            <label>
+                <span>Dirección</span>
+                <input type="text" name="address" value="{{ request.form.get('address', '')|upper }}">
+            </label>
+            <label>
+                <span>SA</span>
+                <input type="text" name="sa_number" value="{{ request.form.get('sa_number', '') }}" inputmode="numeric" pattern="[0-9]*" placeholder="Solo números">
+            </label>
+            <label>
+                <span>Sector</span>
+                <select name="record_scope" required>
+                    <option value="oficial" {% if (request.form.get('record_scope') or 'oficial') == 'oficial' %}selected{% endif %}>Oficial</option>
+                    <option value="pruebas" {% if request.form.get('record_scope') == 'pruebas' %}selected{% endif %}>Pruebas</option>
+                </select>
+            </label>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Óptica</p>
+                <h3>Potencia óptica (dBm)</h3>
+            </div>
+        </div>
+        <div class="form-grid">
+            <label>
+                <span>Esperada</span>
+                <input type="number" step="0.01" name="optical_expected_dbm" value="{{ request.form.get('optical_expected_dbm', '') }}" required>
+            </label>
+            <label>
+                <span>Medida</span>
+                <input type="number" step="0.01" name="optical_measured_dbm" value="{{ request.form.get('optical_measured_dbm', '') }}" required>
+            </label>
+            <label>
+                <span>Foto general (opcional)</span>
+                <div class="evidence-upload-row" id="service_photo_block">
+                    <input type="hidden" name="uploaded_service_photo_path" id="uploaded_service_photo_path" value="{{ request.form.get('uploaded_service_photo_path', '') }}">
+                    <input
+                        type="file"
+                        id="service_photo"
+                        name="service_photo"
+                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                        tabindex="-1"
+                        aria-hidden="true"
+                    >
+                    <input
+                        type="file"
+                        id="service_photo_camera"
+                        name="service_photo_camera"
+                        accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                        capture="environment"
+                        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                        tabindex="-1"
+                        aria-hidden="true"
+                    >
+                    <div class="evidence-buttons">
+                        <button type="button" class="button button-secondary" data-evidence-select="#service_photo">Subir</button>
+                        <button type="button" class="button button-secondary" data-evidence-select="#service_photo_camera">Cámara</button>
+                        <button type="button" class="button button-secondary" id="remove_service_photo">Quitar</button>
+                    </div>
+                    <small class="evidence-filename" data-service-photo-filename="1">Sin archivo seleccionado.</small>
+                </div>
+            </label>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">WiFi</p>
+                <h3>Tests de velocidad</h3>
+            </div>
+        </div>
+        <div class="form-grid">
+            {% for space in spaces %}
+                <label>
+                    <span>{{ space.label }} · Descarga (Mbps)</span>
+                    <input type="number" step="0.01" name="speedtest_down__{{ space.key }}" value="{{ request.form.get('speedtest_down__' + space.key, '') }}" required>
+                </label>
+                <label>
+                    <span>{{ space.label }} · Subida (Mbps)</span>
+                    <input type="number" step="0.01" name="speedtest_up__{{ space.key }}" value="{{ request.form.get('speedtest_up__' + space.key, '') }}" required>
+                </label>
+                <label>
+                    <span>{{ space.label }} · Ping (ms)</span>
+                    <input type="number" step="0.1" name="speedtest_ping__{{ space.key }}" value="{{ request.form.get('speedtest_ping__' + space.key, '') }}" required>
+                </label>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Checklist</p>
+                <h3>Verificación en domicilio</h3>
+            </div>
+        </div>
+        <div class="checklist-grid">
+            {% for item in items %}
+                <article class="checklist-item" id="item__{{ item.key }}" data-item-key="{{ item.key }}">
+                    <div class="checklist-title">
+                        <strong>{{ item.label }}</strong>
+                    </div>
+                    <div class="checklist-status">
+                        <label><input type="radio" name="status__{{ item.key }}" value="conforme" {% if request.form.get('status__' + item.key) == 'conforme' %}checked{% endif %} required> Conforme</label>
+                        <label><input type="radio" name="status__{{ item.key }}" value="nc_menor" {% if request.form.get('status__' + item.key) == 'nc_menor' %}checked{% endif %}> NC menor</label>
+                        <label><input type="radio" name="status__{{ item.key }}" value="nc_mayor" {% if request.form.get('status__' + item.key) == 'nc_mayor' %}checked{% endif %}> NC mayor</label>
+                        <label><input type="radio" name="status__{{ item.key }}" value="no_aplica" {% if request.form.get('status__' + item.key) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                    </div>
+                    <div class="checklist-notes">
+                        <label>
+                            <span>Notas</span>
+                            <textarea name="notes__{{ item.key }}" rows="3">{{ request.form.get('notes__' + item.key, '')|upper }}</textarea>
+                        </label>
+                        <label>
+                            <span>Evidencia (obligatoria en NC crítico / Δ dBm > 1)</span>
+                            <div class="evidence-upload-row">
+                                <input type="hidden" name="uploaded_photo_path__{{ item.key }}" value="{{ request.form.get('uploaded_photo_path__' + item.key, '') }}">
+                                <input
+                                    type="file"
+                                    id="photo__{{ item.key }}"
+                                    name="photo__{{ item.key }}"
+                                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                    multiple
+                                    style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                >
+                                <input
+                                    type="file"
+                                    id="photo_camera__{{ item.key }}"
+                                    name="photo_camera__{{ item.key }}"
+                                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                    capture="environment"
+                                    style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                >
+                                <div class="evidence-buttons">
+                                    <button type="button" class="button button-secondary" data-evidence-select="#photo__{{ item.key }}">Subir</button>
+                                    <button type="button" class="button button-secondary" data-evidence-select="#photo_camera__{{ item.key }}">Cámara</button>
+                                    <button type="button" class="button button-secondary" data-evidence-remove="1">Quitar</button>
+                                </div>
+                                <small class="evidence-filename" data-evidence-filename="1">Sin archivo seleccionado.</small>
+                            </div>
+                        </label>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Cierre</p>
+                <h3>Notas generales</h3>
+            </div>
+        </div>
+        <div class="form-grid">
+            <label>
+                <span>Notas (opcional)</span>
+                <textarea name="general_notes" rows="4">{{ request.form.get('general_notes', '')|upper }}</textarea>
+            </label>
+        </div>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Guardar auditoría service</button>
+            <a class="button button-secondary" href="{{ url_for('main.service_sessions') }}">Cancelar</a>
+        </div>
+    </section>
+</form>
+
+<script>
+    (function () {
+        const form = document.querySelector("form.qc-form");
+        if (!form) {
+            return;
+        }
+
+        let activeController = null;
+
+        function parseUploadedPaths(rawValue) {
+            const raw = String(rawValue || "").trim();
+            if (!raw || raw === "-") {
+                return [];
+            }
+            if (raw.startsWith("[") && raw.endsWith("]")) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                        return parsed.map((v) => String(v || "").trim()).filter((v) => v && v !== "-");
+                    }
+                } catch (_err) {
+                }
+            }
+            return [raw];
+        }
+
+        async function deleteEvidencePaths(paths) {
+            const response = await fetch("/api/audits/delete-evidence", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Accept": "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify({ photo_paths: paths }),
+            });
+            const data = await response.json().catch(() => null);
+            return { response, data };
+        }
+
+        function getServiceDate() {
+            const input = form.querySelector("input[name='service_date']");
+            return input ? String(input.value || "").trim() : "";
+        }
+
+        function syncEvidenceFilename(checklistItem) {
+            if (!checklistItem) {
+                return;
+            }
+            const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
+            if (!filenameTarget) {
+                return;
+            }
+            const itemKey = checklistItem.dataset.itemKey || "";
+            const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
+            const uploadedValue = uploadedInput ? String(uploadedInput.value || "").trim() : "";
+            const uploadedPaths = parseUploadedPaths(uploadedValue);
+            if (uploadedPaths.length > 0) {
+                filenameTarget.textContent = uploadedPaths.length > 1 ? `Evidencia subida (${uploadedPaths.length}).` : "Evidencia subida.";
+                return;
+            }
+            const fileInput = checklistItem.querySelector(`#photo__${CSS.escape(itemKey)}`);
+            const cameraInput = checklistItem.querySelector(`#photo_camera__${CSS.escape(itemKey)}`);
+            const files = [];
+            if (fileInput && fileInput.files && fileInput.files.length > 0) {
+                Array.from(fileInput.files).forEach((entry) => files.push(entry));
+            }
+            if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+                Array.from(cameraInput.files).forEach((entry) => files.push(entry));
+            }
+            if (files.length === 0) {
+                filenameTarget.textContent = "Sin archivo seleccionado.";
+                return;
+            }
+            const selected = files[0];
+            const sizeKb = Math.max(1, Math.round((selected.size || 0) / 1024));
+            filenameTarget.textContent = files.length > 1 ? `${selected.name} (+${files.length - 1}) · ${sizeKb} KB` : `${selected.name} · ${sizeKb} KB`;
+        }
+
+        function syncServicePhotoFilename() {
+            const filenameTarget = form.querySelector("[data-service-photo-filename]");
+            if (!filenameTarget) {
+                return;
+            }
+            const uploadedInput = form.querySelector("#uploaded_service_photo_path");
+            const uploadedValue = uploadedInput ? String(uploadedInput.value || "").trim() : "";
+            const uploadedPaths = parseUploadedPaths(uploadedValue);
+            if (uploadedPaths.length > 0) {
+                filenameTarget.textContent = "Evidencia subida.";
+                return;
+            }
+            const fileInput = form.querySelector("#service_photo");
+            const cameraInput = form.querySelector("#service_photo_camera");
+            const files = [];
+            if (fileInput && fileInput.files && fileInput.files.length > 0) {
+                Array.from(fileInput.files).forEach((entry) => files.push(entry));
+            }
+            if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+                Array.from(cameraInput.files).forEach((entry) => files.push(entry));
+            }
+            if (files.length === 0) {
+                filenameTarget.textContent = "Sin archivo seleccionado.";
+                return;
+            }
+            const selected = files[0];
+            const sizeKb = Math.max(1, Math.round((selected.size || 0) / 1024));
+            filenameTarget.textContent = `${selected.name} · ${sizeKb} KB`;
+        }
+
+        async function uploadServiceEvidenceFiles(itemKey, itemLabel, serviceDate, files) {
+            const payload = new FormData();
+            payload.append("item_key", itemKey);
+            payload.append("item_label", itemLabel);
+            if (serviceDate) {
+                payload.append("service_date", serviceDate);
+            }
+            for (const file of files || []) {
+                payload.append("file", file, file && file.name ? file.name : "evidencia.webp");
+            }
+            const response = await fetch("/api/service/upload-evidence", {
+                method: "POST",
+                body: payload,
+                credentials: "same-origin",
+                headers: { "Accept": "application/json" },
+            });
+            const data = await response.json().catch(() => null);
+            return { response, data };
+        }
+
+        async function uploadServiceSessionPhoto(serviceDate, file) {
+            const payload = new FormData();
+            if (serviceDate) {
+                payload.append("service_date", serviceDate);
+            }
+            payload.append("file", file, file && file.name ? file.name : "service.webp");
+            const response = await fetch("/api/service/upload-session-photo", {
+                method: "POST",
+                body: payload,
+                credentials: "same-origin",
+                headers: { "Accept": "application/json" },
+            });
+            const data = await response.json().catch(() => null);
+            return { response, data };
+        }
+
+        async function uploadEvidenceFromInput(input) {
+            if (!input || !(input instanceof HTMLInputElement) || !input.files || input.files.length === 0) {
+                return;
+            }
+            const checklistItem = input.closest(".checklist-item");
+            if (!checklistItem) {
+                return;
+            }
+            const itemKey = String(checklistItem.dataset.itemKey || "");
+            const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
+            if (!uploadedInput) {
+                return;
+            }
+            const itemLabel = checklistItem.querySelector(".checklist-title strong");
+            const label = itemLabel ? String(itemLabel.textContent || "").trim() : "evidencia";
+            const serviceDate = getServiceDate();
+
+            const files = Array.from(input.files || []).filter((f) => f && (f.size || 0) > 0);
+            if (files.length === 0) {
+                return;
+            }
+
+            if (activeController) {
+                activeController.abort();
+            }
+            const controller = new AbortController();
+            activeController = controller;
+
+            const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
+            if (filenameTarget) {
+                filenameTarget.textContent = "Subiendo evidencia...";
+            }
+
+            const { response, data } = await uploadServiceEvidenceFiles(itemKey, label, serviceDate, files);
+            if (!response.ok || !data) {
+                if (filenameTarget) {
+                    filenameTarget.textContent = data && data.error ? data.error : "No se pudo subir la evidencia.";
+                }
+                return;
+            }
+
+            const paths = (data.photo_paths && Array.isArray(data.photo_paths))
+                ? data.photo_paths
+                : (data.photo_path ? [data.photo_path] : []);
+            uploadedInput.value = paths.length > 1 ? JSON.stringify(paths) : (paths[0] ? String(paths[0]) : "");
+            input.value = "";
+
+            const cameraInput = checklistItem.querySelector(`#photo_camera__${CSS.escape(itemKey)}`);
+            if (cameraInput && cameraInput instanceof HTMLInputElement) {
+                cameraInput.value = "";
+            }
+            syncEvidenceFilename(checklistItem);
+        }
+
+        async function uploadServicePhotoFromInput(input) {
+            if (!input || !(input instanceof HTMLInputElement) || !input.files || input.files.length === 0) {
+                return;
+            }
+            const uploadedInput = form.querySelector("#uploaded_service_photo_path");
+            if (!uploadedInput) {
+                return;
+            }
+            const files = Array.from(input.files || []).filter((f) => f && (f.size || 0) > 0);
+            if (files.length === 0) {
+                return;
+            }
+            const serviceDate = getServiceDate();
+            const filenameTarget = form.querySelector("[data-service-photo-filename]");
+            if (filenameTarget) {
+                filenameTarget.textContent = "Subiendo evidencia...";
+            }
+            const { response, data } = await uploadServiceSessionPhoto(serviceDate, files[0]);
+            if (!response.ok || !data) {
+                if (filenameTarget) {
+                    filenameTarget.textContent = data && data.error ? data.error : "No se pudo subir la evidencia.";
+                }
+                return;
+            }
+            const path = data.photo_path ? String(data.photo_path) : "";
+            uploadedInput.value = path;
+            input.value = "";
+            const otherInput = input.name === "service_photo" ? form.querySelector("#service_photo_camera") : form.querySelector("#service_photo");
+            if (otherInput && otherInput instanceof HTMLInputElement) {
+                otherInput.value = "";
+            }
+            syncServicePhotoFilename();
+        }
+
+        document.addEventListener("click", function (event) {
+            const target = event.target;
+            if (!target) {
+                return;
+            }
+            const selector = target.getAttribute && target.getAttribute("data-evidence-select");
+            if (selector) {
+                const input = document.querySelector(selector);
+                if (input && input instanceof HTMLInputElement) {
+                    input.click();
+                }
+                return;
+            }
+            if (target.id === "remove_service_photo") {
+                const uploadedInput = form.querySelector("#uploaded_service_photo_path");
+                const paths = uploadedInput ? parseUploadedPaths(uploadedInput.value) : [];
+                const filenameTarget = form.querySelector("[data-service-photo-filename]");
+                if (paths.length === 0) {
+                    if (uploadedInput) {
+                        uploadedInput.value = "";
+                    }
+                    const fileInput = form.querySelector("#service_photo");
+                    const cameraInput = form.querySelector("#service_photo_camera");
+                    if (fileInput && fileInput instanceof HTMLInputElement) {
+                        fileInput.value = "";
+                    }
+                    if (cameraInput && cameraInput instanceof HTMLInputElement) {
+                        cameraInput.value = "";
+                    }
+                    syncServicePhotoFilename();
+                    return;
+                }
+                const ok = window.confirm("¿Quitar la foto del service?");
+                if (!ok) {
+                    return;
+                }
+                event.preventDefault();
+                void (async () => {
+                    try {
+                        if (filenameTarget) {
+                            filenameTarget.textContent = "Quitando evidencia...";
+                        }
+                        await deleteEvidencePaths(paths);
+                    } finally {
+                        if (uploadedInput) {
+                            uploadedInput.value = "";
+                        }
+                        syncServicePhotoFilename();
+                    }
+                })();
+                return;
+            }
+            const removeEvidenceButton = target.closest && target.closest("[data-evidence-remove]");
+            if (removeEvidenceButton) {
+                const checklistItem = removeEvidenceButton.closest(".checklist-item");
+                if (!checklistItem) {
+                    return;
+                }
+                const itemKey = String(checklistItem.dataset.itemKey || "");
+                const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
+                const paths = uploadedInput ? parseUploadedPaths(uploadedInput.value) : [];
+                if (paths.length === 0) {
+                    if (uploadedInput) {
+                        uploadedInput.value = "";
+                    }
+                    const fileInput = checklistItem.querySelector(`#photo__${CSS.escape(itemKey)}`);
+                    const cameraInput = checklistItem.querySelector(`#photo_camera__${CSS.escape(itemKey)}`);
+                    if (fileInput && fileInput instanceof HTMLInputElement) {
+                        fileInput.value = "";
+                    }
+                    if (cameraInput && cameraInput instanceof HTMLInputElement) {
+                        cameraInput.value = "";
+                    }
+                    syncEvidenceFilename(checklistItem);
+                    return;
+                }
+                const ok = window.confirm("¿Quitar la evidencia del ítem?");
+                if (!ok) {
+                    return;
+                }
+                event.preventDefault();
+                void (async () => {
+                    try {
+                        const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
+                        if (filenameTarget) {
+                            filenameTarget.textContent = "Quitando evidencia...";
+                        }
+                        await deleteEvidencePaths(paths);
+                    } finally {
+                        if (uploadedInput) {
+                            uploadedInput.value = "";
+                        }
+                        syncEvidenceFilename(checklistItem);
+                    }
+                })();
+            }
+        });
+
+        form.addEventListener("change", function (event) {
+            const target = event.target;
+            if (!target) {
+                return;
+            }
+            if (target instanceof HTMLInputElement && target.name && (target.name.startsWith("photo__") || target.name.startsWith("photo_camera__"))) {
+                const checklistItem = target.closest(".checklist-item");
+                syncEvidenceFilename(checklistItem);
+                void uploadEvidenceFromInput(target);
+                return;
+            }
+            if (target instanceof HTMLInputElement && (target.name === "service_photo" || target.name === "service_photo_camera")) {
+                syncServicePhotoFilename();
+                void uploadServicePhotoFromInput(target);
+            }
+        });
+
+        form.querySelectorAll(".checklist-item").forEach((item) => syncEvidenceFilename(item));
+        syncServicePhotoFilename();
+    })();
+</script>
+{% endblock %}
