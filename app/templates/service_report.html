@@ -10,7 +10,7 @@
         <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     {% endif %}
 </head>
-<body class="report-body">
+<body class="report-body report-key-service">
     <main class="report-page">
         <section class="report-shell">
             <header class="report-header">
@@ -93,12 +93,18 @@
                 {% if items %}
                     <div class="table-wrap">
                         <table class="report-table">
+                            <colgroup>
+                                <col style="width: 40%;">
+                                <col style="width: 12%;">
+                                <col style="width: 28%;">
+                                <col style="width: 20%;">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th class="col-item_label">Ítem</th>
                                     <th class="col-status">Estado</th>
                                     <th class="col-notes">Notas</th>
-                                    <th class="col-notes">Evidencia</th>
+                                    <th class="col-evidence">Evidencia</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -107,7 +113,7 @@
                                         <td class="col-item_label">{{ row.item_label }}</td>
                                         <td class="col-status">{{ row.status|replace('_', ' ') }}</td>
                                         <td class="col-notes">{{ row.notes or "-" }}</td>
-                                        <td class="col-notes">
+                                        <td class="col-evidence">
                                             {% set photos = row.photo_path|audit_photo_paths(expires_in_seconds) %}
                                             {% if photos %}
                                                 {% for photo_src in photos %}

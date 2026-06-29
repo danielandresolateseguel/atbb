@@ -1244,6 +1244,11 @@ th .table-sort.is-active .table-sort-indicator {
     white-space: nowrap;
 }
 
+.report-body.report-key-service .report-table .col-evidence {
+    width: 10rem;
+    overflow-wrap: anywhere;
+}
+
 @media print {
     .report-table {
         min-width: 0;
@@ -1283,6 +1288,18 @@ th .table-sort.is-active .table-sort-indicator {
     .report-table .col-total_score,
     .report-table .col-status {
         white-space: normal;
+    }
+
+    .report-body.report-key-service .report-table .col-status {
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+
+    .report-body.report-key-service .report-table th.col-status {
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
     }
 
     .report-table .col-audit_date {
