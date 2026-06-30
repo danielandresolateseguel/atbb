@@ -3425,9 +3425,22 @@
             }
 
             try {
+                const formData = new FormData(form);
+                const generalNotes = form.querySelector('textarea[name="general_notes"]');
+                if (generalNotes) {
+                    formData.set("general_notes", generalNotes.value);
+                }
+                const serializedNotes = form.querySelector('textarea[name="serialized_stock_notes"]');
+                if (serializedNotes) {
+                    formData.set("serialized_stock_notes", serializedNotes.value);
+                }
+                const materialNotes = form.querySelector('textarea[name="material_stock_notes"]');
+                if (materialNotes) {
+                    formData.set("material_stock_notes", materialNotes.value);
+                }
                 const response = await fetch(window.location.href, {
                     method: "POST",
-                    body: new FormData(form),
+                    body: formData,
                     credentials: "same-origin",
                 });
 
