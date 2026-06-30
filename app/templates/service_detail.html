@@ -65,6 +65,18 @@
             </div>
         {% endif %}
     </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Cierre</p>
+                <h3>Notas generales</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p>{{ service["general_notes"] or "-" }}</p>
+        </div>
+    </article>
 </section>
 
 <section class="card table-card">
