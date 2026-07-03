@@ -3,6 +3,7 @@
 {% block title %}Hallazgo {{ finding["id"] }}{% endblock %}
 
 {% block content %}
+<div class="finding-detail-page">
 <section class="hero">
     <div>
         <p class="eyebrow">Seguimiento</p>
@@ -11,8 +12,9 @@
             {{ finding["audit_date"] }} | Auditoría {{ finding["audit_id"] }} | {% if finding["mobile_code"] %}Móvil {{ finding["mobile_code"] }} | {% endif %}{{ finding["technician_name"] }}
         </p>
     </div>
-    <div class="hero-actions">
+    <div class="hero-actions no-print">
         <span class="badge badge-{{ finding['finding_status']|replace('_', '-') }}">{{ finding["finding_status"]|finding_status_label }}</span>
+        <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
         <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=finding['audit_id']) }}">Ver auditoría</a>
         <a class="button button-secondary" href="{{ url_for('main.findings_list') }}">Volver a la bandeja</a>
     </div>
@@ -83,10 +85,10 @@
                 <strong>Evidencia de respuesta</strong>
                 {% for photo_src in response_evidence %}
                     {% if photo_src.startswith("http") %}
-                        <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir evidencia {{ loop.index }}</a>
+                        <a class="table-link no-print" href="{{ photo_src }}" target="_blank">Abrir evidencia {{ loop.index }}</a>
                         <img src="{{ photo_src }}" alt="Evidencia del hallazgo" class="evidence-image">
                     {% else %}
-                        <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir evidencia {{ loop.index }}</a>
+                        <a class="table-link no-print" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir evidencia {{ loop.index }}</a>
                         <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia del hallazgo" class="evidence-image">
                     {% endif %}
                 {% endfor %}
@@ -151,10 +153,10 @@
                 <article class="checklist-item">
                     <div class="evidence-block">
                         {% if photo_src.startswith("http") %}
-                            <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                            <a class="table-link no-print" href="{{ photo_src }}" target="_blank">Abrir foto {{ loop.index }}</a>
                             <img src="{{ photo_src }}" alt="Evidencia original {{ loop.index }}" class="evidence-image">
                         {% else %}
-                            <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto {{ loop.index }}</a>
+                            <a class="table-link no-print" href="{{ url_for('static', filename=photo_src) }}" target="_blank">Abrir foto {{ loop.index }}</a>
                             <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia original {{ loop.index }}" class="evidence-image">
                         {% endif %}
                     </div>
@@ -167,7 +169,7 @@
 {% set is_validated = (finding["validation_status"] or "")|lower == "validado" or (finding["finding_status"] or "")|lower == "validado" %}
 
 {% if can_respond_findings and not is_validated %}
-    <section class="card">
+    <section class="card no-print">
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Acción</p>
@@ -226,7 +228,7 @@
 {% endif %}
 
 {% if can_validate_findings %}
-    <section class="card">
+    <section class="card no-print">
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Control</p>
@@ -251,7 +253,7 @@
 {% endif %}
 
 {% if can_verify_findings_effectiveness and is_validated %}
-    <section class="card">
+    <section class="card no-print">
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Control</p>
@@ -308,4 +310,5 @@
         </div>
     </section>
 {% endif %}
+</div>
 {% endblock %}

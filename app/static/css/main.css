@@ -2264,6 +2264,10 @@ th .table-sort.is-active .table-sort-indicator {
     display: inherit;
 }
 
+.print-only {
+    display: none;
+}
+
 .break-before-page {
     break-before: page;
     page-break-before: always;
@@ -2302,6 +2306,84 @@ th .table-sort.is-active .table-sort-indicator {
 
     .no-print {
         display: none !important;
+    }
+
+    .print-only {
+        display: block !important;
+    }
+
+    .finding-detail-page {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .finding-detail-page .hero,
+    .finding-detail-page .card {
+        border: 1px solid #d8dfeb;
+        background: #ffffff;
+        box-shadow: none;
+    }
+
+    .finding-detail-page .hero,
+    .finding-detail-page .info-card,
+    .finding-detail-page .checklist-item,
+    .finding-detail-page .table-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .finding-detail-page .hero {
+        padding: 1rem 1.1rem;
+    }
+
+    .finding-detail-page .hero-copy,
+    .finding-detail-page .info-list p,
+    .finding-detail-page .table-wrap td {
+        color: var(--text);
+    }
+
+    .finding-detail-page .detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .finding-detail-page .audit-detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .finding-detail-page .section-heading {
+        margin-bottom: 0.75rem;
+    }
+
+    .finding-detail-page .info-card,
+    .finding-detail-page .checklist-item {
+        gap: 0.75rem;
+    }
+
+    .finding-detail-page .table-wrap {
+        overflow: visible;
+    }
+
+    .finding-detail-page table {
+        font-size: 0.78rem;
+    }
+
+    .finding-detail-page th,
+    .finding-detail-page td {
+        padding: 0.4rem 0.45rem;
+        vertical-align: top;
+    }
+
+    .finding-detail-page .evidence-block {
+        gap: 0.45rem;
+    }
+
+    .finding-detail-page .evidence-image {
+        max-height: 240px;
+        object-fit: contain;
+        background: #ffffff;
     }
 
     .report-shell {
