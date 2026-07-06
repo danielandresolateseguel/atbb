@@ -4129,15 +4129,59 @@ def qc_new():
                 result_status = "Rechazada"
 
             persist_qc_item_evidence(items, qc_date)
-            uploaded_qc_photo_path_raw = (request.form.get("uploaded_qc_photo_path") or "").strip()
-            uploaded_qc_photo_path = uploaded_qc_photo_path_raw if uploaded_qc_photo_path_raw and uploaded_qc_photo_path_raw != "-" else None
-            if uploaded_qc_photo_path and not (decode_cloudinary_ref(uploaded_qc_photo_path) or _resolve_uploads_relative_path(uploaded_qc_photo_path)):
-                raise ValueError("La foto del QC no es válida.")
+            def parse_qc_photo_paths(raw_value):
+                raw = (raw_value or "").strip()
+                if not raw or raw == "-":
+                    return []
+                if raw.startswith("[") and raw.endswith("]"):
+                    try:
+                        parsed = json.loads(raw)
+                    except json.JSONDecodeError:
+                        parsed = None
+                    if isinstance(parsed, list):
+                        cleaned = []
+                        for entry in parsed:
+                            value = str(entry or "").strip()
+                            if value and value != "-":
+                                cleaned.append(value)
+                        return cleaned
+                return [raw]
 
-            qc_photo_file = request.files.get("qc_photo")
-            if not has_uploaded_file(qc_photo_file):
-                qc_photo_file = request.files.get("qc_photo_camera")
-            session_photo_path = uploaded_qc_photo_path or persist_qc_session_evidence(qc_photo_file, qc_date)
+            uploaded_qc_photo_paths = parse_qc_photo_paths(request.form.get("uploaded_qc_photo_path"))
+            for entry in uploaded_qc_photo_paths:
+                if not (decode_cloudinary_ref(entry) or _resolve_uploads_relative_path(entry)):
+                    raise ValueError("La foto del QC no es válida.")
+
+            qc_photo_files = [entry for entry in request.files.getlist("qc_photo") if has_uploaded_file(entry)]
+            if not qc_photo_files:
+                qc_photo_camera_file = request.files.get("qc_photo_camera")
+                if has_uploaded_file(qc_photo_camera_file):
+                    qc_photo_files = [qc_photo_camera_file]
+
+            session_photo_paths = list(uploaded_qc_photo_paths)
+            for entry in qc_photo_files:
+                persisted = persist_qc_session_evidence(entry, qc_date)
+                if persisted and persisted not in session_photo_paths:
+                    session_photo_paths.append(persisted)
+
+            qc_evidence_paths = set()
+            for entry in session_photo_paths:
+                qc_evidence_paths.add(entry)
+            for item in items:
+                for entry in parse_qc_photo_paths(item.get("photo_path")):
+                    qc_evidence_paths.add(entry)
+
+            if len(qc_evidence_paths) < 2:
+                raise ValueError(
+                    "Debes subir al menos 2 fotos de evidencia (en cualquier ítem del checklist y/o en la foto general del QC) para registrar el control."
+                )
+
+            if len(session_photo_paths) == 0:
+                session_photo_path = None
+            elif len(session_photo_paths) == 1:
+                session_photo_path = session_photo_paths[0]
+            else:
+                session_photo_path = json.dumps(session_photo_paths, ensure_ascii=False)
 
             technician_row = next((t for t in technicians if t.get("id") == locked_technician_id), None)
             technician_name = (technician_row.get("name") if technician_row else "") or ""

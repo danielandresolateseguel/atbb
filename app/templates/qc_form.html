@@ -101,6 +101,7 @@
             <div>
                 <p class="eyebrow">Checklist</p>
                 <h3>{{ section["title"] }}</h3>
+                <p class="empty-state">Evidencia fotográfica: mínimo 2 fotos en total (en cualquier ítem del checklist y/o en la foto general del QC).</p>
             </div>
         </div>
         <div class="audit-detail-grid">
@@ -181,7 +182,7 @@
             </label>
 
             <label>
-                <span>Foto del QC (opcional)</span>
+                <span>Fotos del QC (opcional)</span>
                 <div class="evidence-upload-row" id="qc_photo_block">
                     <input type="hidden" name="uploaded_qc_photo_path" id="uploaded_qc_photo_path" value="{{ request.form.get('uploaded_qc_photo_path', '') }}">
                     <input
@@ -189,6 +190,7 @@
                         id="qc_photo"
                         name="qc_photo"
                         accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                        multiple
                         style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
                         tabindex="-1"
                         aria-hidden="true"
@@ -406,7 +408,8 @@
             const uploadedInput = form.querySelector("#uploaded_qc_photo_path");
             const uploadedValue = uploadedInput ? String(uploadedInput.value || "").trim() : "";
             if (uploadedValue && uploadedValue !== "-") {
-                filenameTarget.textContent = "Evidencia subida.";
+                const uploadedPaths = parseUploadedPaths(uploadedValue);
+                filenameTarget.textContent = uploadedPaths.length > 0 ? `Evidencia subida (${uploadedPaths.length} fotos).` : "Evidencia subida.";
                 return;
             }
             const fileInput = form.querySelector("#qc_photo");
@@ -420,6 +423,10 @@
             }
             if (files.length === 0) {
                 filenameTarget.textContent = "Sin archivo seleccionado.";
+                return;
+            }
+            if (files.length > 1) {
+                filenameTarget.textContent = `${files.length} archivos seleccionados.`;
                 return;
             }
             const selected = files[0];
@@ -524,22 +531,39 @@
             const qcDate = getQcDate();
             const filenameTarget = form.querySelector("[data-qc-photo-filename]");
             const isCameraEvidence = Boolean(String(input.name || "").includes("camera"));
-            const original = input.files[0];
-            if (!original) {
-                return;
-            }
-            if (filenameTarget) {
-                filenameTarget.textContent = "Subiendo evidencia...";
-            }
-            const compressed = await compressEvidenceFileForUpload(original, isCameraEvidence);
-            const { response, data } = await uploadQcSessionPhoto(qcDate, compressed);
-            if (!response.ok || !data) {
-                if (filenameTarget) {
-                    filenameTarget.textContent = data && data.error ? data.error : "No se pudo subir la evidencia.";
+            const existingPaths = parseUploadedPaths(uploadedInput.value);
+            const files = Array.from(input.files);
+            for (let index = 0; index < files.length; index += 1) {
+                const original = files[index];
+                if (!original) {
+                    continue;
                 }
-                return;
+                if (filenameTarget) {
+                    filenameTarget.textContent = files.length > 1
+                        ? `Subiendo evidencia ${index + 1}/${files.length}...`
+                        : "Subiendo evidencia...";
+                }
+                const compressed = await compressEvidenceFileForUpload(original, isCameraEvidence);
+                const { response, data } = await uploadQcSessionPhoto(qcDate, compressed);
+                if (!response.ok || !data) {
+                    if (filenameTarget) {
+                        filenameTarget.textContent = data && data.error ? data.error : "No se pudo subir la evidencia.";
+                    }
+                    return;
+                }
+                const nextPath = data.photo_path ? String(data.photo_path) : "";
+                if (nextPath && !existingPaths.includes(nextPath)) {
+                    existingPaths.push(nextPath);
+                }
             }
-            uploadedInput.value = data.photo_path ? String(data.photo_path) : "";
+
+            if (existingPaths.length === 0) {
+                uploadedInput.value = "";
+            } else if (existingPaths.length === 1) {
+                uploadedInput.value = existingPaths[0];
+            } else {
+                uploadedInput.value = JSON.stringify(existingPaths);
+            }
             const fileInput = form.querySelector("#qc_photo");
             const cameraInput = form.querySelector("#qc_photo_camera");
             if (fileInput && fileInput instanceof HTMLInputElement) {
@@ -721,6 +745,47 @@
             if (target instanceof HTMLInputElement && (target.name === "qc_photo" || target.name === "qc_photo_camera")) {
                 syncQcPhotoFilename();
                 void uploadQcPhotoFromInput(target);
+            }
+        });
+
+        form.addEventListener("submit", function (event) {
+            const evidencePaths = new Set();
+
+            form.querySelectorAll(".checklist-item").forEach((checklistItem) => {
+                const itemKey = String(checklistItem.dataset.itemKey || "").trim();
+                if (!itemKey) {
+                    return;
+                }
+                const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
+                const uploadedPaths = uploadedInput ? parseUploadedPaths(uploadedInput.value) : [];
+                uploadedPaths.forEach((entry) => evidencePaths.add(entry));
+
+                const fileInput = checklistItem.querySelector(`input[name="photo__${CSS.escape(itemKey)}"]`);
+                const cameraInput = checklistItem.querySelector(`input[name="photo_camera__${CSS.escape(itemKey)}"]`);
+                if (fileInput && fileInput.files && fileInput.files.length > 0) {
+                    Array.from(fileInput.files).forEach((_entry, index) => evidencePaths.add(`${itemKey}__file__${index}`));
+                }
+                if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
+                    Array.from(cameraInput.files).forEach((_entry, index) => evidencePaths.add(`${itemKey}__camera__${index}`));
+                }
+            });
+
+            const uploadedQcInput = form.querySelector("#uploaded_qc_photo_path");
+            const uploadedQcPaths = uploadedQcInput ? parseUploadedPaths(uploadedQcInput.value) : [];
+            uploadedQcPaths.forEach((entry) => evidencePaths.add(entry));
+
+            const qcPhotoInput = form.querySelector("#qc_photo");
+            if (qcPhotoInput && qcPhotoInput.files && qcPhotoInput.files.length > 0) {
+                Array.from(qcPhotoInput.files).forEach((_entry, index) => evidencePaths.add(`qc_photo__${index}`));
+            }
+            const qcPhotoCameraInput = form.querySelector("#qc_photo_camera");
+            if (qcPhotoCameraInput && qcPhotoCameraInput.files && qcPhotoCameraInput.files.length > 0) {
+                Array.from(qcPhotoCameraInput.files).forEach((_entry, index) => evidencePaths.add(`qc_photo_camera__${index}`));
+            }
+
+            if (evidencePaths.size < 2) {
+                event.preventDefault();
+                window.alert("Debes subir al menos 2 fotos de evidencia (en cualquier ítem del checklist y/o en la foto general del QC) para registrar el control.");
             }
         });
 

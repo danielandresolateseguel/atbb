@@ -65,7 +65,7 @@
         {% set qc_photos = qc["photo_path"]|audit_photo_paths %}
         {% if qc_photos %}
             <div class="evidence-block">
-                <strong>Foto del QC</strong>
+                <strong>Fotos del QC</strong>
                 {% for photo_src in qc_photos %}
                     {% if photo_src.startswith("http") %}
                         <a class="table-link" href="{{ photo_src }}" target="_blank">Abrir foto {{ loop.index }}</a>
