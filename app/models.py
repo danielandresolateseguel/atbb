@@ -5387,8 +5387,8 @@ def _annotate_finding_state(row):
             summary = "Hallazgo validado a la espera de verificación de eficacia."
         next_action = "Registrar verificación de eficacia"
     elif finding_status == "resuelto":
-        consolidated_key = "pendiente_validacion"
-        consolidated_label = "Pendiente validación"
+        consolidated_key = "cer_pve"
+        consolidated_label = "CER-PVE"
         consolidated_tone = "warning"
         next_action = "Validar cierre"
         summary = "El supervisor cerró el hallazgo y queda revisión gerencial."
