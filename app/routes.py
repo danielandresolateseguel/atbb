@@ -32,6 +32,7 @@ from app.models import (
     create_import_batch,
     create_qc_session,
     create_user,
+    count_findings,
     create_tnps_response,
     finalize_import_batch,
     get_audit_official_from_date,
@@ -5052,6 +5053,10 @@ def findings_list():
         "mobile_code": request.args.get("mobile_code", "").strip(),
         "location": request.args.get("location", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
+        "owner": request.args.get("owner", "").strip(),
+        "technician_supervisor": request.args.get("technician_supervisor", "").strip(),
+        "technician_center": request.args.get("technician_center", "").strip(),
+        "technician_company": request.args.get("technician_company", "").strip(),
         "section_key": request.args.get("section_key", "").strip(),
         "finding_status": request.args.get("finding_status", "").strip(),
         "priority": request.args.get("priority", "").strip(),
@@ -5063,12 +5068,31 @@ def findings_list():
     }
     auditor_user_id = current_auditor_user_id()
     supervisor_scope_names = current_supervisor_scope_names()
+    page_raw = (request.args.get("page") or "").strip()
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw))
+        except ValueError:
+            page = 1
+    page_size = 50
     if auditor_user_id is not None:
         filters["auditor"] = ""
+    findings_total = count_findings(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    page_count = max(1, (findings_total + page_size - 1) // page_size) if findings_total else 1
+    if page > page_count:
+        page = page_count
+    offset = (page - 1) * page_size
     findings = fetch_findings(
         filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
+        limit=page_size,
+        offset=offset,
     )
     finding_stats = fetch_finding_stats(
         filters,
@@ -5076,6 +5100,8 @@ def findings_list():
         supervisor_scope_names=supervisor_scope_names,
     )
     filter_active = any(filters.values())
+    has_prev_page = page > 1
+    has_next_page = (offset + page_size) < findings_total
     mobile_units = fetch_mobile_units()
     location_options = fetch_distinct_finding_locations(
         filters,
@@ -5088,9 +5114,11 @@ def findings_list():
         supervisor_scope_names=supervisor_scope_names,
     )
     section_options = [{"key": section["key"], "title": section["title"]} for section in CHECKLIST_SECTIONS]
+    return_to = safe_next_url(request.full_path if request.query_string else request.path) or url_for("main.findings_list")
     return render_template(
         "findings.html",
         findings=findings,
+        findings_total=findings_total,
         finding_stats=finding_stats,
         filters=filters,
         filter_active=filter_active,
@@ -5098,6 +5126,12 @@ def findings_list():
         location_options=location_options,
         auditor_options=auditor_options,
         section_options=section_options,
+        page=page,
+        page_size=page_size,
+        page_count=page_count,
+        has_prev_page=has_prev_page,
+        has_next_page=has_next_page,
+        return_to=return_to,
     )
 
 
@@ -5106,6 +5140,7 @@ def finding_detail(finding_id):
     if not can_view_findings():
         abort(403)
 
+    return_to = safe_next_url(request.args.get("return_to")) or url_for("main.findings_list")
     finding = fetch_finding_detail(
         finding_id,
         auditor_user_id=current_auditor_user_id(),
@@ -5114,7 +5149,7 @@ def finding_detail(finding_id):
     if not finding:
         abort(404)
     finding_events = fetch_finding_events(finding_id)
-    return render_template("finding_detail.html", finding=finding, finding_events=finding_events)
+    return render_template("finding_detail.html", finding=finding, finding_events=finding_events, return_to=return_to)
 
 
 @main.route("/findings/<int:finding_id>/respond", methods=["POST"])
@@ -5122,6 +5157,7 @@ def finding_respond(finding_id):
     if not can_respond_findings():
         abort(403)
 
+    return_to = safe_next_url(request.form.get("return_to")) or url_for("main.findings_list")
     finding = fetch_finding_detail(
         finding_id,
         auditor_user_id=current_auditor_user_id(),
@@ -5153,7 +5189,7 @@ def finding_respond(finding_id):
     except ValueError as exc:
         flash(str(exc), "error")
 
-    return redirect(url_for("main.finding_detail", finding_id=finding_id))
+    return redirect(url_for("main.finding_detail", finding_id=finding_id, return_to=return_to))
 
 
 @main.route("/findings/<int:finding_id>/validate", methods=["POST"])
@@ -5161,6 +5197,7 @@ def finding_validate(finding_id):
     if not can_validate_findings():
         abort(403)
 
+    return_to = safe_next_url(request.form.get("return_to")) or url_for("main.findings_list")
     finding = fetch_finding_detail(
         finding_id,
         auditor_user_id=current_auditor_user_id(),
@@ -5173,7 +5210,7 @@ def finding_validate(finding_id):
     validation_notes = (request.form.get("validation_notes") or "").strip().upper()
     if validation_action not in {"approve", "reject"}:
         flash("La accion de validacion no es valida.", "error")
-        return redirect(url_for("main.finding_detail", finding_id=finding_id))
+        return redirect(url_for("main.finding_detail", finding_id=finding_id, return_to=return_to))
 
     try:
         validate_finding(
@@ -5185,7 +5222,7 @@ def finding_validate(finding_id):
         flash("Validacion actualizada.", "success")
     except ValueError as exc:
         flash(str(exc), "error")
-    return redirect(url_for("main.finding_detail", finding_id=finding_id))
+    return redirect(url_for("main.finding_detail", finding_id=finding_id, return_to=return_to))
 
 
 @main.route("/findings/<int:finding_id>/effectiveness", methods=["POST"])
@@ -5193,6 +5230,7 @@ def finding_effectiveness_update(finding_id):
     if not can_verify_findings_effectiveness():
         abort(403)
 
+    return_to = safe_next_url(request.form.get("return_to")) or url_for("main.findings_list")
     finding = fetch_finding_detail(
         finding_id,
         auditor_user_id=current_auditor_user_id(),
@@ -5217,7 +5255,7 @@ def finding_effectiveness_update(finding_id):
     except ValueError as exc:
         flash(str(exc), "error")
 
-    return redirect(url_for("main.finding_detail", finding_id=finding_id))
+    return redirect(url_for("main.finding_detail", finding_id=finding_id, return_to=return_to))
 
 
 @main.route("/audits/<int:audit_id>/record-scope", methods=["POST"])

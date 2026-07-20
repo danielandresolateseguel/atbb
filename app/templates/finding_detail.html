@@ -16,7 +16,7 @@
         <span class="badge badge-{{ finding['finding_status']|replace('_', '-') }}">{{ finding["finding_status"]|finding_status_label }}</span>
         <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
         <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=finding['audit_id']) }}">Ver auditoría</a>
-        <a class="button button-secondary" href="{{ url_for('main.findings_list') }}">Volver a la bandeja</a>
+        <a class="button button-secondary" href="{{ return_to }}">Volver a la bandeja</a>
     </div>
 </section>
 
@@ -177,6 +177,7 @@
             </div>
         </div>
         <form method="post" action="{{ url_for('main.finding_respond', finding_id=finding['id']) }}" enctype="multipart/form-data" class="form-grid" id="finding_response_form">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
             <label>
                 <span>Estado</span>
                 <select name="finding_status" required id="finding_status_select">
@@ -236,6 +237,7 @@
             </div>
         </div>
         <form method="post" action="{{ url_for('main.finding_validate', finding_id=finding['id']) }}" class="form-grid" id="finding_validation_form">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
             <label>
                 <span>Acción</span>
                 <select name="validation_action" required>
@@ -261,6 +263,7 @@
             </div>
         </div>
         <form method="post" action="{{ url_for('main.finding_effectiveness_update', finding_id=finding['id']) }}" class="form-grid" id="finding_effectiveness_form">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
             <label>
                 <span>Resultado</span>
                 <select name="effectiveness_status" required>
