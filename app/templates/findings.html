@@ -78,7 +78,7 @@
             </select>
         </label>
         <label>
-            <span>Ubicación</span>
+            <span>Ubicación / Centro</span>
             <select name="location">
                 <option value="" {% if not filters.location %}selected{% endif %}>Todas</option>
                 {% for location_name in location_options %}
@@ -101,15 +101,12 @@
         </label>
         <label>
             <span>Supervisor</span>
-            <input type="text" name="technician_supervisor" value="{{ filters.technician_supervisor }}" placeholder="Supervisor del tecnico">
-        </label>
-        <label>
-            <span>Centro</span>
-            <input type="text" name="technician_center" value="{{ filters.technician_center }}" placeholder="Centro del tecnico">
-        </label>
-        <label>
-            <span>Empresa</span>
-            <input type="text" name="technician_company" value="{{ filters.technician_company }}" placeholder="Empresa del tecnico">
+            <select name="technician_supervisor">
+                <option value="" {% if not filters.technician_supervisor %}selected{% endif %}>Todos</option>
+                {% for supervisor_name in supervisor_options %}
+                    <option value="{{ supervisor_name }}" {% if filters.technician_supervisor == supervisor_name %}selected{% endif %}>{{ supervisor_name }}</option>
+                {% endfor %}
+            </select>
         </label>
         <label>
             <span>Sección</span>
@@ -187,70 +184,70 @@
                     <tr>
                         {% set next_dir = "asc" if filters.sort != "audit_date" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'audit_date' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='audit_date', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'audit_date' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='audit_date', dir=next_dir) }}">
                                 Fecha
                                 <span class="table-sort-indicator">{% if filters.sort == 'audit_date' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "mobile_code" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'mobile_code' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='mobile_code', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'mobile_code' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='mobile_code', dir=next_dir) }}">
                                 Móvil / Técnico
                                 <span class="table-sort-indicator">{% if filters.sort == 'mobile_code' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "section_title" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'section_title' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='section_title', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'section_title' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='section_title', dir=next_dir) }}">
                                 Sección
                                 <span class="table-sort-indicator">{% if filters.sort == 'section_title' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "item_label" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'item_label' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='item_label', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'item_label' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='item_label', dir=next_dir) }}">
                                 Ítem
                                 <span class="table-sort-indicator">{% if filters.sort == 'item_label' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "non_compliance_reason" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'non_compliance_reason' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='non_compliance_reason', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'non_compliance_reason' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='non_compliance_reason', dir=next_dir) }}">
                                 Motivo
                                 <span class="table-sort-indicator">{% if filters.sort == 'non_compliance_reason' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "supervisor_name" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'supervisor_name' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='supervisor_name', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'supervisor_name' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='supervisor_name', dir=next_dir) }}">
                                 Supervisor
                                 <span class="table-sort-indicator">{% if filters.sort == 'supervisor_name' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "priority" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'priority' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='priority', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'priority' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='priority', dir=next_dir) }}">
                                 Prioridad
                                 <span class="table-sort-indicator">{% if filters.sort == 'priority' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "finding_status" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'finding_status' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='finding_status', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'finding_status' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='finding_status', dir=next_dir) }}">
                                 Estado
                                 <span class="table-sort-indicator">{% if filters.sort == 'finding_status' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "validation_status" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'validation_status' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='validation_status', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'validation_status' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='validation_status', dir=next_dir) }}">
                                 Validación
                                 <span class="table-sort-indicator">{% if filters.sort == 'validation_status' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
                         {% set next_dir = "asc" if filters.sort != "effectiveness_due_date" or filters.dir == "desc" else "desc" %}
                         <th>
-                            <a class="table-sort {% if filters.sort == 'effectiveness_due_date' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='effectiveness_due_date', dir=next_dir) }}">
+                            <a class="table-sort {% if filters.sort == 'effectiveness_due_date' %}is-active{% endif %}" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, page=page, sort='effectiveness_due_date', dir=next_dir) }}">
                                 Eficacia
                                 <span class="table-sort-indicator">{% if filters.sort == 'effectiveness_due_date' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
@@ -268,7 +265,7 @@
                             <td>{{ finding["non_compliance_reason"]|non_compliance_reason_label if finding["non_compliance_reason"] else "-" }}</td>
                             <td>{{ finding["supervisor_name"] or "-" }}</td>
                             <td><span class="metric-pill {% if finding['priority'] == 'alta' %}metric-danger{% else %}metric-warning{% endif %}">{{ finding["priority"]|capitalize }}</span></td>
-                            <td><span class="metric-pill metric-wrap {% if finding['finding_status'] == 'cerrado_definitivo' or finding['finding_status'] == 'validado' %}metric-ok{% elif finding['finding_status'] == 'reabierto' %}metric-danger{% elif finding['finding_status'] == 'resuelto' %}metric-warning{% else %}metric-neutral{% endif %}">{{ finding["finding_status"]|finding_status_label }}</span></td>
+                            <td><span class="metric-pill metric-wrap {% if finding['consolidated_status_tone'] == 'ok' %}metric-ok{% elif finding['consolidated_status_tone'] == 'danger' %}metric-danger{% elif finding['consolidated_status_tone'] == 'warning' %}metric-warning{% else %}metric-neutral{% endif %}">{{ finding["consolidated_status_label"] }}</span></td>
                             <td><span class="metric-pill {% if finding['validation_status'] == 'validado' %}metric-ok{% elif finding['validation_status'] == 'rechazado' %}metric-danger{% else %}metric-neutral{% endif %}">{{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "Sin validar" }}</span></td>
                             <td>
                                 {% if finding["effectiveness_due_date"] %}
@@ -288,10 +285,10 @@
         {% if findings_total > page_size %}
             <div class="button-row">
                 {% if has_prev_page %}
-                    <a class="button button-secondary" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, sort=filters.sort, dir=filters.dir, page=page-1) }}">Anterior</a>
+                    <a class="button button-secondary" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, sort=filters.sort, dir=filters.dir, page=page-1) }}">Anterior</a>
                 {% endif %}
                 {% if has_next_page %}
-                    <a class="button button-secondary" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, technician_center=filters.technician_center, technician_company=filters.technician_company, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, sort=filters.sort, dir=filters.dir, page=page+1) }}">Siguiente</a>
+                    <a class="button button-secondary" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, q=filters.q, sort=filters.sort, dir=filters.dir, page=page+1) }}">Siguiente</a>
                 {% endif %}
                 <span>Página {{ page }} de {{ page_count }}.</span>
             </div>

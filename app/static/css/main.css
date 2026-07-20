@@ -1515,6 +1515,58 @@ th .table-sort.is-active .table-sort-indicator {
     color: var(--muted);
 }
 
+.helper-copy {
+    margin: 0;
+    color: var(--muted);
+}
+
+.finding-checklist,
+.finding-timeline {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.workflow-step,
+.timeline-step {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-alt);
+}
+
+.workflow-step p,
+.timeline-step p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.workflow-step.is-complete,
+.timeline-step.is-complete {
+    border-color: rgba(22, 163, 74, 0.22);
+    background: var(--success-soft);
+}
+
+.workflow-step.is-current,
+.timeline-step.is-current {
+    border-color: rgba(245, 158, 11, 0.22);
+    background: var(--warning-soft);
+}
+
+.workflow-step.is-issue,
+.timeline-step.is-issue {
+    border-color: rgba(220, 38, 38, 0.18);
+    background: var(--danger-soft);
+}
+
+.timeline-step-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+}
+
 .table-link {
     color: var(--primary);
     font-weight: 700;

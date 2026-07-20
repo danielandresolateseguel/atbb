@@ -1707,7 +1707,7 @@ def ensure_qc_columns_postgres(cursor):
     cursor.execute("ALTER TABLE qc_sessions ADD COLUMN IF NOT EXISTS photo_path TEXT")
 
 
-def create_finding_event(finding_id, actor_user_id, event_type, detail=None):
+def create_finding_event(finding_id, actor_user_id, event_type, detail=None, connection=None):
     safe_type = (event_type or "").strip().lower()
     if not safe_type:
         return False
@@ -1718,7 +1718,8 @@ def create_finding_event(finding_id, actor_user_id, event_type, detail=None):
         else:
             detail_value = json.dumps(detail, ensure_ascii=False)
 
-    get_db().execute(
+    active_connection = connection or get_db()
+    active_connection.execute(
         """
         INSERT INTO audit_finding_events (finding_id, actor_user_id, event_type, detail)
         VALUES (?, ?, ?, ?)
@@ -3824,6 +3825,31 @@ def fetch_distinct_finding_auditors(filters=None, auditor_user_id=None, supervis
     return [dict(row)["auditor_name"] for row in rows]
 
 
+def fetch_distinct_finding_supervisors(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["technician_supervisor"] = ""
+    where_sql, params = _build_findings_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(audits.technician_supervisor_snapshot, technicians.supervisor_name, '')) AS supervisor_name
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN users AS auditor_users ON auditor_users.id = audits.auditor_user_id
+        LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(audits.technician_supervisor_snapshot, technicians.supervisor_name, '')) != ''
+        ORDER BY supervisor_name ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["supervisor_name"] for row in rows]
+
+
 def fetch_audit_reports_management_summary(filters=None, auditor_user_id=None):
     where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
     row = get_db().execute(
@@ -4745,8 +4771,6 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
     auditor = (filters.get("auditor") or "").strip()
     owner = (filters.get("owner") or "").strip()
     technician_supervisor = (filters.get("technician_supervisor") or "").strip()
-    technician_center = (filters.get("technician_center") or "").strip()
-    technician_company = (filters.get("technician_company") or "").strip()
     section_key = (filters.get("section_key") or "").strip()
     q = (filters.get("q") or "").strip()
     effectiveness = (filters.get("effectiveness") or "").strip().lower()
@@ -4798,14 +4822,6 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
         where_clauses.append("COALESCE(audits.technician_supervisor_snapshot, technicians.supervisor_name, '') = ?")
         params.append(technician_supervisor)
 
-    if technician_center:
-        where_clauses.append("COALESCE(audits.technician_center_snapshot, technicians.center_name, '') = ?")
-        params.append(technician_center)
-
-    if technician_company:
-        where_clauses.append("COALESCE(audits.technician_company_snapshot, technicians.company_name, '') = ?")
-        params.append(technician_company)
-
     if section_key:
         where_clauses.append("COALESCE(audit_items.section_key, '') = ?")
         params.append(section_key)
@@ -4822,15 +4838,13 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 "COALESCE(auditor_users.username, audits.auditor_name, '') ILIKE ? OR "
                 "COALESCE(owners.username, '') ILIKE ? OR "
                 "COALESCE(audits.technician_supervisor_snapshot, technicians.supervisor_name, '') ILIKE ? OR "
-                "COALESCE(audits.technician_center_snapshot, technicians.center_name, '') ILIKE ? OR "
-                "COALESCE(audits.technician_company_snapshot, technicians.company_name, '') ILIKE ? OR "
                 "COALESCE(technicians.name, audits.technician_display_name, '') ILIKE ? OR "
                 "COALESCE(audit_items.section_title, '') ILIKE ? OR "
                 "COALESCE(audit_items.item_label, '') ILIKE ? OR "
                 "COALESCE(audit_findings.supervisor_name, '') ILIKE ?"
                 ")"
             )
-            params.extend([like_value] * 13)
+            params.extend([like_value] * 11)
         else:
             where_clauses.append(
                 "("
@@ -4841,8 +4855,6 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 "LOWER(COALESCE(auditor_users.username, audits.auditor_name, '')) LIKE ? OR "
                 "LOWER(COALESCE(owners.username, '')) LIKE ? OR "
                 "LOWER(COALESCE(audits.technician_supervisor_snapshot, technicians.supervisor_name, '')) LIKE ? OR "
-                "LOWER(COALESCE(audits.technician_center_snapshot, technicians.center_name, '')) LIKE ? OR "
-                "LOWER(COALESCE(audits.technician_company_snapshot, technicians.company_name, '')) LIKE ? OR "
                 "LOWER(COALESCE(technicians.name, audits.technician_display_name, '')) LIKE ? OR "
                 "LOWER(COALESCE(audit_items.section_title, '')) LIKE ? OR "
                 "LOWER(COALESCE(audit_items.item_label, '')) LIKE ? OR "
@@ -4850,7 +4862,7 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 ")"
             )
             lowered = like_value.lower()
-            params.extend([lowered] * 13)
+            params.extend([lowered] * 11)
 
     if effectiveness in {"pendiente", "por_vencer", "vencida"}:
         where_clauses.append("COALESCE(audit_findings.validation_status, '') = 'validado'")
@@ -5154,6 +5166,9 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
     result = dict(row) if row else None
     if result:
         _annotate_effectiveness_due(result)
+        _annotate_finding_state(result)
+        result["completion_checklist"] = build_finding_completion_checklist(result)
+        result["lifecycle_timeline"] = build_finding_timeline(result)
     return result
 
 
@@ -5322,7 +5337,213 @@ def _annotate_findings_effectiveness(rows):
     today = _today_in_app_tz()
     for row in rows:
         _annotate_effectiveness_due(row, today=today)
+        _annotate_finding_state(row)
     return rows
+
+
+def _annotate_finding_state(row):
+    if not isinstance(row, dict):
+        return row
+
+    finding_status = (row.get("finding_status") or "").strip().lower()
+    validation_status = (row.get("validation_status") or "").strip().lower()
+    effectiveness_status = (row.get("effectiveness_status") or "").strip().lower()
+    due_bucket = (row.get("effectiveness_due_bucket") or "").strip().lower()
+
+    consolidated_key = "nuevo"
+    consolidated_label = "Nuevo"
+    consolidated_tone = "neutral"
+    next_action = "Responder hallazgo"
+    summary = "Pendiente de gestión inicial del supervisor."
+
+    if effectiveness_status == "eficaz" or finding_status == "cerrado_definitivo":
+        consolidated_key = "cerrado_definitivo"
+        consolidated_label = "Cerrado definitivo"
+        consolidated_tone = "ok"
+        next_action = "Sin acción pendiente"
+        summary = "Hallazgo validado y verificado como eficaz."
+    elif finding_status == "reabierto" and effectiveness_status == "no_eficaz":
+        consolidated_key = "reabierto_no_eficaz"
+        consolidated_label = "Reabierto por no eficacia"
+        consolidated_tone = "danger"
+        next_action = "Corregir y volver a cerrar"
+        summary = "La eficacia fue rechazada y el hallazgo volvió al supervisor."
+    elif finding_status == "reabierto" or validation_status == "rechazado":
+        consolidated_key = "reabierto"
+        consolidated_label = "Reabierto"
+        consolidated_tone = "danger"
+        next_action = "Corregir y volver a cerrar"
+        summary = "El cierre fue rechazado y requiere una nueva gestión."
+    elif validation_status == "validado":
+        consolidated_key = "validado_pendiente_eficacia"
+        consolidated_label = "Validado pendiente eficacia"
+        consolidated_tone = "warning"
+        if due_bucket == "overdue":
+            consolidated_tone = "danger"
+            summary = "Hallazgo validado con verificación de eficacia vencida."
+        elif due_bucket == "due_soon":
+            summary = "Hallazgo validado con verificación de eficacia próxima a vencer."
+        else:
+            summary = "Hallazgo validado a la espera de verificación de eficacia."
+        next_action = "Registrar verificación de eficacia"
+    elif finding_status == "resuelto":
+        consolidated_key = "pendiente_validacion"
+        consolidated_label = "Pendiente validación"
+        consolidated_tone = "warning"
+        next_action = "Validar cierre"
+        summary = "El supervisor cerró el hallazgo y queda revisión gerencial."
+    elif finding_status == "respondido":
+        consolidated_key = "en_tratamiento"
+        consolidated_label = "En tratamiento"
+        consolidated_tone = "neutral"
+        next_action = "Completar cierre"
+        summary = "Existe respuesta del supervisor, pero el cierre aún no está completo."
+
+    row["consolidated_status_key"] = consolidated_key
+    row["consolidated_status_label"] = consolidated_label
+    row["consolidated_status_tone"] = consolidated_tone
+    row["consolidated_next_action"] = next_action
+    row["consolidated_status_summary"] = summary
+    return row
+
+
+def build_finding_completion_checklist(row):
+    response_ready = bool((row.get("response_notes") or "").strip())
+    evidence_ready = bool(row.get("evidence_path"))
+    criteria_ready = bool((row.get("closure_criteria") or "").strip())
+    due_date_ready = bool((row.get("effectiveness_due_date") or "").strip())
+    validation_status = (row.get("validation_status") or "").strip().lower()
+    effectiveness_status = (row.get("effectiveness_status") or "").strip().lower()
+
+    checklist = [
+        {
+            "label": "Respuesta del supervisor",
+            "state": "complete" if response_ready else "pending",
+            "detail": "Registrada." if response_ready else "Falta documentar la gestión realizada.",
+        },
+        {
+            "label": "Evidencia fotográfica",
+            "state": "complete" if evidence_ready else "pending",
+            "detail": "Cargada." if evidence_ready else "Falta adjuntar evidencia para cierre.",
+        },
+        {
+            "label": "Criterio de cierre",
+            "state": "complete" if criteria_ready else "pending",
+            "detail": "Registrado." if criteria_ready else "Falta explicar cómo se corrigió el hallazgo.",
+        },
+        {
+            "label": "Fecha de eficacia",
+            "state": "complete" if due_date_ready else "pending",
+            "detail": (row.get("effectiveness_due_date") or "").strip() or "Falta programar la verificación de eficacia.",
+        },
+    ]
+
+    if validation_status == "validado":
+        checklist.append(
+            {
+                "label": "Validación gerencial",
+                "state": "complete",
+                "detail": "Cierre validado por gerencia.",
+            }
+        )
+    elif validation_status == "rechazado":
+        checklist.append(
+            {
+                "label": "Validación gerencial",
+                "state": "issue",
+                "detail": "El cierre fue rechazado y el hallazgo quedó reabierto.",
+            }
+        )
+    else:
+        checklist.append(
+            {
+                "label": "Validación gerencial",
+                "state": "pending",
+                "detail": "Aún no pasa por revisión gerencial.",
+            }
+        )
+
+    if effectiveness_status == "eficaz":
+        checklist.append(
+            {
+                "label": "Verificación de eficacia",
+                "state": "complete",
+                "detail": "La acción correctiva fue eficaz.",
+            }
+        )
+    elif effectiveness_status == "no_eficaz":
+        checklist.append(
+            {
+                "label": "Verificación de eficacia",
+                "state": "issue",
+                "detail": "La acción correctiva no fue eficaz y el hallazgo se reabrió.",
+            }
+        )
+    elif validation_status == "validado":
+        checklist.append(
+            {
+                "label": "Verificación de eficacia",
+                "state": "pending",
+                "detail": "Está pendiente el control post-cierre.",
+            }
+        )
+    else:
+        checklist.append(
+            {
+                "label": "Verificación de eficacia",
+                "state": "pending",
+                "detail": "Se habilita una vez validado el cierre.",
+            }
+        )
+
+    completed_count = sum(1 for item in checklist if item["state"] == "complete")
+    pending_count = len(checklist) - completed_count
+    return {
+        "items": checklist,
+        "completed_count": completed_count,
+        "pending_count": pending_count,
+        "total_count": len(checklist),
+    }
+
+
+def build_finding_timeline(row):
+    validation_status = (row.get("validation_status") or "").strip().lower()
+    effectiveness_status = (row.get("effectiveness_status") or "").strip().lower()
+    finding_status = (row.get("finding_status") or "").strip().lower()
+
+    timeline = [
+        {
+            "label": "Creado",
+            "date": row.get("created_at"),
+            "state": "complete",
+            "detail": "Hallazgo generado desde la auditoría.",
+        },
+        {
+            "label": "Respondido",
+            "date": row.get("responded_at"),
+            "state": "complete" if row.get("responded_at") else ("current" if finding_status in {"respondido", "resuelto", "reabierto", "cerrado_definitivo"} else "pending"),
+            "detail": "Gestión documentada por el supervisor.",
+        },
+        {
+            "label": "CER-PVE",
+            "date": row.get("resolved_at"),
+            "state": "complete" if row.get("resolved_at") and finding_status in {"resuelto", "cerrado_definitivo"} else ("issue" if finding_status == "reabierto" else ("current" if finding_status == "respondido" else "pending")),
+            "detail": "Cierre operativo con evidencia y criterio.",
+        },
+        {
+            "label": "Validación",
+            "date": row.get("validated_at"),
+            "state": "complete" if validation_status == "validado" else ("issue" if validation_status == "rechazado" else ("current" if finding_status == "resuelto" else "pending")),
+            "detail": "Revisión final del cierre por gerencia.",
+        },
+        {
+            "label": "Eficacia",
+            "date": row.get("effectiveness_verified_at"),
+            "state": "complete" if effectiveness_status == "eficaz" else ("issue" if effectiveness_status == "no_eficaz" else ("current" if validation_status == "validado" else "pending")),
+            "detail": "Verificación posterior para confirmar efectividad.",
+        },
+    ]
+    return timeline
 
 
 def update_finding_response(
@@ -5347,11 +5568,13 @@ def update_finding_response(
         SELECT
             finding_status,
             validation_status,
+            validation_notes,
             response_notes,
             evidence_path,
             closure_criteria,
             effectiveness_due_date,
-            effectiveness_status
+            effectiveness_status,
+            effectiveness_notes
         FROM audit_findings
         WHERE id = ?
         """,
@@ -5363,6 +5586,7 @@ def update_finding_response(
     if isinstance(existing, dict):
         previous_finding_status = (existing.get("finding_status") or "").strip().lower()
         previous_validation_status = (existing.get("validation_status") or "").strip().lower()
+        previous_validation_notes = existing.get("validation_notes")
         previous_response_notes = existing.get("response_notes")
         previous_evidence = existing.get("evidence_path")
         previous_criteria = existing.get("closure_criteria")
@@ -5371,19 +5595,25 @@ def update_finding_response(
     else:
         previous_finding_status = (existing[0] or "").strip().lower()
         previous_validation_status = (existing[1] or "").strip().lower()
-        previous_response_notes = existing[2]
-        previous_evidence = existing[3]
-        previous_criteria = existing[4]
-        previous_due_date = existing[5]
-        previous_effectiveness_status = existing[6]
+        previous_validation_notes = existing[2]
+        previous_response_notes = existing[3]
+        previous_evidence = existing[4]
+        previous_criteria = existing[5]
+        previous_due_date = existing[6]
+        previous_effectiveness_status = existing[7]
 
     if previous_validation_status == "validado" or previous_finding_status == "validado":
         raise ValueError("No puedes editar un hallazgo ya validado.")
 
+    reset_cycle = previous_finding_status == "reabierto" or previous_validation_status == "rechazado" or previous_effectiveness_status == "no_eficaz"
     evidence_value = evidence_path if evidence_path is not None else previous_evidence
     criteria_value = (closure_criteria or "").strip() or previous_criteria or None
-    due_date_value = _normalize_effectiveness_due_date(effectiveness_due_date) or previous_due_date or None
-    effectiveness_status_value = (previous_effectiveness_status or "").strip() or None
+    due_date_value = _normalize_effectiveness_due_date(effectiveness_due_date)
+    if not due_date_value and not reset_cycle:
+        due_date_value = previous_due_date or None
+    effectiveness_status_value = None if reset_cycle else ((previous_effectiveness_status or "").strip() or None)
+    validation_status_value = None if reset_cycle else (previous_validation_status or None)
+    validation_notes_value = None if reset_cycle else previous_validation_notes
 
     if safe_status == "resuelto":
         if not evidence_value:
@@ -5417,9 +5647,16 @@ def update_finding_response(
             closure_criteria = ?,
             effectiveness_due_date = ?,
             effectiveness_status = ?,
+            effectiveness_notes = CASE WHEN ? THEN NULL ELSE effectiveness_notes END,
+            validation_status = ?,
+            validation_notes = ?,
+            validated_by_user_id = CASE WHEN ? THEN NULL ELSE validated_by_user_id END,
+            validated_at = CASE WHEN ? THEN NULL ELSE validated_at END,
+            effectiveness_verified_by_user_id = CASE WHEN ? THEN NULL ELSE effectiveness_verified_by_user_id END,
+            effectiveness_verified_at = CASE WHEN ? THEN NULL ELSE effectiveness_verified_at END,
             responded_by_user_id = ?,
             responded_at = CURRENT_TIMESTAMP,
-            resolved_at = CASE WHEN ? = 'resuelto' THEN CURRENT_TIMESTAMP ELSE resolved_at END,
+            resolved_at = CASE WHEN ? = 'resuelto' THEN CURRENT_TIMESTAMP ELSE NULL END,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
@@ -5430,6 +5667,13 @@ def update_finding_response(
             criteria_value,
             due_date_value,
             effectiveness_status_value,
+            reset_cycle,
+            validation_status_value,
+            validation_notes_value,
+            reset_cycle,
+            reset_cycle,
+            reset_cycle,
+            reset_cycle,
             responded_by_user_id,
             safe_status,
             finding_id,
@@ -5527,8 +5771,8 @@ def validate_finding(finding_id, validated_by_user_id, approved, validation_note
             SET
                 validation_status = ?,
                 validation_notes = ?,
-                validated_by_user_id = ?,
-                validated_at = CURRENT_TIMESTAMP,
+                validated_by_user_id = NULL,
+                validated_at = NULL,
                 finding_status = ?,
                 effectiveness_due_date = NULL,
                 effectiveness_status = NULL,
@@ -5541,7 +5785,6 @@ def validate_finding(finding_id, validated_by_user_id, approved, validation_note
             (
                 status,
                 notes_value,
-                validated_by_user_id,
                 "reabierto",
                 finding_id,
             ),
@@ -5632,6 +5875,9 @@ def update_finding_effectiveness(
                     effectiveness_notes = ?,
                     finding_status = 'reabierto',
                     validation_status = 'rechazado',
+                    validated_by_user_id = NULL,
+                    validated_at = NULL,
+                    effectiveness_due_date = NULL,
                     effectiveness_verified_by_user_id = ?,
                     effectiveness_verified_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
@@ -5664,6 +5910,11 @@ def create_audit_findings(audit_id, audit_data, inserted_items, connection=None)
     connection = connection or get_db()
     supervisor_name = normalize_supervisor_scope_name(audit_data.get("technician_supervisor_snapshot"))
     owner_user_id = find_owner_user_id_by_supervisor_name(supervisor_name)
+    owner_username = None
+    if owner_user_id:
+        owner_row = connection.execute("SELECT username FROM users WHERE id = ?", (owner_user_id,)).fetchone()
+        if owner_row:
+            owner_username = owner_row["username"] if isinstance(owner_row, dict) else owner_row[0]
 
     finding_rows = []
     for item in inserted_items:
@@ -5685,21 +5936,60 @@ def create_audit_findings(audit_id, audit_data, inserted_items, connection=None)
     if not finding_rows:
         return 0
 
-    connection.executemany(
-        """
-        INSERT INTO audit_findings (
-            audit_id,
-            audit_item_id,
-            technician_id,
-            supervisor_name,
-            owner_user_id,
-            item_status,
-            priority
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        finding_rows,
-    )
-    return len(finding_rows)
+    inserted_count = 0
+    for finding_row in finding_rows:
+        if is_postgres():
+            inserted = connection.execute(
+                """
+                INSERT INTO audit_findings (
+                    audit_id,
+                    audit_item_id,
+                    technician_id,
+                    supervisor_name,
+                    owner_user_id,
+                    item_status,
+                    priority
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                finding_row,
+            ).fetchone()
+            finding_id = inserted["id"] if isinstance(inserted, dict) else inserted[0]
+        else:
+            cursor = connection.execute(
+                """
+                INSERT INTO audit_findings (
+                    audit_id,
+                    audit_item_id,
+                    technician_id,
+                    supervisor_name,
+                    owner_user_id,
+                    item_status,
+                    priority
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                finding_row,
+            )
+            finding_id = cursor.lastrowid
+
+        create_finding_event(
+            finding_id,
+            actor_user_id=None,
+            event_type="creacion",
+            detail="Hallazgo creado automáticamente desde la auditoría.",
+            connection=connection,
+        )
+        if owner_username:
+            create_finding_event(
+                finding_id,
+                actor_user_id=None,
+                event_type="asignacion",
+                detail=f"Asignado a {owner_username}.",
+                connection=connection,
+            )
+        inserted_count += 1
+
+    return inserted_count
 
 
 def create_audit_supply_requests(audit_id, supply_requests):

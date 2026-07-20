@@ -74,6 +74,7 @@ from app.models import (
     fetch_distinct_auditors,
     fetch_distinct_finding_auditors,
     fetch_distinct_finding_locations,
+    fetch_distinct_finding_supervisors,
     fetch_distinct_storage_centers,
     fetch_distinct_warehouse_codes,
     fetch_distinct_warehouse_types,
@@ -5055,8 +5056,6 @@ def findings_list():
         "auditor": request.args.get("auditor", "").strip(),
         "owner": request.args.get("owner", "").strip(),
         "technician_supervisor": request.args.get("technician_supervisor", "").strip(),
-        "technician_center": request.args.get("technician_center", "").strip(),
-        "technician_company": request.args.get("technician_company", "").strip(),
         "section_key": request.args.get("section_key", "").strip(),
         "finding_status": request.args.get("finding_status", "").strip(),
         "priority": request.args.get("priority", "").strip(),
@@ -5113,6 +5112,11 @@ def findings_list():
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+    supervisor_options = fetch_distinct_finding_supervisors(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
     section_options = [{"key": section["key"], "title": section["title"]} for section in CHECKLIST_SECTIONS]
     return_to = safe_next_url(request.full_path if request.query_string else request.path) or url_for("main.findings_list")
     return render_template(
@@ -5125,6 +5129,7 @@ def findings_list():
         mobile_units=mobile_units,
         location_options=location_options,
         auditor_options=auditor_options,
+        supervisor_options=supervisor_options,
         section_options=section_options,
         page=page,
         page_size=page_size,

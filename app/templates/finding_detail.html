@@ -11,12 +11,69 @@
         <p class="hero-copy">
             {{ finding["audit_date"] }} | Auditoría {{ finding["audit_id"] }} | {% if finding["mobile_code"] %}Móvil {{ finding["mobile_code"] }} | {% endif %}{{ finding["technician_name"] }}
         </p>
+        <p class="hero-copy">{{ finding["consolidated_status_summary"] }}</p>
     </div>
     <div class="hero-actions no-print">
-        <span class="badge badge-{{ finding['finding_status']|replace('_', '-') }}">{{ finding["finding_status"]|finding_status_label }}</span>
+        <span class="metric-pill {% if finding['consolidated_status_tone'] == 'ok' %}metric-ok{% elif finding['consolidated_status_tone'] == 'danger' %}metric-danger{% elif finding['consolidated_status_tone'] == 'warning' %}metric-warning{% else %}metric-neutral{% endif %}">{{ finding["consolidated_status_label"] }}</span>
         <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
         <a class="button button-secondary" href="{{ url_for('main.audit_detail', audit_id=finding['audit_id']) }}">Ver auditoría</a>
         <a class="button button-secondary" href="{{ return_to }}">Volver a la bandeja</a>
+    </div>
+</section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Estado</p>
+                <h3>Lectura consolidada</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Estado consolidado:</strong> {{ finding["consolidated_status_label"] }}</p>
+            <p><strong>Próxima acción:</strong> {{ finding["consolidated_next_action"] }}</p>
+            <p><strong>Estado operativo:</strong> {{ finding["finding_status"]|finding_status_label }}</p>
+            <p><strong>Validación:</strong> {{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "Pendiente" }}</p>
+            <p><strong>Eficacia:</strong> {{ finding["effectiveness_status"]|replace('_', ' ')|capitalize if finding["effectiveness_status"] else "Pendiente" }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Checklist</p>
+                <h3>Completitud del cierre</h3>
+            </div>
+        </div>
+        <p class="helper-copy">{{ finding["completion_checklist"]["completed_count"] }} de {{ finding["completion_checklist"]["total_count"] }} puntos completados.</p>
+        <div class="finding-checklist">
+            {% for item in finding["completion_checklist"]["items"] %}
+                <article class="workflow-step is-{{ item['state'] }}">
+                    <strong>{{ item["label"] }}</strong>
+                    <p>{{ item["detail"] }}</p>
+                </article>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="card info-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Timeline</p>
+            <h3>Ciclo de vida</h3>
+        </div>
+    </div>
+    <div class="finding-timeline">
+        {% for step in finding["lifecycle_timeline"] %}
+            <article class="timeline-step is-{{ step['state'] }}">
+                <div class="timeline-step-head">
+                    <strong>{{ step["label"] }}</strong>
+                    <span>{{ step["date"]|ar_dt if step["date"] else "Pendiente" }}</span>
+                </div>
+                <p>{{ step["detail"] }}</p>
+            </article>
+        {% endfor %}
     </div>
 </section>
 
@@ -303,8 +360,22 @@
                     {% for ev in finding_events %}
                         <tr>
                             <td>{{ ev["created_at"]|ar_dt }}</td>
-                            <td>{{ ev["actor_username"] or "-" }}</td>
-                            <td>{{ ev["event_type"]|replace('_', ' ')|capitalize }}</td>
+                            <td>{{ ev["actor_username"] or "Sistema" }}</td>
+                            <td>
+                                {% if ev["event_type"] == "creacion" %}
+                                    Creación
+                                {% elif ev["event_type"] == "asignacion" %}
+                                    Asignación
+                                {% elif ev["event_type"] == "respuesta" %}
+                                    Respuesta
+                                {% elif ev["event_type"] == "validacion" %}
+                                    Validación
+                                {% elif ev["event_type"] == "eficacia" %}
+                                    Eficacia
+                                {% else %}
+                                    {{ ev["event_type"]|replace('_', ' ')|capitalize }}
+                                {% endif %}
+                            </td>
                             <td>{{ ev["detail"] or "-" }}</td>
                         </tr>
                     {% endfor %}
