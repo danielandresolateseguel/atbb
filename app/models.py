@@ -3778,6 +3778,52 @@ def fetch_distinct_auditors():
     return [dict(row)["auditor_name"] for row in rows]
 
 
+def fetch_distinct_finding_locations(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["location"] = ""
+    where_sql, params = _build_findings_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(audits.location, '')) AS location
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        LEFT JOIN users AS auditor_users ON auditor_users.id = audits.auditor_user_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(audits.location, '')) != ''
+        ORDER BY location ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["location"] for row in rows]
+
+
+def fetch_distinct_finding_auditors(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["auditor"] = ""
+    where_sql, params = _build_findings_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(auditor_users.username, audits.auditor_name, '')) AS auditor_name
+        FROM audit_findings
+        INNER JOIN audits ON audits.id = audit_findings.audit_id
+        LEFT JOIN users AS auditor_users ON auditor_users.id = audits.auditor_user_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(auditor_users.username, audits.auditor_name, '')) != ''
+        ORDER BY auditor_name ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["auditor_name"] for row in rows]
+
+
 def fetch_audit_reports_management_summary(filters=None, auditor_user_id=None):
     where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
     row = get_db().execute(
@@ -4695,6 +4741,8 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
     validation_status = (filters.get("validation_status") or "").strip()
     audit_id = (filters.get("audit_id") or "").strip()
     mobile_code = (filters.get("mobile_code") or "").strip()
+    location = (filters.get("location") or "").strip()
+    auditor = (filters.get("auditor") or "").strip()
     section_key = (filters.get("section_key") or "").strip()
     q = (filters.get("q") or "").strip()
     effectiveness = (filters.get("effectiveness") or "").strip().lower()
@@ -4730,6 +4778,14 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
         where_clauses.append("COALESCE(mobile_units.mobile_code, '') = ?")
         params.append(mobile_code)
 
+    if location:
+        where_clauses.append("COALESCE(audits.location, '') = ?")
+        params.append(location)
+
+    if auditor:
+        where_clauses.append("COALESCE(auditor_users.username, audits.auditor_name, '') = ?")
+        params.append(auditor)
+
     if section_key:
         where_clauses.append("COALESCE(audit_items.section_key, '') = ?")
         params.append(section_key)
@@ -4742,19 +4798,23 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 "CAST(audit_findings.audit_id AS TEXT) ILIKE ? OR "
                 "CAST(audit_findings.id AS TEXT) ILIKE ? OR "
                 "COALESCE(mobile_units.mobile_code, '') ILIKE ? OR "
+                "COALESCE(audits.location, '') ILIKE ? OR "
+                "COALESCE(auditor_users.username, audits.auditor_name, '') ILIKE ? OR "
                 "COALESCE(technicians.name, audits.technician_display_name, '') ILIKE ? OR "
                 "COALESCE(audit_items.section_title, '') ILIKE ? OR "
                 "COALESCE(audit_items.item_label, '') ILIKE ? OR "
                 "COALESCE(audit_findings.supervisor_name, '') ILIKE ?"
                 ")"
             )
-            params.extend([like_value] * 7)
+            params.extend([like_value] * 9)
         else:
             where_clauses.append(
                 "("
                 "LOWER(CAST(audit_findings.audit_id AS TEXT)) LIKE ? OR "
                 "LOWER(CAST(audit_findings.id AS TEXT)) LIKE ? OR "
                 "LOWER(COALESCE(mobile_units.mobile_code, '')) LIKE ? OR "
+                "LOWER(COALESCE(audits.location, '')) LIKE ? OR "
+                "LOWER(COALESCE(auditor_users.username, audits.auditor_name, '')) LIKE ? OR "
                 "LOWER(COALESCE(technicians.name, audits.technician_display_name, '')) LIKE ? OR "
                 "LOWER(COALESCE(audit_items.section_title, '')) LIKE ? OR "
                 "LOWER(COALESCE(audit_items.item_label, '')) LIKE ? OR "
@@ -4762,7 +4822,7 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 ")"
             )
             lowered = like_value.lower()
-            params.extend([lowered] * 7)
+            params.extend([lowered] * 9)
 
     if effectiveness in {"pendiente", "por_vencer", "vencida"}:
         where_clauses.append("COALESCE(audit_findings.validation_status, '') = 'validado'")
@@ -4823,6 +4883,7 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN users AS auditor_users ON auditor_users.id = audits.auditor_user_id
         {where_sql}
         """,
         params,
@@ -4857,6 +4918,7 @@ def fetch_finding_status_breakdown(filters=None, auditor_user_id=None, superviso
         INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN users AS auditor_users ON auditor_users.id = audits.auditor_user_id
         {where_sql}
         GROUP BY audit_findings.finding_status
         """,
@@ -4923,7 +4985,7 @@ def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=No
             {created_at_expr} AS created_at,
             {updated_at_expr} AS updated_at,
             audits.audit_date,
-            audits.auditor_name,
+            COALESCE(auditor_users.username, audits.auditor_name) AS auditor_name,
             audits.result_status,
             audits.location,
             mobile_units.mobile_code,
@@ -4937,6 +4999,7 @@ def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=No
         INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
         LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
+        LEFT JOIN users AS auditor_users ON auditor_users.id = audits.auditor_user_id
         LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
         {where_sql}
         ORDER BY {order_by_sql}

@@ -71,6 +71,8 @@ from app.models import (
     fetch_dashboard_stats,
     fetch_distinct_mobile_codes,
     fetch_distinct_auditors,
+    fetch_distinct_finding_auditors,
+    fetch_distinct_finding_locations,
     fetch_distinct_storage_centers,
     fetch_distinct_warehouse_codes,
     fetch_distinct_warehouse_types,
@@ -5048,6 +5050,8 @@ def findings_list():
         "to_date": request.args.get("to_date", "").strip(),
         "audit_id": request.args.get("audit_id", "").strip(),
         "mobile_code": request.args.get("mobile_code", "").strip(),
+        "location": request.args.get("location", "").strip(),
+        "auditor": request.args.get("auditor", "").strip(),
         "section_key": request.args.get("section_key", "").strip(),
         "finding_status": request.args.get("finding_status", "").strip(),
         "priority": request.args.get("priority", "").strip(),
@@ -5059,6 +5063,8 @@ def findings_list():
     }
     auditor_user_id = current_auditor_user_id()
     supervisor_scope_names = current_supervisor_scope_names()
+    if auditor_user_id is not None:
+        filters["auditor"] = ""
     findings = fetch_findings(
         filters,
         auditor_user_id=auditor_user_id,
@@ -5071,6 +5077,16 @@ def findings_list():
     )
     filter_active = any(filters.values())
     mobile_units = fetch_mobile_units()
+    location_options = fetch_distinct_finding_locations(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    auditor_options = fetch_distinct_finding_auditors(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
     section_options = [{"key": section["key"], "title": section["title"]} for section in CHECKLIST_SECTIONS]
     return render_template(
         "findings.html",
@@ -5079,6 +5095,8 @@ def findings_list():
         filters=filters,
         filter_active=filter_active,
         mobile_units=mobile_units,
+        location_options=location_options,
+        auditor_options=auditor_options,
         section_options=section_options,
     )
 
