@@ -5167,6 +5167,15 @@ def findings_list():
             "active": active_quick_filter == "new",
         },
         {
+            "key": "in_progress",
+            "label": "En tratamiento",
+            "value": finding_stats["in_progress_count"],
+            "helper": "Hallazgos respondidos en gestión del supervisor.",
+            "tone": "primary",
+            "href": build_quick_filter_url("in_progress"),
+            "active": active_quick_filter == "in_progress",
+        },
+        {
             "key": "high_priority",
             "label": "Alta prioridad",
             "value": finding_stats["high_priority_count"],

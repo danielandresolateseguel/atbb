@@ -4922,6 +4922,8 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
         _append_pending_validation_where(where_clauses, params)
     elif quick_filter == "new":
         where_clauses.append("audit_findings.finding_status = 'nuevo'")
+    elif quick_filter == "in_progress":
+        where_clauses.append("audit_findings.finding_status = 'respondido'")
     elif quick_filter == "overdue_validation":
         _append_pending_validation_where(where_clauses, params, overdue_only=True)
     elif quick_filter == "overdue_effectiveness":
@@ -5004,6 +5006,7 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
             COUNT(*) AS total_findings,
             SUM(CASE WHEN audit_findings.finding_status IN ('nuevo', 'respondido', 'resuelto', 'reabierto') THEN 1 ELSE 0 END) AS active_findings,
             SUM(CASE WHEN audit_findings.finding_status = 'nuevo' THEN 1 ELSE 0 END) AS new_count,
+            SUM(CASE WHEN audit_findings.finding_status = 'respondido' THEN 1 ELSE 0 END) AS in_progress_count,
             SUM(CASE WHEN audit_findings.priority = 'alta' THEN 1 ELSE 0 END) AS high_priority_count,
             SUM(CASE WHEN audit_findings.finding_status = 'reabierto' THEN 1 ELSE 0 END) AS reopened_count,
             SUM(CASE WHEN audit_findings.finding_status = 'resuelto' AND COALESCE(audit_findings.validation_status, '') != 'validado' THEN 1 ELSE 0 END) AS pending_validation_count,
@@ -5035,6 +5038,7 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         "total_findings": total_findings,
         "active_findings": row["active_findings"] or 0,
         "new_count": row["new_count"] or 0,
+        "in_progress_count": row["in_progress_count"] or 0,
         "high_priority_count": row["high_priority_count"] or 0,
         "reopened_count": row["reopened_count"] or 0,
         "pending_validation_count": row["pending_validation_count"] or 0,
