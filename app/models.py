@@ -49,6 +49,10 @@ def _date_range_end_in_app_tz(days):
     return _today_in_app_tz() + timedelta(days=int(days or 0))
 
 
+def _pending_validation_cutoff_in_app_tz(days):
+    return _today_in_app_tz() - timedelta(days=max(0, int(days or 0)))
+
+
 AUDIT_SCOPE_OFFICIAL = "oficial"
 AUDIT_SCOPE_TESTING = "pruebas"
 
@@ -4747,6 +4751,22 @@ def fetch_audit_findings(audit_id):
     return [dict(row) for row in rows]
 
 
+def _append_pending_validation_where(where_clauses, params, overdue_only=False):
+    where_clauses.append("audit_findings.finding_status = 'resuelto'")
+    where_clauses.append("COALESCE(audit_findings.validation_status, '') != 'validado'")
+    if not overdue_only:
+        return
+
+    cutoff_iso = _pending_validation_cutoff_in_app_tz(_pending_validation_alert_window_days()).isoformat()
+    if is_postgres():
+        where_clauses.append("audit_findings.resolved_at IS NOT NULL")
+        where_clauses.append("(audit_findings.resolved_at AT TIME ZONE 'UTC')::date < ?::date")
+        params.append(cutoff_iso)
+    else:
+        where_clauses.append("date(audit_findings.resolved_at) < date(?)")
+        params.append(cutoff_iso)
+
+
 def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_scope_names=None):
     filters = filters or {}
     where_clauses = []
@@ -4774,6 +4794,7 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
     section_key = (filters.get("section_key") or "").strip()
     q = (filters.get("q") or "").strip()
     effectiveness = (filters.get("effectiveness") or "").strip().lower()
+    quick_filter = (filters.get("quick_filter") or "").strip().lower()
 
     if from_date:
         where_clauses.append("audits.audit_date >= ?")
@@ -4891,6 +4912,28 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
                 where_clauses.append("date(substr(audit_findings.effectiveness_due_date, 1, 10)) <= date(?)")
                 params.extend([today_iso, end_iso])
 
+    if quick_filter == "active":
+        where_clauses.append("audit_findings.finding_status IN ('nuevo', 'respondido', 'resuelto', 'reabierto')")
+    elif quick_filter == "high_priority":
+        where_clauses.append("audit_findings.priority = 'alta'")
+    elif quick_filter == "reopened":
+        where_clauses.append("audit_findings.finding_status = 'reabierto'")
+    elif quick_filter == "pending_validation":
+        _append_pending_validation_where(where_clauses, params)
+    elif quick_filter == "new":
+        where_clauses.append("audit_findings.finding_status = 'nuevo'")
+    elif quick_filter == "overdue_validation":
+        _append_pending_validation_where(where_clauses, params, overdue_only=True)
+    elif quick_filter == "overdue_effectiveness":
+        filters = dict(filters)
+        filters["quick_filter"] = ""
+        filters["effectiveness"] = "vencida"
+        return _build_findings_where_sql(
+            filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+        )
+
     where_sql = ""
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
@@ -4903,14 +4946,70 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+    effectiveness_alert_days = _effectiveness_alert_window_days()
+    pending_validation_days = _pending_validation_alert_window_days()
+    today_iso = _today_in_app_tz().isoformat()
+    end_iso = _date_range_end_in_app_tz(effectiveness_alert_days).isoformat()
+    pending_validation_cutoff_iso = _pending_validation_cutoff_in_app_tz(pending_validation_days).isoformat()
+
+    if is_postgres():
+        overdue_effectiveness_sql = (
+            "SUM(CASE WHEN COALESCE(audit_findings.validation_status, '') = 'validado' "
+            "AND COALESCE(audit_findings.effectiveness_status, '') = 'pendiente' "
+            "AND substring(audit_findings.effectiveness_due_date, 1, 10) ~ '^\\d{4}-\\d{2}-\\d{2}$' "
+            "AND to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') < ?::date "
+            "THEN 1 ELSE 0 END) AS overdue_effectiveness_count"
+        )
+        due_soon_effectiveness_sql = (
+            "SUM(CASE WHEN COALESCE(audit_findings.validation_status, '') = 'validado' "
+            "AND COALESCE(audit_findings.effectiveness_status, '') = 'pendiente' "
+            "AND substring(audit_findings.effectiveness_due_date, 1, 10) ~ '^\\d{4}-\\d{2}-\\d{2}$' "
+            "AND to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') >= ?::date "
+            "AND to_date(substring(audit_findings.effectiveness_due_date, 1, 10), 'YYYY-MM-DD') <= ?::date "
+            "THEN 1 ELSE 0 END) AS due_soon_effectiveness_count"
+        )
+        overdue_validation_sql = (
+            "SUM(CASE WHEN audit_findings.finding_status = 'resuelto' "
+            "AND COALESCE(audit_findings.validation_status, '') != 'validado' "
+            "AND audit_findings.resolved_at IS NOT NULL "
+            "AND (audit_findings.resolved_at AT TIME ZONE 'UTC')::date < ?::date "
+            "THEN 1 ELSE 0 END) AS overdue_validation_count"
+        )
+    else:
+        overdue_effectiveness_sql = (
+            "SUM(CASE WHEN COALESCE(audit_findings.validation_status, '') = 'validado' "
+            "AND COALESCE(audit_findings.effectiveness_status, '') = 'pendiente' "
+            "AND COALESCE(audit_findings.effectiveness_due_date, '') != '' "
+            "AND date(substr(audit_findings.effectiveness_due_date, 1, 10)) < date(?) "
+            "THEN 1 ELSE 0 END) AS overdue_effectiveness_count"
+        )
+        due_soon_effectiveness_sql = (
+            "SUM(CASE WHEN COALESCE(audit_findings.validation_status, '') = 'validado' "
+            "AND COALESCE(audit_findings.effectiveness_status, '') = 'pendiente' "
+            "AND COALESCE(audit_findings.effectiveness_due_date, '') != '' "
+            "AND date(substr(audit_findings.effectiveness_due_date, 1, 10)) >= date(?) "
+            "AND date(substr(audit_findings.effectiveness_due_date, 1, 10)) <= date(?) "
+            "THEN 1 ELSE 0 END) AS due_soon_effectiveness_count"
+        )
+        overdue_validation_sql = (
+            "SUM(CASE WHEN audit_findings.finding_status = 'resuelto' "
+            "AND COALESCE(audit_findings.validation_status, '') != 'validado' "
+            "AND date(audit_findings.resolved_at) < date(?) "
+            "THEN 1 ELSE 0 END) AS overdue_validation_count"
+        )
+
     row = get_db().execute(
         f"""
         SELECT
             COUNT(*) AS total_findings,
             SUM(CASE WHEN audit_findings.finding_status IN ('nuevo', 'respondido', 'resuelto', 'reabierto') THEN 1 ELSE 0 END) AS active_findings,
+            SUM(CASE WHEN audit_findings.finding_status = 'nuevo' THEN 1 ELSE 0 END) AS new_count,
             SUM(CASE WHEN audit_findings.priority = 'alta' THEN 1 ELSE 0 END) AS high_priority_count,
             SUM(CASE WHEN audit_findings.finding_status = 'reabierto' THEN 1 ELSE 0 END) AS reopened_count,
             SUM(CASE WHEN audit_findings.finding_status = 'resuelto' AND COALESCE(audit_findings.validation_status, '') != 'validado' THEN 1 ELSE 0 END) AS pending_validation_count,
+            {overdue_validation_sql},
+            {overdue_effectiveness_sql},
+            {due_soon_effectiveness_sql},
             SUM(
                 CASE
                     WHEN COALESCE(audit_findings.validation_status, '') = 'validado' OR audit_findings.finding_status = 'validado'
@@ -4927,7 +5026,7 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
         {where_sql}
         """,
-        params,
+        (pending_validation_cutoff_iso, today_iso, today_iso, end_iso, *params),
     ).fetchone()
     total_findings = row["total_findings"] or 0
     validated_count = row["validated_count"] or 0
@@ -4935,9 +5034,14 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
     return {
         "total_findings": total_findings,
         "active_findings": row["active_findings"] or 0,
+        "new_count": row["new_count"] or 0,
         "high_priority_count": row["high_priority_count"] or 0,
         "reopened_count": row["reopened_count"] or 0,
         "pending_validation_count": row["pending_validation_count"] or 0,
+        "overdue_validation_count": row["overdue_validation_count"] or 0,
+        "overdue_effectiveness_count": row["overdue_effectiveness_count"] or 0,
+        "due_soon_effectiveness_count": row["due_soon_effectiveness_count"] or 0,
+        "pending_validation_alert_days": pending_validation_days,
         "validated_count": validated_count,
         "validation_rate": validation_rate,
     }
@@ -5290,6 +5394,13 @@ def _effectiveness_alert_window_days():
         return max(1, int(current_app.config.get("FINDING_EFFECTIVENESS_ALERT_DAYS") or 7))
     except (TypeError, ValueError):
         return 7
+
+
+def _pending_validation_alert_window_days():
+    try:
+        return max(1, int(current_app.config.get("FINDING_PENDING_VALIDATION_ALERT_DAYS") or 3))
+    except (TypeError, ValueError):
+        return 3
 
 
 def _parse_iso_date(value):

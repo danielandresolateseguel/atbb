@@ -5061,6 +5061,7 @@ def findings_list():
         "priority": request.args.get("priority", "").strip(),
         "validation_status": request.args.get("validation_status", "").strip(),
         "effectiveness": request.args.get("effectiveness", "").strip(),
+        "quick_filter": request.args.get("quick_filter", "").strip(),
         "q": request.args.get("q", "").strip(),
         "sort": request.args.get("sort", "").strip(),
         "dir": request.args.get("dir", "").strip(),
@@ -5077,6 +5078,8 @@ def findings_list():
     page_size = 50
     if auditor_user_id is not None:
         filters["auditor"] = ""
+    panel_filters = dict(filters)
+    panel_filters["quick_filter"] = ""
     findings_total = count_findings(
         filters,
         auditor_user_id=auditor_user_id,
@@ -5094,7 +5097,7 @@ def findings_list():
         offset=offset,
     )
     finding_stats = fetch_finding_stats(
-        filters,
+        panel_filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
@@ -5103,27 +5106,120 @@ def findings_list():
     has_next_page = (offset + page_size) < findings_total
     mobile_units = fetch_mobile_units()
     location_options = fetch_distinct_finding_locations(
-        filters,
+        panel_filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
     auditor_options = fetch_distinct_finding_auditors(
-        filters,
+        panel_filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
     supervisor_options = fetch_distinct_finding_supervisors(
-        filters,
+        panel_filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
     section_options = [{"key": section["key"], "title": section["title"]} for section in CHECKLIST_SECTIONS]
+
+    def build_quick_filter_url(quick_filter_key):
+        query = {key: value for key, value in panel_filters.items() if value}
+        query.pop("quick_filter", None)
+        query["page"] = 1
+        if quick_filter_key:
+            for field_name in ("finding_status", "priority", "validation_status", "effectiveness"):
+                query.pop(field_name, None)
+            query["quick_filter"] = quick_filter_key
+        return url_for("main.findings_list", **query)
+
+    active_quick_filter = filters["quick_filter"]
+    quick_filter_urls = {
+        "reopened": build_quick_filter_url("reopened"),
+        "overdue_validation": build_quick_filter_url("overdue_validation"),
+        "overdue_effectiveness": build_quick_filter_url("overdue_effectiveness"),
+    }
+    quick_filter_cards = [
+        {
+            "key": "",
+            "label": "Total",
+            "value": finding_stats["total_findings"],
+            "helper": "Ver toda la bandeja actual.",
+            "tone": "neutral",
+            "href": build_quick_filter_url(""),
+            "active": not active_quick_filter,
+        },
+        {
+            "key": "active",
+            "label": "Activos",
+            "value": finding_stats["active_findings"],
+            "helper": "Nuevo, en tratamiento, CER-PVE o reabierto.",
+            "tone": "primary",
+            "href": build_quick_filter_url("active"),
+            "active": active_quick_filter == "active",
+        },
+        {
+            "key": "new",
+            "label": "Nuevos",
+            "value": finding_stats["new_count"],
+            "helper": "Pendientes de primera respuesta.",
+            "tone": "warning",
+            "href": build_quick_filter_url("new"),
+            "active": active_quick_filter == "new",
+        },
+        {
+            "key": "high_priority",
+            "label": "Alta prioridad",
+            "value": finding_stats["high_priority_count"],
+            "helper": "Casos que requieren atención preferente.",
+            "tone": "warning",
+            "href": build_quick_filter_url("high_priority"),
+            "active": active_quick_filter == "high_priority",
+        },
+        {
+            "key": "reopened",
+            "label": "Reabiertos",
+            "value": finding_stats["reopened_count"],
+            "helper": "Necesitan nueva gestión del supervisor.",
+            "tone": "danger",
+            "href": build_quick_filter_url("reopened"),
+            "active": active_quick_filter == "reopened",
+        },
+        {
+            "key": "pending_validation",
+            "label": "Pendientes validación",
+            "value": finding_stats["pending_validation_count"],
+            "helper": "Hallazgos en CER-PVE esperando revisión.",
+            "tone": "warning",
+            "href": build_quick_filter_url("pending_validation"),
+            "active": active_quick_filter == "pending_validation",
+        },
+        {
+            "key": "overdue_validation",
+            "label": "CER-PVE vencidos",
+            "value": finding_stats["overdue_validation_count"],
+            "helper": f"Más de {finding_stats['pending_validation_alert_days']} día(s) sin validar.",
+            "tone": "danger",
+            "href": build_quick_filter_url("overdue_validation"),
+            "active": active_quick_filter == "overdue_validation",
+        },
+        {
+            "key": "overdue_effectiveness",
+            "label": "Eficacia vencida",
+            "value": finding_stats["overdue_effectiveness_count"],
+            "helper": "Seguimientos validados con fecha de eficacia vencida.",
+            "tone": "danger",
+            "href": build_quick_filter_url("overdue_effectiveness"),
+            "active": active_quick_filter == "overdue_effectiveness",
+        },
+    ]
     return_to = safe_next_url(request.full_path if request.query_string else request.path) or url_for("main.findings_list")
     return render_template(
         "findings.html",
         findings=findings,
         findings_total=findings_total,
         finding_stats=finding_stats,
+        quick_filter_cards=quick_filter_cards,
+        quick_filter_urls=quick_filter_urls,
         filters=filters,
         filter_active=filter_active,
         mobile_units=mobile_units,
