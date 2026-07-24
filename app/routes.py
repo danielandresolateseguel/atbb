@@ -50,6 +50,8 @@ from app.models import (
     fetch_effectiveness_alerts,
     fetch_finding_detail,
     fetch_finding_events,
+    TREATMENT_REASON_OPTIONS,
+    add_finding_treatment_update,
     fetch_audit_items,
     fetch_audit_supply_requests,
     fetch_supply_requests_feed,
@@ -454,6 +456,11 @@ def can_view_service():
 def can_respond_findings():
     user = current_user()
     return bool(user and (user.get("role") in {"admin", "supervisor"}))
+
+
+def can_update_treatment_findings():
+    user = current_user()
+    return bool(user and (user.get("role") in {"supervisor", "auditor"}))
 
 
 def can_validate_findings():
@@ -1445,6 +1452,7 @@ def inject_auth_context():
         "can_view_findings": can_view_findings(),
         "can_view_service": can_view_service(),
         "can_respond_findings": can_respond_findings(),
+        "can_update_treatment_findings": can_update_treatment_findings(),
         "can_validate_findings": can_validate_findings(),
         "can_verify_findings_effectiveness": can_verify_findings_effectiveness(),
     }
@@ -5135,6 +5143,8 @@ def findings_list():
     active_quick_filter = filters["quick_filter"]
     quick_filter_urls = {
         "reopened": build_quick_filter_url("reopened"),
+        "stale_treatment": build_quick_filter_url("stale_treatment"),
+        "escalated_treatment": build_quick_filter_url("escalated_treatment"),
         "overdue_validation": build_quick_filter_url("overdue_validation"),
         "overdue_effectiveness": build_quick_filter_url("overdue_effectiveness"),
     }
@@ -5174,6 +5184,24 @@ def findings_list():
             "tone": "primary",
             "href": build_quick_filter_url("in_progress"),
             "active": active_quick_filter == "in_progress",
+        },
+        {
+            "key": "stale_treatment",
+            "label": "Sin novedades",
+            "value": finding_stats["stale_treatment_count"],
+            "helper": f"{finding_stats['treatment_alert_days']} día(s) o más sin actualización.",
+            "tone": "warning",
+            "href": build_quick_filter_url("stale_treatment"),
+            "active": active_quick_filter == "stale_treatment",
+        },
+        {
+            "key": "escalated_treatment",
+            "label": "Escalados",
+            "value": finding_stats["escalated_treatment_count"],
+            "helper": f"{finding_stats['treatment_escalation_days']} día(s) o más sin novedades.",
+            "tone": "danger",
+            "href": build_quick_filter_url("escalated_treatment"),
+            "active": active_quick_filter == "escalated_treatment",
         },
         {
             "key": "high_priority",
@@ -5259,7 +5287,13 @@ def finding_detail(finding_id):
     if not finding:
         abort(404)
     finding_events = fetch_finding_events(finding_id)
-    return render_template("finding_detail.html", finding=finding, finding_events=finding_events, return_to=return_to)
+    return render_template(
+        "finding_detail.html",
+        finding=finding,
+        finding_events=finding_events,
+        treatment_reason_options=TREATMENT_REASON_OPTIONS,
+        return_to=return_to,
+    )
 
 
 @main.route("/findings/<int:finding_id>/respond", methods=["POST"])
@@ -5279,6 +5313,10 @@ def finding_respond(finding_id):
     try:
         response_notes = (request.form.get("response_notes") or "").strip().upper()
         finding_status = (request.form.get("finding_status") or "").strip().lower()
+        treatment_reason = (request.form.get("treatment_reason") or "").strip().lower()
+        treatment_note = (request.form.get("treatment_note") or "").strip().upper()
+        treatment_next_step = (request.form.get("treatment_next_step") or "").strip().upper()
+        treatment_commitment_date = (request.form.get("treatment_commitment_date") or "").strip()
         closure_criteria = (request.form.get("closure_criteria") or "").strip().upper()
         effectiveness_due_date = (request.form.get("effectiveness_due_date") or "").strip()
         evidence_file = request.files.get("evidence_file")
@@ -5290,12 +5328,46 @@ def finding_respond(finding_id):
             finding_id,
             finding_status=finding_status,
             response_notes=response_notes,
+            treatment_reason=treatment_reason,
+            treatment_note=treatment_note,
+            treatment_next_step=treatment_next_step,
+            treatment_commitment_date=treatment_commitment_date,
             evidence_path=evidence_path,
             closure_criteria=closure_criteria,
             effectiveness_due_date=effectiveness_due_date,
             responded_by_user_id=current_user()["id"],
         )
         flash("Respuesta del hallazgo guardada.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+
+    return redirect(url_for("main.finding_detail", finding_id=finding_id, return_to=return_to))
+
+
+@main.route("/findings/<int:finding_id>/treatment-update", methods=["POST"])
+def finding_treatment_update(finding_id):
+    if not can_update_treatment_findings():
+        abort(403)
+
+    return_to = safe_next_url(request.form.get("return_to")) or url_for("main.findings_list")
+    finding = fetch_finding_detail(
+        finding_id,
+        auditor_user_id=current_auditor_user_id(),
+        supervisor_scope_names=current_supervisor_scope_names(),
+    )
+    if not finding:
+        abort(404)
+
+    try:
+        add_finding_treatment_update(
+            finding_id,
+            treatment_reason=(request.form.get("treatment_reason") or "").strip().lower(),
+            treatment_note=(request.form.get("treatment_note") or "").strip().upper(),
+            treatment_next_step=(request.form.get("treatment_next_step") or "").strip().upper(),
+            treatment_commitment_date=(request.form.get("treatment_commitment_date") or "").strip(),
+            actor_user_id=current_user()["id"],
+        )
+        flash("Novedad de tratamiento guardada.", "success")
     except ValueError as exc:
         flash(str(exc), "error")
 

@@ -21,22 +21,44 @@
     </div>
 </section>
 
-<section class="detail-grid">
-    <article class="card info-card">
-        <div class="section-heading">
-            <div>
-                <p class="eyebrow">Estado</p>
-                <h3>Lectura consolidada</h3>
+<section class="detail-grid detail-grid-overview">
+    <div class="card-stack">
+        <article class="card info-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Estado</p>
+                    <h3>Lectura consolidada</h3>
+                </div>
             </div>
-        </div>
-        <div class="info-list">
-            <p><strong>Estado consolidado:</strong> {{ finding["consolidated_status_label"] }}</p>
-            <p><strong>Próxima acción:</strong> {{ finding["consolidated_next_action"] }}</p>
-            <p><strong>Estado operativo:</strong> {{ finding["finding_status"]|finding_status_label }}</p>
-            <p><strong>Validación:</strong> {{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "Pendiente" }}</p>
-            <p><strong>Eficacia:</strong> {{ finding["effectiveness_status"]|replace('_', ' ')|capitalize if finding["effectiveness_status"] else "Pendiente" }}</p>
-        </div>
-    </article>
+            <div class="info-list">
+                <p><strong>Estado consolidado:</strong> {{ finding["consolidated_status_label"] }}</p>
+                <p><strong>Próxima acción:</strong> {{ finding["consolidated_next_action"] }}</p>
+                <p><strong>Estado operativo:</strong> {{ finding["finding_status"]|finding_status_label }}</p>
+                <p><strong>Validación:</strong> {{ finding["validation_status"]|replace('_', ' ')|capitalize if finding["validation_status"] else "Pendiente" }}</p>
+                <p><strong>Eficacia:</strong> {{ finding["effectiveness_status"]|replace('_', ' ')|capitalize if finding["effectiveness_status"] else "Pendiente" }}</p>
+            </div>
+        </article>
+
+        <article class="card info-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Timeline</p>
+                    <h3>Ciclo de vida</h3>
+                </div>
+            </div>
+            <div class="finding-timeline">
+                {% for step in finding["lifecycle_timeline"] %}
+                    <article class="timeline-step is-{{ step['state'] }}">
+                        <div class="timeline-step-head">
+                            <strong>{{ step["label"] }}</strong>
+                            <span>{{ step["date"]|ar_dt if step["date"] else "Pendiente" }}</span>
+                        </div>
+                        <p>{{ step["detail"] }}</p>
+                    </article>
+                {% endfor %}
+            </div>
+        </article>
+    </div>
 
     <article class="card info-card">
         <div class="section-heading">
@@ -55,26 +77,6 @@
             {% endfor %}
         </div>
     </article>
-</section>
-
-<section class="card info-card">
-    <div class="section-heading">
-        <div>
-            <p class="eyebrow">Timeline</p>
-            <h3>Ciclo de vida</h3>
-        </div>
-    </div>
-    <div class="finding-timeline">
-        {% for step in finding["lifecycle_timeline"] %}
-            <article class="timeline-step is-{{ step['state'] }}">
-                <div class="timeline-step-head">
-                    <strong>{{ step["label"] }}</strong>
-                    <span>{{ step["date"]|ar_dt if step["date"] else "Pendiente" }}</span>
-                </div>
-                <p>{{ step["detail"] }}</p>
-            </article>
-        {% endfor %}
-    </div>
 </section>
 
 <section class="detail-grid">
@@ -156,6 +158,43 @@
     <article class="card info-card">
         <div class="section-heading">
             <div>
+                <p class="eyebrow">Tratamiento</p>
+                <h3>Seguimiento operativo</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Motivo actual:</strong> {{ finding["treatment_reason_label"] or "-" }}</p>
+            <p><strong>Última novedad:</strong> {{ finding["treatment_note"] or "-" }}</p>
+            <p><strong>Próximo paso:</strong> {{ finding["treatment_next_step"] or "-" }}</p>
+            <p>
+                <strong>Fecha compromiso:</strong>
+                {% if finding["treatment_commitment_date"] %}
+                    <span class="metric-pill {% if finding['treatment_commitment_bucket'] == 'overdue' %}metric-danger{% elif finding['treatment_commitment_bucket'] == 'due_today' %}metric-warning{% else %}metric-neutral{% endif %}">
+                        {{ finding["treatment_commitment_date"] }}
+                    </span>
+                {% else %}
+                    -
+                {% endif %}
+            </p>
+            <p><strong>Última actualización:</strong> {{ finding["treatment_last_update_at"]|ar_dt if finding["treatment_last_update_at"] else "-" }}</p>
+            <p>
+                <strong>Control de novedades:</strong>
+                {% if finding["treatment_alert_label"] %}
+                    <span class="metric-pill {% if finding['treatment_alert_level'] == 'danger' %}metric-danger{% else %}metric-warning{% endif %}">
+                        {{ finding["treatment_alert_label"] }} {{ finding["treatment_days_without_update"] }}d
+                    </span>
+                {% elif finding["finding_status"] == "respondido" %}
+                    <span class="metric-pill metric-ok">Al día</span>
+                {% else %}
+                    -
+                {% endif %}
+            </p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
                 <p class="eyebrow">Validación</p>
                 <h3>Revisión final</h3>
             </div>
@@ -167,9 +206,7 @@
             <p><strong>Validado el:</strong> {{ finding["validated_at"]|ar_dt }}</p>
         </div>
     </article>
-</section>
 
-<section class="detail-grid">
     <article class="card info-card">
         <div class="section-heading">
             <div>
@@ -224,64 +261,125 @@
 {% endif %}
 
 {% set is_validated = (finding["validation_status"] or "")|lower == "validado" or (finding["finding_status"] or "")|lower == "validado" %}
+{% set is_in_treatment = (finding["finding_status"] or "") == "respondido" %}
+{% set can_start_treatment = (finding["finding_status"] or "") in ["nuevo", "reabierto"] %}
 
-{% if can_respond_findings and not is_validated %}
+{% if can_respond_findings and not is_validated and can_start_treatment %}
     <section class="card no-print">
         <div class="section-heading">
             <div>
                 <p class="eyebrow">Acción</p>
-                <h3>Responder hallazgo</h3>
+                <h3>Poner en tratamiento</h3>
             </div>
         </div>
-        <form method="post" action="{{ url_for('main.finding_respond', finding_id=finding['id']) }}" enctype="multipart/form-data" class="form-grid" id="finding_response_form">
+        <form method="post" action="{{ url_for('main.finding_respond', finding_id=finding['id']) }}" enctype="multipart/form-data" class="form-grid finding-form-two-column" id="finding_response_form">
             <input type="hidden" name="return_to" value="{{ return_to }}">
+            <input type="hidden" name="finding_status" value="respondido">
             <label>
-                <span>Estado</span>
-                <select name="finding_status" required id="finding_status_select">
-                    <option value="respondido" {% if finding["finding_status"] == "respondido" %}selected{% endif %}>En tratamiento</option>
-                    <option value="resuelto" {% if finding["finding_status"] == "resuelto" %}selected{% endif %}>CER-PVE</option>
+                <span>Motivo actual</span>
+                <select name="treatment_reason" required>
+                    <option value="">Seleccionar</option>
+                    {% for reason_value, reason_label in treatment_reason_options %}
+                        <option value="{{ reason_value }}" {% if finding["treatment_reason"] == reason_value %}selected{% endif %}>{{ reason_label }}</option>
+                    {% endfor %}
                 </select>
             </label>
             <label>
-                <span>Fecha verificación de eficacia</span>
-                <input type="date" name="effectiveness_due_date" value="{{ finding['effectiveness_due_date'] or '' }}" id="effectiveness_due_date_input">
+                <span>Fecha compromiso</span>
+                <input type="date" name="treatment_commitment_date" value="{{ finding['treatment_commitment_date'] or '' }}" required>
             </label>
             <label>
-                <span>Evidencia{% if finding["evidence_path"] %} (ya cargada){% endif %}</span>
-                <input type="file" id="evidence_file_input" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" data-has-existing="{% if finding['evidence_path'] %}1{% else %}0{% endif %}" {% if (finding["finding_status"] or "") == "resuelto" and not finding["evidence_path"] %}required{% endif %}>
+                <span>Gestión inicial del supervisor</span>
+                <textarea name="response_notes" rows="4" required>{{ finding["response_notes"] or "" }}</textarea>
             </label>
             <label>
-                <span>Respuesta del supervisor</span>
-                <textarea name="response_notes" rows="6" required>{{ finding["response_notes"] or "" }}</textarea>
+                <span>Próximo paso</span>
+                <textarea name="treatment_next_step" rows="3" required>{{ finding["treatment_next_step"] or "" }}</textarea>
             </label>
-            <label>
-                <span>Criterio de cierre</span>
-                <textarea name="closure_criteria" rows="3" id="closure_criteria_input">{{ finding["closure_criteria"] or "" }}</textarea>
-            </label>
-            <button class="button button-primary" type="submit">Guardar respuesta</button>
+            <button class="button button-primary finding-form-wide" type="submit">Guardar gestión inicial</button>
         </form>
-        <script>
-            (function () {
-                const form = document.getElementById("finding_response_form");
-                if (!form) return;
-                const statusSelect = document.getElementById("finding_status_select");
-                const closureCriteriaInput = document.getElementById("closure_criteria_input");
-                const dueDateInput = document.getElementById("effectiveness_due_date_input");
-                const evidenceInput = document.getElementById("evidence_file_input");
-                if (!statusSelect || !closureCriteriaInput || !dueDateInput || !evidenceInput) return;
+    </section>
+{% endif %}
 
-                function syncRequirements() {
-                    const isResolved = statusSelect.value === "resuelto";
-                    closureCriteriaInput.required = isResolved;
-                    dueDateInput.required = isResolved;
-                    const hasExistingEvidence = evidenceInput.dataset.hasExisting === "1";
-                    evidenceInput.required = isResolved && !hasExistingEvidence;
-                }
+{% if is_in_treatment and not is_validated and (can_update_treatment_findings or can_respond_findings) %}
+    <section class="card no-print">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Seguimiento</p>
+                <h3>Acción rápida</h3>
+            </div>
+        </div>
+        <div class="action-panel-stack">
+            {% if can_update_treatment_findings %}
+                <div class="action-context">
+                    <p><strong>Última novedad registrada:</strong> {{ finding["treatment_note"] or "-" }}</p>
+                    <p><strong>Último próximo paso:</strong> {{ finding["treatment_next_step"] or "-" }}</p>
+                </div>
+                <form method="post" action="{{ url_for('main.finding_treatment_update', finding_id=finding['id']) }}" class="form-grid form-grid-compact finding-form-two-column">
+                    <input type="hidden" name="return_to" value="{{ return_to }}">
+                    <label>
+                        <span>Motivo actual</span>
+                        <select name="treatment_reason" required>
+                            <option value="">Seleccionar</option>
+                            {% for reason_value, reason_label in treatment_reason_options %}
+                                <option value="{{ reason_value }}" {% if finding["treatment_reason"] == reason_value %}selected{% endif %}>{{ reason_label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>
+                        <span>Fecha compromiso</span>
+                        <input type="date" name="treatment_commitment_date" value="{{ finding['treatment_commitment_date'] or '' }}" required>
+                    </label>
+                    <label>
+                        <span>Novedad</span>
+                        <textarea name="treatment_note" rows="2" required placeholder="Ingresar nueva novedad"></textarea>
+                    </label>
+                    <label>
+                        <span>Próximo paso</span>
+                        <textarea name="treatment_next_step" rows="2" required placeholder="Definir el siguiente paso"></textarea>
+                    </label>
+                    <button class="button button-primary finding-form-wide" type="submit">Guardar novedad</button>
+                </form>
+            {% endif %}
 
-                statusSelect.addEventListener("change", syncRequirements);
-                syncRequirements();
-            })();
-        </script>
+            {% if can_respond_findings %}
+                <details class="action-panel-collapse">
+                    <summary>
+                        <span>Cerrar hallazgo / pasar a CER-PVE</span>
+                        <span class="stat-chip">Desplegar</span>
+                    </summary>
+                    <div class="action-context action-context-compact">
+                        <p><strong>Última observación:</strong> {{ finding["treatment_note"] or "-" }}</p>
+                        <p><strong>Motivo actual:</strong> {{ finding["treatment_reason_label"] or "-" }}</p>
+                    </div>
+                    <form method="post" action="{{ url_for('main.finding_respond', finding_id=finding['id']) }}" enctype="multipart/form-data" class="form-grid form-grid-compact finding-form-two-column">
+                        <input type="hidden" name="return_to" value="{{ return_to }}">
+                        <input type="hidden" name="finding_status" value="resuelto">
+                        <input type="hidden" name="response_notes" value="{{ finding['response_notes'] or '' }}">
+                        <input type="hidden" name="treatment_reason" value="{{ finding['treatment_reason'] or '' }}">
+                        <input type="hidden" name="treatment_next_step" value="{{ finding['treatment_next_step'] or '' }}">
+                        <input type="hidden" name="treatment_commitment_date" value="{{ finding['treatment_commitment_date'] or '' }}">
+                        <label>
+                            <span>Fecha verificación de eficacia</span>
+                            <input type="date" name="effectiveness_due_date" value="{{ finding['effectiveness_due_date'] or '' }}" required>
+                        </label>
+                        <label>
+                            <span>Evidencia{% if finding["evidence_path"] %} (ya cargada){% endif %}</span>
+                            <input type="file" name="evidence_file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" data-has-existing="{% if finding['evidence_path'] %}1{% else %}0{% endif %}" {% if not finding["evidence_path"] %}required{% endif %}>
+                        </label>
+                        <label>
+                            <span>Criterio de cierre</span>
+                            <textarea name="closure_criteria" rows="3" required placeholder="Explicar como se corrigio el hallazgo"></textarea>
+                        </label>
+                        <label>
+                            <span>Observación final de cierre</span>
+                            <textarea name="treatment_note" rows="3" placeholder="Detalle final de la gestion antes de pasar a CER-PVE"></textarea>
+                        </label>
+                        <button class="button button-primary finding-form-wide" type="submit">Guardar cierre CER-PVE</button>
+                    </form>
+                </details>
+            {% endif %}
+        </div>
     </section>
 {% endif %}
 
@@ -293,7 +391,7 @@
                 <h3>Validación del gerente</h3>
             </div>
         </div>
-        <form method="post" action="{{ url_for('main.finding_validate', finding_id=finding['id']) }}" class="form-grid" id="finding_validation_form">
+        <form method="post" action="{{ url_for('main.finding_validate', finding_id=finding['id']) }}" class="form-grid finding-form-two-column" id="finding_validation_form">
             <input type="hidden" name="return_to" value="{{ return_to }}">
             <label>
                 <span>Acción</span>
@@ -306,7 +404,7 @@
                 <span>Notas de validación</span>
                 <textarea name="validation_notes" rows="5">{{ finding["validation_notes"] or "" }}</textarea>
             </label>
-            <button class="button button-primary" type="submit">Guardar validación</button>
+            <button class="button button-primary finding-form-wide" type="submit">Guardar validación</button>
         </form>
     </section>
 {% endif %}
@@ -319,7 +417,7 @@
                 <h3>Registrar verificación de eficacia</h3>
             </div>
         </div>
-        <form method="post" action="{{ url_for('main.finding_effectiveness_update', finding_id=finding['id']) }}" class="form-grid" id="finding_effectiveness_form">
+        <form method="post" action="{{ url_for('main.finding_effectiveness_update', finding_id=finding['id']) }}" class="form-grid finding-form-two-column" id="finding_effectiveness_form">
             <input type="hidden" name="return_to" value="{{ return_to }}">
             <label>
                 <span>Resultado</span>
@@ -333,7 +431,7 @@
                 <span>Notas</span>
                 <textarea name="effectiveness_notes" rows="5">{{ finding["effectiveness_notes"] or "" }}</textarea>
             </label>
-            <button class="button button-primary" type="submit">Guardar verificación</button>
+            <button class="button button-primary finding-form-wide" type="submit">Guardar verificación</button>
         </form>
     </section>
 {% endif %}
@@ -368,6 +466,8 @@
                                     Asignación
                                 {% elif ev["event_type"] == "respuesta" %}
                                     Respuesta
+                                {% elif ev["event_type"] == "novedad_tratamiento" %}
+                                    Novedad tratamiento
                                 {% elif ev["event_type"] == "validacion" %}
                                     Validación
                                 {% elif ev["event_type"] == "eficacia" %}

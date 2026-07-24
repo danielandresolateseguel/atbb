@@ -25,12 +25,24 @@
     {% endfor %}
 </section>
 
-{% if finding_stats["reopened_count"] or finding_stats["overdue_validation_count"] or finding_stats["overdue_effectiveness_count"] %}
+{% if finding_stats["reopened_count"] or finding_stats["escalated_treatment_count"] or finding_stats["stale_treatment_count"] or finding_stats["overdue_validation_count"] or finding_stats["overdue_effectiveness_count"] %}
     <section class="alert-stack">
         {% if finding_stats["reopened_count"] %}
             <a class="alert-card alert-critical alert-link" href="{{ quick_filter_urls['reopened'] }}">
                 <strong>Atención inmediata</strong>
                 <p>Hay {{ finding_stats["reopened_count"] }} hallazgo(s) reabierto(s) que requieren nueva respuesta.</p>
+            </a>
+        {% endif %}
+        {% if finding_stats["escalated_treatment_count"] %}
+            <a class="alert-card alert-critical alert-link" href="{{ quick_filter_urls['escalated_treatment'] }}">
+                <strong>Tratamientos escalados</strong>
+                <p>Hay {{ finding_stats["escalated_treatment_count"] }} hallazgo(s) con {{ finding_stats["treatment_escalation_days"] }} o más día(s) sin novedades.</p>
+            </a>
+        {% endif %}
+        {% if finding_stats["stale_treatment_count"] %}
+            <a class="alert-card alert-warning alert-link" href="{{ quick_filter_urls['stale_treatment'] }}">
+                <strong>Sin novedades</strong>
+                <p>Hay {{ finding_stats["stale_treatment_count"] }} hallazgo(s) en tratamiento con {{ finding_stats["treatment_alert_days"] }} o más día(s) sin actualización.</p>
             </a>
         {% endif %}
         {% if finding_stats["overdue_validation_count"] %}
@@ -267,12 +279,13 @@
                                 <span class="table-sort-indicator">{% if filters.sort == 'effectiveness_due_date' %}{% if filters.dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}</span>
                             </a>
                         </th>
+                        <th>Seguimiento</th>
                         <th>Detalle</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for finding in findings %}
-                        <tr class="{% if finding['finding_status'] == 'reabierto' %}finding-row-critical{% elif finding['priority'] == 'alta' %}finding-row-warning{% endif %}">
+                        <tr class="{% if finding['finding_status'] == 'reabierto' or finding['treatment_alert_level'] == 'danger' %}finding-row-critical{% elif finding['priority'] == 'alta' or finding['treatment_alert_level'] == 'warning' %}finding-row-warning{% endif %}">
                             <td>{{ finding["audit_date"] }}</td>
                             <td>{% if finding["mobile_code"] %}{{ finding["mobile_code"] }} | {% endif %}{{ finding["technician_name"] }}</td>
                             <td>{{ finding["section_title"] }}</td>
@@ -287,6 +300,25 @@
                                     <span class="metric-pill {% if finding['effectiveness_due_bucket'] == 'overdue' %}metric-danger{% elif finding['effectiveness_due_bucket'] == 'due_soon' %}metric-warning{% elif finding['effectiveness_due_bucket'] == 'ok' %}metric-ok{% else %}metric-neutral{% endif %}">
                                         {{ finding["effectiveness_due_date"] }}
                                     </span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if finding["finding_status"] == "respondido" %}
+                                    <div class="finding-followup">
+                                        {% if finding["treatment_reason_label"] %}
+                                            <span class="metric-pill metric-neutral metric-wrap">{{ finding["treatment_reason_label"] }}</span>
+                                        {% endif %}
+                                        {% if finding["treatment_alert_label"] %}
+                                            <span class="metric-pill {% if finding['treatment_alert_level'] == 'danger' %}metric-danger{% else %}metric-warning{% endif %}">
+                                                {{ finding["treatment_alert_label"] }} {{ finding["treatment_days_without_update"] }}d
+                                            </span>
+                                        {% endif %}
+                                        <p><strong>Novedad:</strong> {{ finding["treatment_note"] or "-" }}</p>
+                                        <p><strong>Próximo paso:</strong> {{ finding["treatment_next_step"] or "-" }}</p>
+                                        <p><strong>Compromiso:</strong> {{ finding["treatment_commitment_date"] or "-" }}</p>
+                                    </div>
                                 {% else %}
                                     -
                                 {% endif %}

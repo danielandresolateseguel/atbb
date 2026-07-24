@@ -689,6 +689,72 @@ form.form-grid {
     align-items: start;
 }
 
+.form-grid-compact {
+    gap: 0.75rem;
+}
+
+.finding-form-two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.finding-form-wide {
+    grid-column: 1 / -1;
+}
+
+.finding-form-two-column textarea {
+    min-height: 5.75rem;
+}
+
+.action-panel-stack {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.action-context {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.action-context p {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--muted);
+}
+
+.action-context-compact {
+    margin-bottom: 0.75rem;
+}
+
+.action-panel-collapse {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-alt);
+    padding: 0.25rem 0.9rem 0.9rem;
+}
+
+.action-panel-collapse summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    cursor: pointer;
+    list-style: none;
+    font-weight: 700;
+    padding: 0.75rem 0;
+}
+
+.action-panel-collapse summary::-webkit-details-marker {
+    display: none;
+}
+
+.action-panel-collapse[open] summary {
+    margin-bottom: 0.35rem;
+}
+
 .button-row,
 .guide-list {
     display: grid;
@@ -736,6 +802,12 @@ form.form-grid {
     .topbar {
         padding: 0.75rem 0.85rem;
     }
+
+    .finding-form-two-column {
+        grid-template-columns: 1fr;
+    }
+
+
 
     .topbar-row {
         display: flex;
@@ -1605,6 +1677,13 @@ th .table-sort.is-active .table-sort-indicator {
     display: grid;
     gap: 1rem;
     margin-bottom: 1rem;
+    align-items: start;
+}
+
+.card-stack {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
 }
 
 .audit-detail-grid {
@@ -1638,6 +1717,17 @@ th .table-sort.is-active .table-sort-indicator {
 }
 
 .helper-copy {
+    margin: 0;
+    color: var(--muted);
+}
+
+.finding-followup {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 15rem;
+}
+
+.finding-followup p {
     margin: 0;
     color: var(--muted);
 }
@@ -2780,6 +2870,14 @@ th .table-sort.is-active .table-sort-indicator {
 
     form.form-grid:has(input[type="file"]) > label:has(textarea),
     form.form-grid:has(textarea):not(:has(select)):not(:has(input[type="file"])) > label:has(textarea) {
+        grid-column: 1 / -1;
+    }
+
+    form.form-grid.finding-form-two-column > label:has(textarea) {
+        grid-column: auto;
+    }
+
+    form.form-grid.finding-form-two-column > .finding-form-wide {
         grid-column: 1 / -1;
     }
 

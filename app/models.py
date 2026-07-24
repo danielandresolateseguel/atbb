@@ -53,6 +53,19 @@ def _pending_validation_cutoff_in_app_tz(days):
     return _today_in_app_tz() - timedelta(days=max(0, int(days or 0)))
 
 
+TREATMENT_REASON_OPTIONS = [
+    ("esperando_proveedor", "Esperando proveedor"),
+    ("sin_stock", "Sin stock"),
+    ("esperando_aprobacion", "Esperando aprobacion"),
+    ("pendiente_programacion", "Pendiente programacion"),
+    ("en_ejecucion", "En ejecucion"),
+    ("bloqueado_tercero", "Bloqueado por tercero"),
+    ("otro", "Otro"),
+]
+
+TREATMENT_REASON_LABELS = {value: label for value, label in TREATMENT_REASON_OPTIONS}
+
+
 AUDIT_SCOPE_OFFICIAL = "oficial"
 AUDIT_SCOPE_TESTING = "pruebas"
 
@@ -420,6 +433,10 @@ def init_db():
             finding_status TEXT NOT NULL DEFAULT 'nuevo',
             priority TEXT NOT NULL DEFAULT 'media',
             response_notes TEXT,
+            treatment_reason TEXT,
+            treatment_note TEXT,
+            treatment_next_step TEXT,
+            treatment_commitment_date TEXT,
             evidence_path TEXT,
             closure_criteria TEXT,
             effectiveness_due_date TEXT,
@@ -862,6 +879,10 @@ def init_db_postgres():
             finding_status TEXT NOT NULL DEFAULT 'nuevo',
             priority TEXT NOT NULL DEFAULT 'media',
             response_notes TEXT,
+            treatment_reason TEXT,
+            treatment_note TEXT,
+            treatment_next_step TEXT,
+            treatment_commitment_date TEXT,
             evidence_path TEXT,
             closure_criteria TEXT,
             effectiveness_due_date TEXT,
@@ -1431,6 +1452,10 @@ def ensure_legacy_columns(connection):
             finding_status TEXT NOT NULL DEFAULT 'nuevo',
             priority TEXT NOT NULL DEFAULT 'media',
             response_notes TEXT,
+            treatment_reason TEXT,
+            treatment_note TEXT,
+            treatment_next_step TEXT,
+            treatment_commitment_date TEXT,
             evidence_path TEXT,
             closure_criteria TEXT,
             effectiveness_due_date TEXT,
@@ -1461,6 +1486,10 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audit_findings", "effectiveness_notes", "TEXT")
     add_column_if_missing(connection, "audit_findings", "effectiveness_verified_at", "TEXT")
     add_column_if_missing(connection, "audit_findings", "effectiveness_verified_by_user_id", "INTEGER")
+    add_column_if_missing(connection, "audit_findings", "treatment_reason", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "treatment_note", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "treatment_next_step", "TEXT")
+    add_column_if_missing(connection, "audit_findings", "treatment_commitment_date", "TEXT")
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS audit_finding_events (
@@ -1683,6 +1712,10 @@ def ensure_audit_findings_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_status TEXT")
     cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_notes TEXT")
     cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_verified_at TIMESTAMPTZ")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS treatment_reason TEXT")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS treatment_note TEXT")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS treatment_next_step TEXT")
+    cursor.execute("ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS treatment_commitment_date TEXT")
     cursor.execute(
         "ALTER TABLE audit_findings ADD COLUMN IF NOT EXISTS effectiveness_verified_by_user_id INTEGER REFERENCES users (id)"
     )
@@ -4935,6 +4968,16 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
             auditor_user_id=auditor_user_id,
             supervisor_scope_names=supervisor_scope_names,
         )
+    elif quick_filter in {"stale_treatment", "escalated_treatment"}:
+        cutoff_iso = _treatment_update_cutoff_in_app_tz(
+            _treatment_update_alert_window_days() if quick_filter == "stale_treatment" else _treatment_update_escalation_days()
+        ).isoformat()
+        where_clauses.append("audit_findings.finding_status = 'respondido'")
+        if is_postgres():
+            where_clauses.append("(audit_findings.updated_at AT TIME ZONE 'UTC')::date <= ?::date")
+        else:
+            where_clauses.append("date(audit_findings.updated_at) <= date(?)")
+        params.append(cutoff_iso)
 
     where_sql = ""
     if where_clauses:
@@ -4950,11 +4993,25 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
     )
     effectiveness_alert_days = _effectiveness_alert_window_days()
     pending_validation_days = _pending_validation_alert_window_days()
+    stale_treatment_days = _treatment_update_alert_window_days()
+    escalated_treatment_days = _treatment_update_escalation_days()
     today_iso = _today_in_app_tz().isoformat()
     end_iso = _date_range_end_in_app_tz(effectiveness_alert_days).isoformat()
     pending_validation_cutoff_iso = _pending_validation_cutoff_in_app_tz(pending_validation_days).isoformat()
+    stale_treatment_cutoff_iso = _treatment_update_cutoff_in_app_tz(stale_treatment_days).isoformat()
+    escalated_treatment_cutoff_iso = _treatment_update_cutoff_in_app_tz(escalated_treatment_days).isoformat()
 
     if is_postgres():
+        stale_treatment_sql = (
+            "SUM(CASE WHEN audit_findings.finding_status = 'respondido' "
+            "AND (audit_findings.updated_at AT TIME ZONE 'UTC')::date <= ?::date "
+            "THEN 1 ELSE 0 END) AS stale_treatment_count"
+        )
+        escalated_treatment_sql = (
+            "SUM(CASE WHEN audit_findings.finding_status = 'respondido' "
+            "AND (audit_findings.updated_at AT TIME ZONE 'UTC')::date <= ?::date "
+            "THEN 1 ELSE 0 END) AS escalated_treatment_count"
+        )
         overdue_effectiveness_sql = (
             "SUM(CASE WHEN COALESCE(audit_findings.validation_status, '') = 'validado' "
             "AND COALESCE(audit_findings.effectiveness_status, '') = 'pendiente' "
@@ -4978,6 +5035,16 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
             "THEN 1 ELSE 0 END) AS overdue_validation_count"
         )
     else:
+        stale_treatment_sql = (
+            "SUM(CASE WHEN audit_findings.finding_status = 'respondido' "
+            "AND date(audit_findings.updated_at) <= date(?) "
+            "THEN 1 ELSE 0 END) AS stale_treatment_count"
+        )
+        escalated_treatment_sql = (
+            "SUM(CASE WHEN audit_findings.finding_status = 'respondido' "
+            "AND date(audit_findings.updated_at) <= date(?) "
+            "THEN 1 ELSE 0 END) AS escalated_treatment_count"
+        )
         overdue_effectiveness_sql = (
             "SUM(CASE WHEN COALESCE(audit_findings.validation_status, '') = 'validado' "
             "AND COALESCE(audit_findings.effectiveness_status, '') = 'pendiente' "
@@ -5007,6 +5074,8 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
             SUM(CASE WHEN audit_findings.finding_status IN ('nuevo', 'respondido', 'resuelto', 'reabierto') THEN 1 ELSE 0 END) AS active_findings,
             SUM(CASE WHEN audit_findings.finding_status = 'nuevo' THEN 1 ELSE 0 END) AS new_count,
             SUM(CASE WHEN audit_findings.finding_status = 'respondido' THEN 1 ELSE 0 END) AS in_progress_count,
+            {stale_treatment_sql},
+            {escalated_treatment_sql},
             SUM(CASE WHEN audit_findings.priority = 'alta' THEN 1 ELSE 0 END) AS high_priority_count,
             SUM(CASE WHEN audit_findings.finding_status = 'reabierto' THEN 1 ELSE 0 END) AS reopened_count,
             SUM(CASE WHEN audit_findings.finding_status = 'resuelto' AND COALESCE(audit_findings.validation_status, '') != 'validado' THEN 1 ELSE 0 END) AS pending_validation_count,
@@ -5029,7 +5098,15 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         LEFT JOIN users AS owners ON owners.id = audit_findings.owner_user_id
         {where_sql}
         """,
-        (pending_validation_cutoff_iso, today_iso, today_iso, end_iso, *params),
+        (
+            stale_treatment_cutoff_iso,
+            escalated_treatment_cutoff_iso,
+            pending_validation_cutoff_iso,
+            today_iso,
+            today_iso,
+            end_iso,
+            *params,
+        ),
     ).fetchone()
     total_findings = row["total_findings"] or 0
     validated_count = row["validated_count"] or 0
@@ -5039,6 +5116,8 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         "active_findings": row["active_findings"] or 0,
         "new_count": row["new_count"] or 0,
         "in_progress_count": row["in_progress_count"] or 0,
+        "stale_treatment_count": row["stale_treatment_count"] or 0,
+        "escalated_treatment_count": row["escalated_treatment_count"] or 0,
         "high_priority_count": row["high_priority_count"] or 0,
         "reopened_count": row["reopened_count"] or 0,
         "pending_validation_count": row["pending_validation_count"] or 0,
@@ -5046,6 +5125,8 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         "overdue_effectiveness_count": row["overdue_effectiveness_count"] or 0,
         "due_soon_effectiveness_count": row["due_soon_effectiveness_count"] or 0,
         "pending_validation_alert_days": pending_validation_days,
+        "treatment_alert_days": stale_treatment_days,
+        "treatment_escalation_days": escalated_treatment_days,
         "validated_count": validated_count,
         "validation_rate": validation_rate,
     }
@@ -5129,6 +5210,10 @@ def fetch_findings(filters=None, auditor_user_id=None, supervisor_scope_names=No
             audit_findings.finding_status,
             audit_findings.priority,
             audit_findings.validation_status,
+            audit_findings.treatment_reason,
+            audit_findings.treatment_note,
+            audit_findings.treatment_next_step,
+            audit_findings.treatment_commitment_date,
             audit_findings.evidence_path,
             audit_findings.effectiveness_due_date,
             audit_findings.effectiveness_status,
@@ -5219,6 +5304,10 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
             audit_findings.finding_status,
             audit_findings.priority,
             audit_findings.response_notes,
+            audit_findings.treatment_reason,
+            audit_findings.treatment_note,
+            audit_findings.treatment_next_step,
+            audit_findings.treatment_commitment_date,
             audit_findings.evidence_path,
             audit_findings.closure_criteria,
             audit_findings.effectiveness_due_date,
@@ -5274,6 +5363,7 @@ def fetch_finding_detail(finding_id, auditor_user_id=None, supervisor_scope_name
     result = dict(row) if row else None
     if result:
         _annotate_effectiveness_due(result)
+        _annotate_treatment_tracking(result)
         _annotate_finding_state(result)
         result["completion_checklist"] = build_finding_completion_checklist(result)
         result["lifecycle_timeline"] = build_finding_timeline(result)
@@ -5407,6 +5497,25 @@ def _pending_validation_alert_window_days():
         return 3
 
 
+def _treatment_update_alert_window_days():
+    try:
+        return max(1, int(current_app.config.get("FINDING_TREATMENT_UPDATE_ALERT_DAYS") or 3))
+    except (TypeError, ValueError):
+        return 3
+
+
+def _treatment_update_escalation_days():
+    try:
+        configured = int(current_app.config.get("FINDING_TREATMENT_UPDATE_ESCALATION_DAYS") or 7)
+    except (TypeError, ValueError):
+        configured = 7
+    return max(_treatment_update_alert_window_days(), configured)
+
+
+def _treatment_update_cutoff_in_app_tz(days):
+    return _today_in_app_tz() - timedelta(days=max(0, int(days or 0)))
+
+
 def _parse_iso_date(value):
     raw = (value or "").strip()
     if not raw:
@@ -5452,8 +5561,101 @@ def _annotate_findings_effectiveness(rows):
     today = _today_in_app_tz()
     for row in rows:
         _annotate_effectiveness_due(row, today=today)
+        _annotate_treatment_tracking(row, today=today)
         _annotate_finding_state(row)
     return rows
+
+
+def _parse_db_datetime(value):
+    raw = (value or "").strip() if isinstance(value, str) else value
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        dt = raw
+    else:
+        text = str(raw).strip()
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                dt = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_app_timezone())
+
+
+def treatment_reason_label(value):
+    normalized = (value or "").strip().lower()
+    if not normalized:
+        return ""
+    return TREATMENT_REASON_LABELS.get(normalized, normalized.replace("_", " ").capitalize())
+
+
+def _normalize_treatment_reason(value):
+    normalized = (value or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized not in TREATMENT_REASON_LABELS:
+        raise ValueError("El motivo de tratamiento no es valido.")
+    return normalized
+
+
+def _normalize_treatment_commitment_date(value):
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except ValueError as exc:
+        raise ValueError("La fecha compromiso no es valida (usa AAAA-MM-DD).") from exc
+
+
+def _annotate_treatment_tracking(row, today=None):
+    if not isinstance(row, dict):
+        return row
+
+    today = today or _today_in_app_tz()
+    finding_status = (row.get("finding_status") or "").strip().lower()
+    commitment_date = _parse_iso_date(row.get("treatment_commitment_date"))
+    last_update_dt = _parse_db_datetime(row.get("updated_at") or row.get("responded_at") or row.get("created_at"))
+
+    days_without_update = None
+    if last_update_dt:
+        days_without_update = max(0, (today - last_update_dt.date()).days)
+
+    alert_days = _treatment_update_alert_window_days()
+    escalation_days = _treatment_update_escalation_days()
+    alert_level = "none"
+    alert_label = ""
+    if finding_status == "respondido" and days_without_update is not None:
+        if days_without_update >= escalation_days:
+            alert_level = "danger"
+            alert_label = "Escalado"
+        elif days_without_update >= alert_days:
+            alert_level = "warning"
+            alert_label = "Sin novedades"
+
+    commitment_bucket = "none"
+    commitment_days_to_due = None
+    if commitment_date:
+        commitment_days_to_due = (commitment_date - today).days
+        if commitment_days_to_due < 0:
+            commitment_bucket = "overdue"
+        elif commitment_days_to_due == 0:
+            commitment_bucket = "due_today"
+        else:
+            commitment_bucket = "upcoming"
+
+    row["treatment_reason_label"] = treatment_reason_label(row.get("treatment_reason"))
+    row["treatment_last_update_at"] = last_update_dt.isoformat() if last_update_dt else None
+    row["treatment_days_without_update"] = days_without_update
+    row["treatment_alert_level"] = alert_level
+    row["treatment_alert_label"] = alert_label
+    row["treatment_commitment_bucket"] = commitment_bucket
+    row["treatment_commitment_days_to_due"] = commitment_days_to_due
+    return row
 
 
 def _annotate_finding_state(row):
@@ -5512,7 +5714,16 @@ def _annotate_finding_state(row):
         consolidated_label = "En tratamiento"
         consolidated_tone = "neutral"
         next_action = "Completar cierre"
-        summary = "Existe respuesta del supervisor, pero el cierre aún no está completo."
+        if row.get("treatment_alert_level") == "danger":
+            consolidated_tone = "danger"
+            summary = "El hallazgo sigue en tratamiento y supero el umbral de escalamiento sin novedades."
+        elif row.get("treatment_alert_level") == "warning":
+            consolidated_tone = "warning"
+            summary = "El hallazgo sigue en tratamiento y ya requiere una nueva novedad para mantener trazabilidad."
+        else:
+            summary = "Existe respuesta del supervisor, pero el cierre aún no está completo."
+        if row.get("treatment_reason_label"):
+            summary = f"{summary} Motivo actual: {row['treatment_reason_label']}."
 
     row["consolidated_status_key"] = consolidated_key
     row["consolidated_status_label"] = consolidated_label
@@ -5523,7 +5734,12 @@ def _annotate_finding_state(row):
 
 
 def build_finding_completion_checklist(row):
+    finding_status = (row.get("finding_status") or "").strip().lower()
     response_ready = bool((row.get("response_notes") or "").strip())
+    treatment_reason_ready = bool((row.get("treatment_reason") or "").strip())
+    treatment_note_ready = bool((row.get("treatment_note") or "").strip())
+    treatment_next_step_ready = bool((row.get("treatment_next_step") or "").strip())
+    treatment_commitment_ready = bool((row.get("treatment_commitment_date") or "").strip())
     evidence_ready = bool(row.get("evidence_path"))
     criteria_ready = bool((row.get("closure_criteria") or "").strip())
     due_date_ready = bool((row.get("effectiveness_due_date") or "").strip())
@@ -5552,6 +5768,30 @@ def build_finding_completion_checklist(row):
             "detail": (row.get("effectiveness_due_date") or "").strip() or "Falta programar la verificación de eficacia.",
         },
     ]
+
+    if finding_status == "respondido":
+        checklist[1:1] = [
+            {
+                "label": "Motivo actual",
+                "state": "complete" if treatment_reason_ready else "pending",
+                "detail": row.get("treatment_reason_label") or "Falta registrar por que sigue en tratamiento.",
+            },
+            {
+                "label": "Ultima novedad",
+                "state": "complete" if treatment_note_ready else "pending",
+                "detail": "Registrada." if treatment_note_ready else "Falta dejar una novedad de seguimiento.",
+            },
+            {
+                "label": "Proximo paso",
+                "state": "complete" if treatment_next_step_ready else "pending",
+                "detail": (row.get("treatment_next_step") or "").strip() or "Falta definir la siguiente accion comprometida.",
+            },
+            {
+                "label": "Fecha compromiso",
+                "state": "complete" if treatment_commitment_ready else "pending",
+                "detail": (row.get("treatment_commitment_date") or "").strip() or "Falta informar cuando deberia haber un nuevo avance.",
+            },
+        ]
 
     if validation_status == "validado":
         checklist.append(
@@ -5665,6 +5905,10 @@ def update_finding_response(
     finding_id,
     finding_status,
     response_notes,
+    treatment_reason,
+    treatment_note,
+    treatment_next_step,
+    treatment_commitment_date,
     evidence_path,
     closure_criteria,
     effectiveness_due_date,
@@ -5685,6 +5929,10 @@ def update_finding_response(
             validation_status,
             validation_notes,
             response_notes,
+            treatment_reason,
+            treatment_note,
+            treatment_next_step,
+            treatment_commitment_date,
             evidence_path,
             closure_criteria,
             effectiveness_due_date,
@@ -5703,6 +5951,10 @@ def update_finding_response(
         previous_validation_status = (existing.get("validation_status") or "").strip().lower()
         previous_validation_notes = existing.get("validation_notes")
         previous_response_notes = existing.get("response_notes")
+        previous_treatment_reason = existing.get("treatment_reason")
+        previous_treatment_note = existing.get("treatment_note")
+        previous_treatment_next_step = existing.get("treatment_next_step")
+        previous_treatment_commitment_date = existing.get("treatment_commitment_date")
         previous_evidence = existing.get("evidence_path")
         previous_criteria = existing.get("closure_criteria")
         previous_due_date = existing.get("effectiveness_due_date")
@@ -5712,10 +5964,14 @@ def update_finding_response(
         previous_validation_status = (existing[1] or "").strip().lower()
         previous_validation_notes = existing[2]
         previous_response_notes = existing[3]
-        previous_evidence = existing[4]
-        previous_criteria = existing[5]
-        previous_due_date = existing[6]
-        previous_effectiveness_status = existing[7]
+        previous_treatment_reason = existing[4]
+        previous_treatment_note = existing[5]
+        previous_treatment_next_step = existing[6]
+        previous_treatment_commitment_date = existing[7]
+        previous_evidence = existing[8]
+        previous_criteria = existing[9]
+        previous_due_date = existing[10]
+        previous_effectiveness_status = existing[11]
 
     if previous_validation_status == "validado" or previous_finding_status == "validado":
         raise ValueError("No puedes editar un hallazgo ya validado.")
@@ -5724,11 +5980,43 @@ def update_finding_response(
     evidence_value = evidence_path if evidence_path is not None else previous_evidence
     criteria_value = (closure_criteria or "").strip() or previous_criteria or None
     due_date_value = _normalize_effectiveness_due_date(effectiveness_due_date)
+    treatment_reason_raw = (treatment_reason or "").strip()
+    treatment_note_raw = (treatment_note or "").strip()
+    treatment_next_step_raw = (treatment_next_step or "").strip()
+    treatment_commitment_raw = (treatment_commitment_date or "").strip()
+    treatment_reason_value = _normalize_treatment_reason(treatment_reason_raw) if treatment_reason_raw else previous_treatment_reason
+    treatment_note_value = treatment_note_raw or previous_treatment_note or None
+    treatment_next_step_value = treatment_next_step_raw or previous_treatment_next_step or None
+    treatment_commitment_value = (
+        _normalize_treatment_commitment_date(treatment_commitment_raw)
+        if treatment_commitment_raw
+        else previous_treatment_commitment_date
+    )
     if not due_date_value and not reset_cycle:
         due_date_value = previous_due_date or None
     effectiveness_status_value = None if reset_cycle else ((previous_effectiveness_status or "").strip() or None)
     validation_status_value = None if reset_cycle else (previous_validation_status or None)
     validation_notes_value = None if reset_cycle else previous_validation_notes
+
+    if safe_status == "respondido" and previous_finding_status != "respondido" and not treatment_note_raw:
+        treatment_note_value = None
+    elif safe_status != "respondido" and previous_finding_status != "respondido":
+        if not treatment_reason_raw:
+            treatment_reason_value = None
+        if not treatment_note_raw:
+            treatment_note_value = None
+        if not treatment_next_step_raw:
+            treatment_next_step_value = None
+        if not treatment_commitment_raw:
+            treatment_commitment_value = None
+
+    if safe_status == "respondido":
+        if not treatment_reason_value:
+            raise ValueError("Debes indicar el motivo actual del tratamiento.")
+        if not treatment_next_step_value:
+            raise ValueError("Debes indicar el proximo paso comprometido.")
+        if not treatment_commitment_value:
+            raise ValueError("Debes indicar la fecha compromiso del tratamiento.")
 
     if safe_status == "resuelto":
         if not evidence_value:
@@ -5745,6 +6033,14 @@ def update_finding_response(
         changes.append(f"estado: {previous_finding_status or '-'} -> {safe_status}")
     if (previous_response_notes or "") != (notes_value or ""):
         changes.append("respuesta actualizada")
+    if (previous_treatment_reason or "") != (treatment_reason_value or ""):
+        changes.append("motivo de tratamiento actualizado")
+    if (previous_treatment_note or "") != (treatment_note_value or ""):
+        changes.append("novedad actualizada")
+    if (previous_treatment_next_step or "") != (treatment_next_step_value or ""):
+        changes.append("proximo paso actualizado")
+    if (previous_treatment_commitment_date or "") != (treatment_commitment_value or ""):
+        changes.append("fecha compromiso actualizada")
     if (previous_criteria or "") != (criteria_value or ""):
         changes.append("criterio de cierre actualizado")
     if (previous_due_date or "") != (due_date_value or ""):
@@ -5758,6 +6054,10 @@ def update_finding_response(
         SET
             finding_status = ?,
             response_notes = ?,
+            treatment_reason = ?,
+            treatment_note = ?,
+            treatment_next_step = ?,
+            treatment_commitment_date = ?,
             evidence_path = ?,
             closure_criteria = ?,
             effectiveness_due_date = ?,
@@ -5778,6 +6078,10 @@ def update_finding_response(
         (
             safe_status,
             notes_value,
+            treatment_reason_value,
+            treatment_note_value,
+            treatment_next_step_value,
+            treatment_commitment_value,
             evidence_value,
             criteria_value,
             due_date_value,
@@ -5801,6 +6105,79 @@ def update_finding_response(
             event_type="respuesta",
             detail="; ".join(changes),
         )
+    get_db().commit()
+    return True
+
+
+def add_finding_treatment_update(
+    finding_id,
+    treatment_reason,
+    treatment_note,
+    treatment_next_step,
+    treatment_commitment_date,
+    actor_user_id,
+):
+    reason_value = _normalize_treatment_reason(treatment_reason)
+    note_value = (treatment_note or "").strip() or None
+    next_step_value = (treatment_next_step or "").strip() or None
+    commitment_value = _normalize_treatment_commitment_date(treatment_commitment_date)
+
+    if not reason_value:
+        raise ValueError("Debes indicar el motivo actual del tratamiento.")
+    if not note_value:
+        raise ValueError("Debes ingresar la novedad actual del tratamiento.")
+    if not next_step_value:
+        raise ValueError("Debes indicar el proximo paso comprometido.")
+    if not commitment_value:
+        raise ValueError("Debes indicar la fecha compromiso del tratamiento.")
+
+    existing = get_db().execute(
+        """
+        SELECT finding_status, validation_status
+        FROM audit_findings
+        WHERE id = ?
+        """,
+        (finding_id,),
+    ).fetchone()
+    if not existing:
+        return False
+
+    if isinstance(existing, dict):
+        current_status = (existing.get("finding_status") or "").strip().lower()
+        current_validation_status = (existing.get("validation_status") or "").strip().lower()
+    else:
+        current_status = (existing[0] or "").strip().lower()
+        current_validation_status = (existing[1] or "").strip().lower()
+
+    if current_validation_status == "validado":
+        raise ValueError("No puedes cargar novedades en un hallazgo ya validado.")
+    if current_status != "respondido":
+        raise ValueError("Solo puedes cargar novedades cuando el hallazgo esta en tratamiento.")
+
+    get_db().execute(
+        """
+        UPDATE audit_findings
+        SET
+            treatment_reason = ?,
+            treatment_note = ?,
+            treatment_next_step = ?,
+            treatment_commitment_date = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (reason_value, note_value, next_step_value, commitment_value, finding_id),
+    )
+    create_finding_event(
+        finding_id,
+        actor_user_id=actor_user_id,
+        event_type="novedad_tratamiento",
+        detail=(
+            f"Motivo: {treatment_reason_label(reason_value)}; "
+            f"Novedad: {note_value}; "
+            f"Proximo paso: {next_step_value}; "
+            f"Fecha compromiso: {commitment_value}"
+        ),
+    )
     get_db().commit()
     return True
 
