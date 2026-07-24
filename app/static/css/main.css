@@ -807,6 +807,15 @@ form.form-grid {
         grid-template-columns: 1fr;
     }
 
+    .findings-table-wrap {
+        max-height: 60vh;
+    }
+
+    .findings-sticky-col {
+        position: static;
+        box-shadow: none;
+    }
+
 
 
     .topbar-row {
@@ -1260,6 +1269,68 @@ input[type="file"]:focus-visible {
 
 .table-wrap {
     overflow-x: auto;
+}
+
+.findings-table-wrap {
+    max-height: min(72vh, 52rem);
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+.findings-table {
+    min-width: max-content;
+}
+
+.findings-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.findings-col-date {
+    box-sizing: border-box;
+    min-width: 7.5rem;
+    width: 7.5rem;
+}
+
+.findings-col-mobile {
+    box-sizing: border-box;
+    min-width: 13.5rem;
+    width: 13.5rem;
+    overflow-wrap: anywhere;
+}
+
+.findings-sticky-col {
+    position: sticky;
+    z-index: 1;
+    background: var(--surface);
+}
+
+.findings-table thead .findings-sticky-col {
+    z-index: 4;
+}
+
+.findings-sticky-col-1 {
+    left: 0;
+}
+
+.findings-sticky-col-2 {
+    left: 7.5rem;
+}
+
+.findings-table th.findings-sticky-col,
+.findings-table td.findings-sticky-col {
+    box-shadow: inset -1px 0 0 var(--border);
+}
+
+.findings-table tbody tr.finding-row-warning td.findings-sticky-col {
+    background: #f6ede4;
+}
+
+.findings-table tbody tr.finding-row-critical td.findings-sticky-col {
+    background: #f8e8e8;
 }
 
 .finding-row-warning td {
