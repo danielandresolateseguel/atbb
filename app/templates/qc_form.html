@@ -99,6 +99,47 @@
     <section class="card">
         <div class="section-heading">
             <div>
+                <p class="eyebrow">Instalación</p>
+                <h3>Tiempo de instalación</h3>
+                <p class="empty-state">Completar solo si el QC se realiza durante la instalación (en ejecución).</p>
+            </div>
+        </div>
+        <div class="form-grid">
+            <label>
+                <span>QC durante instalación</span>
+                <select name="qc_live_installation" id="qc_live_installation">
+                    <option value="0" {% if request.form.get('qc_live_installation', '0') != '1' %}selected{% endif %}>Posterior (no aplica)</option>
+                    <option value="1" {% if request.form.get('qc_live_installation') == '1' %}selected{% endif %}>En ejecución</option>
+                </select>
+            </label>
+
+            <label data-install-field="1">
+                <span>Minutos totales (instalación)</span>
+                <input type="number" name="installation_duration_minutes" id="installation_duration_minutes" min="1" max="1440" step="1" value="{{ request.form.get('installation_duration_minutes', '') }}" placeholder="Ej: 95">
+            </label>
+
+            <label data-install-field="1">
+                <span>Cable utilizado</span>
+                <select name="cable_type" id="cable_type">
+                    <option value="" {% if not request.form.get('cable_type') %}selected{% endif %}>Seleccionar</option>
+                    <option value="drop_40" {% if request.form.get('cable_type') == 'drop_40' %}selected{% endif %}>Drop plano 40 m</option>
+                    <option value="drop_70" {% if request.form.get('cable_type') == 'drop_70' %}selected{% endif %}>Drop plano 70 m</option>
+                    <option value="drop_100" {% if request.form.get('cable_type') == 'drop_100' %}selected{% endif %}>Drop plano 100 m</option>
+                    <option value="drop_150" {% if request.form.get('cable_type') == 'drop_150' %}selected{% endif %}>Drop plano 150 m</option>
+                    <option value="bobina" {% if request.form.get('cable_type') == 'bobina' %}selected{% endif %}>Bobina (&gt;150 m)</option>
+                </select>
+            </label>
+
+            <label data-install-field="1" id="bobina_meters_label">
+                <span>Metros utilizados (bobina)</span>
+                <input type="number" name="cable_meters" id="cable_meters" min="151" max="500" step="1" value="{{ request.form.get('cable_meters', '') }}" placeholder="151–500">
+            </label>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
                 <p class="eyebrow">Checklist</p>
                 <h3>{{ section["title"] }}</h3>
                 <p class="empty-state">Evidencia fotográfica: mínimo 2 fotos en total (en cualquier ítem del checklist y/o en la foto general del QC).</p>
@@ -238,6 +279,38 @@
             return;
         }
 
+        function toggleInstallationFields() {
+            const selector = form.querySelector("#qc_live_installation");
+            const isLive = selector && String(selector.value || "") === "1";
+            const duration = form.querySelector("#installation_duration_minutes");
+            const cableType = form.querySelector("#cable_type");
+            const cableMeters = form.querySelector("#cable_meters");
+            const bobinaLabel = form.querySelector("#bobina_meters_label");
+
+            const installFields = Array.from(form.querySelectorAll('[data-install-field="1"]'));
+            for (const node of installFields) {
+                node.style.display = isLive ? "" : "none";
+            }
+
+            if (duration) {
+                duration.required = Boolean(isLive);
+                duration.disabled = !isLive;
+            }
+            if (cableType) {
+                cableType.required = Boolean(isLive);
+                cableType.disabled = !isLive;
+            }
+
+            const isBobina = isLive && cableType && String(cableType.value || "") === "bobina";
+            if (bobinaLabel) {
+                bobinaLabel.style.display = isBobina ? "" : "none";
+            }
+            if (cableMeters) {
+                cableMeters.required = Boolean(isBobina);
+                cableMeters.disabled = !isBobina;
+            }
+        }
+
         function getQcDate() {
             const input = form.querySelector('input[name="qc_date"]');
             return input ? String(input.value || "").trim() : "";
@@ -259,6 +332,16 @@
             }
             return [raw];
         }
+
+        const qcLiveSelect = form.querySelector("#qc_live_installation");
+        if (qcLiveSelect) {
+            qcLiveSelect.addEventListener("change", toggleInstallationFields);
+        }
+        const cableTypeSelect = form.querySelector("#cable_type");
+        if (cableTypeSelect) {
+            cableTypeSelect.addEventListener("change", toggleInstallationFields);
+        }
+        toggleInstallationFields();
 
         async function deleteEvidencePaths(paths) {
             const response = await fetch("/api/audits/delete-evidence", {

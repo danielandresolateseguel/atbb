@@ -78,6 +78,37 @@
             </div>
         {% endif %}
     </article>
+
+    {% if qc.get("qc_live_installation") %}
+        <article class="card info-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Instalación</p>
+                    <h3>Tiempo</h3>
+                </div>
+            </div>
+            <div class="info-list">
+                <p><strong>Minutos totales:</strong> {{ qc.get("installation_duration_minutes") or "-" }}</p>
+                <p><strong>Metros utilizados:</strong> {{ qc.get("cable_meters") or "-" }}</p>
+                <p>
+                    <strong>Cable:</strong>
+                    {% if qc.get("cable_type") == "drop_40" %}
+                        Drop plano 40 m
+                    {% elif qc.get("cable_type") == "drop_70" %}
+                        Drop plano 70 m
+                    {% elif qc.get("cable_type") == "drop_100" %}
+                        Drop plano 100 m
+                    {% elif qc.get("cable_type") == "drop_150" %}
+                        Drop plano 150 m
+                    {% elif qc.get("cable_type") == "bobina" %}
+                        Bobina (&gt;150 m)
+                    {% else %}
+                        -
+                    {% endif %}
+                </p>
+            </div>
+        </article>
+    {% endif %}
 </section>
 
 <section class="card info-card">

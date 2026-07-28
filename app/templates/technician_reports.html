@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+
+{% block title %}Reportes Técnicos{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Reportes</p>
+        <h2>Desempeño por técnico</h2>
+        <p class="hero-copy">Análisis histórico del QC: tiempos (cuando aplica) y no conformidades por ítem (NC menor / NC mayor).</p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
+        <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Volver a QC</a>
+    </div>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.technician_reports') }}">
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+        </label>
+        <label>
+            <span>Técnico</span>
+            <select name="technician_id">
+                <option value="" {% if not filters.technician_id %}selected{% endif %}>Seleccionar</option>
+                {% for technician in technicians %}
+                    <option value="{{ technician['id'] }}" {% if filters.technician_id|int == technician['id'] %}selected{% endif %}>
+                        {{ technician["name"] }} ({{ technician["employee_code"] }})
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Mínimo QC por técnico</span>
+            <input type="number" name="min_n" min="1" step="1" value="{{ min_n }}">
+        </label>
+        <label class="checkbox-field">
+            <span>
+                {% if audit_official_from_date %}
+                    Incluir pruebas y registros previos al corte {{ audit_official_from_date }}
+                {% else %}
+                    Incluir pruebas
+                {% endif %}
+            </span>
+            <input type="checkbox" name="include_pruebas" value="1" {% if filters.include_pruebas %}checked{% endif %}>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.technician_reports') }}">Limpiar</a>
+        </div>
+    </form>
+</section>
+
+{% if technician_selected and summary and extra_summary and nc_summary %}
+    <section class="stats-grid">
+        <article class="card stat-card">
+            <span class="stat-label">QC</span>
+            <strong class="stat-value">{{ summary["total_qc"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">Aprobación</span>
+            <strong class="stat-value">{{ summary["approval_rate"] }}%</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">Promedio</span>
+            <strong class="stat-value">{{ summary["average_score"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">Vinculados a auditoría</span>
+            <strong class="stat-value">{{ extra_summary["linked_audit_count"] }}</strong>
+        </article>
+    </section>
+
+    <section class="stats-grid">
+        <article class="card stat-card">
+            <span class="stat-label">NC mayor (ítems)</span>
+            <strong class="stat-value">{{ nc_summary["nc_mayor_count"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">NC menor (ítems)</span>
+            <strong class="stat-value">{{ nc_summary["nc_menor_count"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">Ítems evaluados</span>
+            <strong class="stat-value">{{ nc_summary["evaluated_items_count"] }}</strong>
+        </article>
+        <article class="card stat-card">
+            <span class="stat-label">QC en ejecución</span>
+            <strong class="stat-value">{{ extra_summary["live_qc_count"] }}</strong>
+        </article>
+    </section>
+
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Técnico</p>
+                <h3>{{ technician_selected["name"] }} ({{ technician_selected["employee_code"] }})</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Promedio minutos (QC en ejecución):</strong> {{ extra_summary["avg_install_minutes"] if extra_summary["avg_install_minutes"] is not none else "-" }}</p>
+            <p><strong>Promedio metros (QC en ejecución):</strong> {{ extra_summary["avg_cable_meters"] if extra_summary["avg_cable_meters"] is not none else "-" }}</p>
+        </div>
+    </section>
+
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Fallas</p>
+                <h3>Ítems con más NC mayor</h3>
+            </div>
+        </div>
+        {% if nc_breakdown_major %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ítem</th>
+                            <th>NC mayor</th>
+                            <th>NC total</th>
+                            <th>Tasa NC mayor</th>
+                            <th>Evaluaciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in nc_breakdown_major %}
+                            <tr>
+                                <td>{{ row["item_label"] }}</td>
+                                <td>{{ row["nc_mayor_count"] }}</td>
+                                <td>{{ row["nc_total_count"] }}</td>
+                                <td>{{ row["nc_mayor_rate"] }}%</td>
+                                <td>{{ row["evaluated_count"] }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">Sin datos de no conformidades para este técnico con los filtros actuales.</p>
+        {% endif %}
+    </section>
+
+    <section class="card table-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Fallas</p>
+                <h3>Ítems con más NC menor</h3>
+            </div>
+        </div>
+        {% if nc_breakdown_minor %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ítem</th>
+                            <th>NC menor</th>
+                            <th>NC total</th>
+                            <th>Tasa NC total</th>
+                            <th>Evaluaciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in nc_breakdown_minor %}
+                            <tr>
+                                <td>{{ row["item_label"] }}</td>
+                                <td>{{ row["nc_menor_count"] }}</td>
+                                <td>{{ row["nc_total_count"] }}</td>
+                                <td>{{ row["nc_total_rate"] }}%</td>
+                                <td>{{ row["evaluated_count"] }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">Sin datos de no conformidades para este técnico con los filtros actuales.</p>
+        {% endif %}
+    </section>
+{% else %}
+    <section class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Detalle</p>
+                <h3>Selecciona un técnico</h3>
+            </div>
+        </div>
+        <p class="empty-state">El detalle muestra dónde falla más (NC menor / NC mayor) y, cuando corresponde, promedios de tiempo y metros registrados.</p>
+    </section>
+{% endif %}
+
+<section class="card filter-card no-print" id="ranking_view_controls">
+    <div class="filter-grid audit-filters">
+        <label>
+            <span>Vista de ranking</span>
+            <select id="ranking_view" name="ranking_view">
+                <option value="avg">Promedio QC</option>
+                <option value="nc_mayor">NC mayor</option>
+            </select>
+        </label>
+    </div>
+</section>
+
+<section class="card table-card" data-ranking-section="avg">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Ranking</p>
+            <h3>Técnicos (por promedio QC)</h3>
+        </div>
+    </div>
+    {% if technician_ranking %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Técnico</th>
+                        <th>QC</th>
+                        <th>Promedio</th>
+                        <th>Rechazadas</th>
+                        <th>Último QC</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in technician_ranking %}
+                        <tr>
+                            <td>{{ row["technician_name"] }}{% if row["technician_employee_code"] and row["technician_employee_code"] != "-" %} | {{ row["technician_employee_code"] }}{% endif %}</td>
+                            <td>{{ row["total_qc"] }}</td>
+                            <td>{{ row["average_score"] }}</td>
+                            <td>{{ row["rejected_count"] }}</td>
+                            <td>{{ row["last_qc_date"] }}</td>
+                            <td>
+                                <a class="table-link" href="{{ url_for('main.technician_reports', from_date=filters.from_date, to_date=filters.to_date, include_pruebas=filters.include_pruebas, technician_id=row['technician_id'], min_n=min_n) }}">Ver detalle</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <small>Incluye técnicos con al menos {{ min_n }} QC según los filtros.</small>
+    {% else %}
+        <p class="empty-state">No hay técnicos con al menos {{ min_n }} QC para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card" data-ranking-section="nc_mayor">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Ranking</p>
+            <h3>Técnicos (por NC mayor)</h3>
+        </div>
+    </div>
+    {% if technician_ranking_nc_major %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Técnico</th>
+                        <th>QC</th>
+                        <th>NC mayor</th>
+                        <th>Tasa NC mayor</th>
+                        <th>Promedio</th>
+                        <th>Último QC</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in technician_ranking_nc_major %}
+                        <tr>
+                            <td>{{ row["technician_name"] }}{% if row["technician_employee_code"] and row["technician_employee_code"] != "-" %} | {{ row["technician_employee_code"] }}{% endif %}</td>
+                            <td>{{ row["total_qc"] }}</td>
+                            <td>{{ row["nc_mayor_count"] }}</td>
+                            <td>{{ row["nc_mayor_rate"] }}%</td>
+                            <td>{{ row["average_score"] }}</td>
+                            <td>{{ row["last_qc_date"] }}</td>
+                            <td>
+                                <a class="table-link" href="{{ url_for('main.technician_reports', from_date=filters.from_date, to_date=filters.to_date, include_pruebas=filters.include_pruebas, technician_id=row['technician_id'], min_n=min_n) }}">Ver detalle</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <small>Incluye técnicos con al menos {{ min_n }} QC según los filtros.</small>
+    {% else %}
+        <p class="empty-state">No hay técnicos con al menos {{ min_n }} QC para los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<script>
+    (function () {
+        const selector = document.getElementById("ranking_view");
+        const controls = document.getElementById("ranking_view_controls");
+        const sections = Array.from(document.querySelectorAll("[data-ranking-section]"));
+        if (!selector || sections.length === 0) {
+            return;
+        }
+
+        function normalize(value) {
+            const raw = String(value || "").trim();
+            return raw === "nc_mayor" ? "nc_mayor" : "avg";
+        }
+
+        function getInitialView() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const fromQuery = params.get("ranking");
+                if (fromQuery) {
+                    return normalize(fromQuery);
+                }
+            } catch (e) {
+            }
+            try {
+                const fromStorage = sessionStorage.getItem("technician_ranking_view");
+                if (fromStorage) {
+                    return normalize(fromStorage);
+                }
+            } catch (e) {
+            }
+            return "avg";
+        }
+
+        function setQueryParam(view) {
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.set("ranking", view);
+                history.replaceState({}, "", url.toString());
+            } catch (e) {
+            }
+        }
+
+        function persist(view) {
+            try {
+                sessionStorage.setItem("technician_ranking_view", view);
+            } catch (e) {
+            }
+        }
+
+        function applyView(view) {
+            const active = normalize(view);
+            selector.value = active;
+            for (const section of sections) {
+                const key = normalize(section.getAttribute("data-ranking-section"));
+                section.style.display = key === active ? "" : "none";
+            }
+            setQueryParam(active);
+            persist(active);
+        }
+
+        function applyStickyOffset() {
+            if (!controls) {
+                return;
+            }
+            if (window.matchMedia && !window.matchMedia("(max-width: 720px)").matches) {
+                controls.style.top = "";
+                return;
+            }
+            const topbar = document.querySelector(".topbar");
+            const topbarHeight = topbar ? topbar.getBoundingClientRect().height : 0;
+            controls.style.top = Math.round(topbarHeight + 12) + "px";
+        }
+
+        function showAll() {
+            for (const section of sections) {
+                section.style.display = "";
+            }
+        }
+
+        const initial = getInitialView();
+        applyView(initial);
+        applyStickyOffset();
+        selector.addEventListener("change", function () {
+            applyView(selector.value);
+        });
+        window.addEventListener("resize", applyStickyOffset);
+
+        window.addEventListener("beforeprint", showAll);
+        window.addEventListener("afterprint", function () {
+            applyView(selector.value);
+            applyStickyOffset();
+        });
+    })();
+</script>
+{% endblock %}

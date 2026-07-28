@@ -92,6 +92,9 @@
                             <a href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
                         {% endif %}
                         {% if can_view_reports %}
+                            <a href="{{ url_for('main.technician_reports') }}">Reportes Técnicos</a>
+                        {% endif %}
+                        {% if can_view_reports %}
                             <a href="{{ url_for('main.reports') }}">Reportes</a>
                         {% endif %}
                         {% if not is_supervisor %}

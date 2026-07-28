@@ -515,6 +515,10 @@ def init_db():
             record_scope TEXT NOT NULL DEFAULT 'oficial',
             general_notes TEXT,
             photo_path TEXT,
+            qc_live_installation INTEGER NOT NULL DEFAULT 0,
+            installation_duration_minutes INTEGER,
+            cable_type TEXT,
+            cable_meters INTEGER,
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
             FOREIGN KEY (audit_id) REFERENCES audits (id),
             FOREIGN KEY (auditor_user_id) REFERENCES users (id)
@@ -960,7 +964,11 @@ def init_db_postgres():
             result_status TEXT NOT NULL,
             record_scope TEXT NOT NULL DEFAULT 'oficial',
             general_notes TEXT,
-            photo_path TEXT
+            photo_path TEXT,
+            qc_live_installation INTEGER NOT NULL DEFAULT 0,
+            installation_duration_minutes INTEGER,
+            cable_type TEXT,
+            cable_meters INTEGER
         )
         """
     )
@@ -1513,6 +1521,10 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "tnps_responses", "speedtest_done", "INTEGER")
     add_column_if_missing(connection, "tnps_responses", "qc_session_id", "INTEGER")
     add_column_if_missing(connection, "qc_sessions", "photo_path", "TEXT")
+    add_column_if_missing(connection, "qc_sessions", "qc_live_installation", "INTEGER NOT NULL DEFAULT 0")
+    add_column_if_missing(connection, "qc_sessions", "installation_duration_minutes", "INTEGER")
+    add_column_if_missing(connection, "qc_sessions", "cable_type", "TEXT")
+    add_column_if_missing(connection, "qc_sessions", "cable_meters", "INTEGER")
     migrate_tnps_experience_scores_to_ten_scale(connection)
     ensure_audits_nullable_technician(connection)
 
@@ -1742,6 +1754,13 @@ def ensure_tnps_columns_postgres(cursor):
 
 def ensure_qc_columns_postgres(cursor):
     cursor.execute("ALTER TABLE qc_sessions ADD COLUMN IF NOT EXISTS photo_path TEXT")
+    cursor.execute("ALTER TABLE qc_sessions ADD COLUMN IF NOT EXISTS qc_live_installation INTEGER")
+    cursor.execute("ALTER TABLE qc_sessions ADD COLUMN IF NOT EXISTS installation_duration_minutes INTEGER")
+    cursor.execute("ALTER TABLE qc_sessions ADD COLUMN IF NOT EXISTS cable_type TEXT")
+    cursor.execute("ALTER TABLE qc_sessions ADD COLUMN IF NOT EXISTS cable_meters INTEGER")
+    cursor.execute("UPDATE qc_sessions SET qc_live_installation = 0 WHERE qc_live_installation IS NULL")
+    cursor.execute("ALTER TABLE qc_sessions ALTER COLUMN qc_live_installation SET DEFAULT 0")
+    cursor.execute("ALTER TABLE qc_sessions ALTER COLUMN qc_live_installation SET NOT NULL")
 
 
 def create_finding_event(finding_id, actor_user_id, event_type, detail=None, connection=None):
@@ -6907,6 +6926,10 @@ def fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None):
             qc_sessions.record_scope,
             qc_sessions.general_notes,
             qc_sessions.photo_path,
+            qc_sessions.qc_live_installation,
+            qc_sessions.installation_duration_minutes,
+            qc_sessions.cable_type,
+            qc_sessions.cable_meters,
             {created_at_expr} AS created_at,
             COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
             COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS employee_code,
@@ -6967,8 +6990,12 @@ def create_qc_session(qc_data, items):
             result_status,
             record_scope,
             general_notes,
-            photo_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            photo_path,
+            qc_live_installation,
+            installation_duration_minutes,
+            cable_type,
+            cable_meters
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
     insert_params = (
         qc_data["qc_date"],
@@ -6990,6 +7017,10 @@ def create_qc_session(qc_data, items):
         normalize_audit_record_scope(qc_data.get("record_scope")),
         qc_data.get("general_notes"),
         qc_data.get("photo_path"),
+        1 if qc_data.get("qc_live_installation") else 0,
+        qc_data.get("installation_duration_minutes"),
+        qc_data.get("cable_type"),
+        qc_data.get("cable_meters"),
     )
 
     if is_postgres():
@@ -7553,6 +7584,168 @@ def fetch_qc_reports_technician_ranking(filters=None, auditor_user_id=None, supe
             }
         )
     return ranking
+
+
+def fetch_qc_reports_technician_ranking_by_nc_major(filters=None, auditor_user_id=None, supervisor_scope_names=None, min_qc=3, limit=200):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            qc_sessions.technician_id,
+            COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
+            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS technician_employee_code,
+            COUNT(DISTINCT qc_sessions.id) AS total_qc,
+            SUM(CASE WHEN qc_items.status = 'nc_mayor' THEN 1 ELSE 0 END) AS nc_mayor_count,
+            SUM(CASE WHEN qc_items.status = 'nc_menor' THEN 1 ELSE 0 END) AS nc_menor_count,
+            SUM(CASE WHEN qc_items.status IN ('conforme', 'nc_menor', 'nc_mayor') THEN 1 ELSE 0 END) AS evaluated_items_count,
+            AVG(qc_sessions.total_score) AS average_score,
+            MAX(qc_sessions.qc_date) AS last_qc_date
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        LEFT JOIN qc_items ON qc_items.qc_session_id = qc_sessions.id
+        {where_sql}
+        GROUP BY qc_sessions.technician_id, technician_name, technician_employee_code
+        HAVING COUNT(DISTINCT qc_sessions.id) >= ?
+        ORDER BY nc_mayor_count DESC, nc_menor_count DESC, average_score ASC, total_qc DESC, technician_name ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [int(min_qc), int(limit)]),
+    ).fetchall()
+
+    ranking = []
+    for row in rows:
+        evaluated = row["evaluated_items_count"] or 0
+        nc_mayor = row["nc_mayor_count"] or 0
+        nc_menor = row["nc_menor_count"] or 0
+        ranking.append(
+            {
+                "technician_id": row["technician_id"],
+                "technician_name": row["technician_name"] or "-",
+                "technician_employee_code": row["technician_employee_code"] or "-",
+                "total_qc": row["total_qc"] or 0,
+                "average_score": round((row["average_score"] or 0), 2),
+                "nc_mayor_count": nc_mayor,
+                "nc_menor_count": nc_menor,
+                "evaluated_items_count": evaluated,
+                "nc_mayor_rate": 0 if evaluated == 0 else round((nc_mayor / evaluated) * 100, 1),
+                "last_qc_date": row["last_qc_date"] or "-",
+            }
+        )
+    return ranking
+
+
+def fetch_qc_technician_extra_summary(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    row = get_db().execute(
+        f"""
+        SELECT
+            SUM(CASE WHEN qc_sessions.audit_id IS NOT NULL THEN 1 ELSE 0 END) AS linked_audit_count,
+            SUM(CASE WHEN qc_sessions.qc_live_installation = 1 THEN 1 ELSE 0 END) AS live_qc_count,
+            AVG(CASE WHEN qc_sessions.qc_live_installation = 1 THEN qc_sessions.installation_duration_minutes ELSE NULL END) AS avg_install_minutes,
+            AVG(CASE WHEN qc_sessions.qc_live_installation = 1 THEN qc_sessions.cable_meters ELSE NULL END) AS avg_cable_meters
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+
+    linked_audit_count = row["linked_audit_count"] or 0
+    live_qc_count = row["live_qc_count"] or 0
+    avg_install_minutes = None if live_qc_count == 0 else round((row["avg_install_minutes"] or 0), 1)
+    avg_cable_meters = None if live_qc_count == 0 else round((row["avg_cable_meters"] or 0), 1)
+
+    return {
+        "linked_audit_count": linked_audit_count,
+        "live_qc_count": live_qc_count,
+        "avg_install_minutes": avg_install_minutes,
+        "avg_cable_meters": avg_cable_meters,
+    }
+
+
+def fetch_qc_technician_nc_summary(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    row = get_db().execute(
+        f"""
+        SELECT
+            SUM(CASE WHEN qc_items.status = 'nc_menor' THEN 1 ELSE 0 END) AS nc_menor_count,
+            SUM(CASE WHEN qc_items.status = 'nc_mayor' THEN 1 ELSE 0 END) AS nc_mayor_count,
+            SUM(CASE WHEN qc_items.status IN ('conforme', 'nc_menor', 'nc_mayor') THEN 1 ELSE 0 END) AS evaluated_items_count
+        FROM qc_items
+        JOIN qc_sessions ON qc_sessions.id = qc_items.qc_session_id
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+
+    evaluated_items_count = row["evaluated_items_count"] or 0
+    nc_menor_count = row["nc_menor_count"] or 0
+    nc_mayor_count = row["nc_mayor_count"] or 0
+
+    return {
+        "evaluated_items_count": evaluated_items_count,
+        "nc_menor_count": nc_menor_count,
+        "nc_mayor_count": nc_mayor_count,
+    }
+
+
+def fetch_qc_technician_nc_breakdown(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=60):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT
+            qc_items.item_key,
+            qc_items.item_label,
+            SUM(CASE WHEN qc_items.status = 'nc_menor' THEN 1 ELSE 0 END) AS nc_menor_count,
+            SUM(CASE WHEN qc_items.status = 'nc_mayor' THEN 1 ELSE 0 END) AS nc_mayor_count,
+            SUM(CASE WHEN qc_items.status IN ('conforme', 'nc_menor', 'nc_mayor') THEN 1 ELSE 0 END) AS evaluated_count
+        FROM qc_items
+        JOIN qc_sessions ON qc_sessions.id = qc_items.qc_session_id
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        GROUP BY qc_items.item_key, qc_items.item_label
+        ORDER BY nc_mayor_count DESC, nc_menor_count DESC, evaluated_count DESC, qc_items.item_label ASC
+        LIMIT ?
+        """,
+        tuple(list(params) + [int(limit)]),
+    ).fetchall()
+
+    breakdown = []
+    for row in rows:
+        evaluated = row["evaluated_count"] or 0
+        nc_menor = row["nc_menor_count"] or 0
+        nc_mayor = row["nc_mayor_count"] or 0
+        total_nc = nc_menor + nc_mayor
+        breakdown.append(
+            {
+                "item_key": row["item_key"] or "-",
+                "item_label": row["item_label"] or "-",
+                "evaluated_count": evaluated,
+                "nc_menor_count": nc_menor,
+                "nc_mayor_count": nc_mayor,
+                "nc_total_count": total_nc,
+                "nc_mayor_rate": 0 if evaluated == 0 else round((nc_mayor / evaluated) * 100, 1),
+                "nc_total_rate": 0 if evaluated == 0 else round((total_nc / evaluated) * 100, 1),
+            }
+        )
+    return breakdown
 
 
 def import_technicians(rows):

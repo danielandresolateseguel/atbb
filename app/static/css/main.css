@@ -1644,6 +1644,13 @@ th .table-sort.is-active .table-sort-indicator {
     margin-bottom: 1rem;
 }
 
+@media (max-width: 720px) {
+    #ranking_view_controls {
+        position: sticky;
+        z-index: 9;
+    }
+}
+
 .filter-grid {
     display: grid;
     gap: 1rem;

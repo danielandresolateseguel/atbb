@@ -119,6 +119,10 @@ from app.models import (
     fetch_qc_reports_status_breakdown,
     fetch_qc_reports_time_series,
     fetch_qc_reports_technician_ranking,
+    fetch_qc_reports_technician_ranking_by_nc_major,
+    fetch_qc_technician_extra_summary,
+    fetch_qc_technician_nc_breakdown,
+    fetch_qc_technician_nc_summary,
     fetch_tnps_response_for_qc,
     count_audit_picker_audits,
     import_checklist_del_dia,
@@ -4168,6 +4172,48 @@ def qc_new():
             if record_scope not in {"oficial", "pruebas"}:
                 raise ValueError("El sector seleccionado no es válido.")
 
+            qc_live_installation_raw = (request.form.get("qc_live_installation") or "").strip()
+            qc_live_installation = qc_live_installation_raw in {"1", "true", "yes", "si", "sí", "on"}
+
+            installation_duration_minutes = None
+            cable_type = None
+            cable_meters = None
+
+            if qc_live_installation:
+                duration_raw = (request.form.get("installation_duration_minutes") or "").strip()
+                if not duration_raw:
+                    raise ValueError("Debes indicar los minutos totales de la instalación.")
+                try:
+                    installation_duration_minutes = int(duration_raw)
+                except ValueError as exc:
+                    raise ValueError("Los minutos totales de la instalación no son válidos.") from exc
+                if installation_duration_minutes <= 0 or installation_duration_minutes > (24 * 60):
+                    raise ValueError("Los minutos totales de la instalación deben estar entre 1 y 1440.")
+
+                cable_type = (request.form.get("cable_type") or "").strip().lower()
+                allowed_cable_types = {"drop_40", "drop_70", "drop_100", "drop_150", "bobina"}
+                if cable_type not in allowed_cable_types:
+                    raise ValueError("Debes seleccionar el tipo de cable utilizado.")
+
+                if cable_type == "bobina":
+                    meters_raw = (request.form.get("cable_meters") or "").strip()
+                    if not meters_raw:
+                        raise ValueError("Debes indicar los metros utilizados (bobina).")
+                    try:
+                        cable_meters = int(meters_raw)
+                    except ValueError as exc:
+                        raise ValueError("Los metros utilizados no son válidos.") from exc
+                    if cable_meters < 151 or cable_meters > 500:
+                        raise ValueError("Los metros utilizados para bobina deben estar entre 151 y 500.")
+                else:
+                    fixed_meters = {
+                        "drop_40": 40,
+                        "drop_70": 70,
+                        "drop_100": 100,
+                        "drop_150": 150,
+                    }
+                    cable_meters = fixed_meters.get(cable_type)
+
             section_score, _has_critical, items = calculate_section_score(section, request.form, request.files)
             ratio = 1 if section.get("weight") in {0, None} else (section_score / float(section["weight"]))
             ratio = max(0.0, min(1.0, ratio))
@@ -4289,6 +4335,10 @@ def qc_new():
                 "record_scope": record_scope,
                 "general_notes": general_notes,
                 "photo_path": session_photo_path,
+                "qc_live_installation": qc_live_installation,
+                "installation_duration_minutes": installation_duration_minutes,
+                "cable_type": cable_type,
+                "cable_meters": cable_meters,
             }
 
             qc_session_id = create_qc_session(qc_data, items)
@@ -4382,6 +4432,115 @@ def qc_reports():
         time_series=time_series,
         technician_ranking=technician_ranking,
         filter_active=filter_active,
+        audit_official_from_date=get_audit_official_from_date(),
+        page_class="page-wide",
+    )
+
+
+@main.route("/reports/technicians")
+def technician_reports():
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    filters = {
+        "from_date": request.args.get("from_date", "").strip(),
+        "to_date": request.args.get("to_date", "").strip(),
+        "technician_id": request.args.get("technician_id", "").strip(),
+        "min_n": request.args.get("min_n", "").strip(),
+        "include_pruebas": "1" if request.args.get("include_pruebas") else "",
+    }
+
+    technician_id = None
+    if filters["technician_id"]:
+        try:
+            technician_id = int(filters["technician_id"])
+        except ValueError:
+            flash("El técnico seleccionado no es válido.", "error")
+            filters["technician_id"] = ""
+
+    min_n = 3
+    if filters["min_n"]:
+        try:
+            min_n = max(1, int(filters["min_n"]))
+        except ValueError:
+            flash("El mínimo de controles no es válido.", "error")
+            filters["min_n"] = ""
+
+    query_filters = {
+        "from_date": filters["from_date"],
+        "to_date": filters["to_date"],
+        "technician_id": technician_id,
+        "include_pruebas": filters["include_pruebas"],
+    }
+
+    technicians = fetch_technicians()
+    technician_ranking = fetch_qc_reports_technician_ranking(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+        min_qc=min_n,
+    )
+    technician_ranking_nc_major = fetch_qc_reports_technician_ranking_by_nc_major(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=current_supervisor_scope_names(),
+        min_qc=min_n,
+    )
+
+    technician_selected = None
+    if technician_id is not None:
+        technician_selected = next((t for t in technicians if t.get("id") == technician_id), None)
+        if not technician_selected:
+            flash("El técnico seleccionado no existe.", "error")
+            filters["technician_id"] = ""
+            technician_id = None
+            query_filters["technician_id"] = None
+
+    summary = None
+    extra_summary = None
+    nc_summary = None
+    nc_breakdown_major = []
+    nc_breakdown_minor = []
+    if technician_id is not None:
+        summary = fetch_qc_reports_management_summary(
+            query_filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=current_supervisor_scope_names(),
+        )
+        extra_summary = fetch_qc_technician_extra_summary(
+            query_filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=current_supervisor_scope_names(),
+        )
+        nc_summary = fetch_qc_technician_nc_summary(
+            query_filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=current_supervisor_scope_names(),
+        )
+        breakdown = fetch_qc_technician_nc_breakdown(
+            query_filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=current_supervisor_scope_names(),
+            limit=80,
+        )
+        nc_breakdown_major = sorted(breakdown, key=lambda r: (r["nc_mayor_count"], r["nc_total_count"], r["evaluated_count"]), reverse=True)[:20]
+        nc_breakdown_minor = sorted(breakdown, key=lambda r: (r["nc_menor_count"], r["nc_total_count"], r["evaluated_count"]), reverse=True)[:20]
+
+    return render_template(
+        "technician_reports.html",
+        technicians=technicians,
+        technician_selected=technician_selected,
+        technician_ranking=technician_ranking,
+        technician_ranking_nc_major=technician_ranking_nc_major,
+        summary=summary,
+        extra_summary=extra_summary,
+        nc_summary=nc_summary,
+        nc_breakdown_major=nc_breakdown_major,
+        nc_breakdown_minor=nc_breakdown_minor,
+        filters=filters,
+        min_n=min_n,
         audit_official_from_date=get_audit_official_from_date(),
         page_class="page-wide",
     )
