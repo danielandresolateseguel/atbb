@@ -1,0 +1,116 @@
+{% if show_findings_alerts_modal and findings_alerts_modal_stats is defined and findings_alerts_modal_urls is defined and findings_alerts_modal_stats and findings_alerts_modal_urls %}
+    <div class="pending-modal-backdrop" data-findings-alerts-modal>
+        <div class="pending-modal" role="dialog" aria-modal="true" aria-labelledby="findings_alerts_modal_title">
+            <div class="pending-modal-heading">
+                <h3 id="findings_alerts_modal_title">Pendientes para atender</h3>
+                <p>Accesos directos para filtrar y resolver las advertencias actuales. Se ocultará por 4 horas al confirmar.</p>
+            </div>
+            <div class="pending-modal-body">
+                <section class="alert-stack pending-modal-alerts">
+                    {% if findings_alerts_modal_stats["reopened_count"] %}
+                        <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['reopened'] }}">
+                            <strong>Atención inmediata</strong>
+                            <p>Hay {{ findings_alerts_modal_stats["reopened_count"] }} hallazgo(s) reabierto(s) que requieren nueva respuesta.</p>
+                        </a>
+                    {% endif %}
+                    {% if findings_alerts_modal_stats["escalated_treatment_count"] %}
+                        <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['escalated_treatment'] }}">
+                            <strong>Tratamientos escalados</strong>
+                            <p>Hay {{ findings_alerts_modal_stats["escalated_treatment_count"] }} hallazgo(s) con {{ findings_alerts_modal_stats["treatment_escalation_days"] }} o más día(s) sin novedades.</p>
+                        </a>
+                    {% endif %}
+                    {% if findings_alerts_modal_stats["stale_treatment_count"] %}
+                        <a class="alert-card alert-warning alert-link" href="{{ findings_alerts_modal_urls['stale_treatment'] }}">
+                            <strong>Sin novedades</strong>
+                            <p>Hay {{ findings_alerts_modal_stats["stale_treatment_count"] }} hallazgo(s) en tratamiento con {{ findings_alerts_modal_stats["treatment_alert_days"] }} o más día(s) sin actualización.</p>
+                        </a>
+                    {% endif %}
+                    {% if findings_alerts_modal_stats["overdue_validation_count"] %}
+                        <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['overdue_validation'] }}">
+                            <strong>CER-PVE vencidos</strong>
+                            <p>Hay {{ findings_alerts_modal_stats["overdue_validation_count"] }} hallazgo(s) con más de {{ findings_alerts_modal_stats["pending_validation_alert_days"] }} día(s) esperando validación.</p>
+                        </a>
+                    {% endif %}
+                    {% if findings_alerts_modal_stats["overdue_effectiveness_count"] %}
+                        <a class="alert-card alert-warning alert-link" href="{{ findings_alerts_modal_urls['overdue_effectiveness'] }}">
+                            <strong>Eficacia vencida</strong>
+                            <p>Hay {{ findings_alerts_modal_stats["overdue_effectiveness_count"] }} hallazgo(s) validados con control de eficacia vencido.</p>
+                        </a>
+                    {% endif %}
+                </section>
+            </div>
+            <div class="pending-modal-actions">
+                <a class="button button-secondary" href="{{ url_for('main.findings_list') }}" data-findings-alerts-view>Ver pendientes</a>
+                <button class="button button-primary" type="button" data-findings-alerts-ack>Entendido</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            const backdrop = document.querySelector("[data-findings-alerts-modal]");
+            if (!backdrop) {
+                return;
+            }
+            const ackButton = backdrop.querySelector("[data-findings-alerts-ack]");
+            if (!ackButton) {
+                return;
+            }
+            const viewLink = backdrop.querySelector("[data-findings-alerts-view]");
+
+            function closeModal() {
+                document.body.classList.remove("has-modal");
+                backdrop.remove();
+            }
+
+            document.body.classList.add("has-modal");
+            ackButton.focus({ preventScroll: true });
+
+            async function ack() {
+                await fetch("{{ url_for('main.ack_findings_alerts') }}", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    cache: "no-store",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                        "X-CSRF-Token": "{{ csrf_token }}",
+                    },
+                });
+            }
+
+            ackButton.addEventListener("click", async function () {
+                ackButton.disabled = true;
+                if (viewLink) {
+                    viewLink.setAttribute("aria-disabled", "true");
+                }
+                try {
+                    await ack();
+                } catch (e) {
+                } finally {
+                    closeModal();
+                }
+            });
+
+            if (viewLink) {
+                viewLink.addEventListener("click", async function (event) {
+                    if (event.defaultPrevented) {
+                        return;
+                    }
+                    event.preventDefault();
+                    const href = viewLink.getAttribute("href") || "";
+                    if (!href) {
+                        return;
+                    }
+                    ackButton.disabled = true;
+                    viewLink.setAttribute("aria-disabled", "true");
+                    try {
+                        await ack();
+                    } catch (e) {
+                    } finally {
+                        closeModal();
+                        window.location.href = href;
+                    }
+                });
+            }
+        })();
+    </script>
+{% endif %}

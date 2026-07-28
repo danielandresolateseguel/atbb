@@ -2133,6 +2133,81 @@ th .table-sort.is-active .table-sort-indicator {
     background: var(--success-soft);
 }
 
+body.has-modal {
+    overflow: hidden;
+}
+
+.pending-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(10px);
+}
+
+.pending-modal {
+    width: min(720px, 100%);
+    max-height: min(82vh, 860px);
+    overflow: auto;
+    border-radius: var(--radius);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 26px 74px rgba(15, 23, 42, 0.55);
+}
+
+.pending-modal-heading {
+    padding: 1.2rem 1.2rem 0.95rem;
+    border-bottom: 1px solid rgba(216, 223, 235, 0.95);
+}
+
+.pending-modal-heading h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    line-height: 1.2;
+}
+
+.pending-modal-heading p {
+    margin: 0.4rem 0 0;
+    color: var(--muted);
+}
+
+.pending-modal-body {
+    padding: 1rem 1.2rem;
+}
+
+.pending-modal-alerts {
+    margin-bottom: 0;
+}
+
+.pending-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 0 1.2rem 1.2rem;
+}
+
+@media (max-width: 600px) {
+    .pending-modal-backdrop {
+        padding: 0.85rem;
+    }
+
+    .pending-modal {
+        max-height: 88vh;
+    }
+
+    .pending-modal-actions {
+        justify-content: stretch;
+    }
+
+    .pending-modal-actions .button {
+        width: 100%;
+    }
+}
+
 .tool-match-item {
     display: grid;
     gap: 0.35rem;

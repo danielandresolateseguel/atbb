@@ -1432,6 +1432,45 @@ def require_login():
 @main.app_context_processor
 def inject_auth_context():
     user = current_user()
+    show_findings_alerts_modal = False
+    findings_alerts_modal_stats = None
+    findings_alerts_modal_urls = None
+    if user and user.get("role") in {"supervisor", "auditor"} and can_view_findings():
+        now = int(time.time())
+        next_show_raw = session.get("findings_alerts_next_show_at")
+        next_show_at = 0
+        try:
+            next_show_at = int(next_show_raw) if next_show_raw is not None else 0
+        except (TypeError, ValueError):
+            next_show_at = 0
+        if now >= next_show_at:
+            stats = fetch_finding_stats(
+                None,
+                auditor_user_id=current_auditor_user_id(),
+                supervisor_scope_names=current_supervisor_scope_names(),
+            )
+            has_alerts = any(
+                (
+                    stats.get("reopened_count"),
+                    stats.get("escalated_treatment_count"),
+                    stats.get("stale_treatment_count"),
+                    stats.get("overdue_validation_count"),
+                    stats.get("overdue_effectiveness_count"),
+                )
+            )
+            if has_alerts:
+                show_findings_alerts_modal = True
+                findings_alerts_modal_stats = stats
+                findings_alerts_modal_urls = {
+                    "reopened": url_for("main.findings_list", quick_filter="reopened", page=1),
+                    "escalated_treatment": url_for("main.findings_list", quick_filter="escalated_treatment", page=1),
+                    "stale_treatment": url_for("main.findings_list", quick_filter="stale_treatment", page=1),
+                    "overdue_validation": url_for("main.findings_list", quick_filter="overdue_validation", page=1),
+                    "overdue_effectiveness": url_for("main.findings_list", quick_filter="overdue_effectiveness", page=1),
+                }
+            else:
+                session["findings_alerts_next_show_at"] = now + (15 * 60)
+
     return {
         "current_user": user,
         "csrf_token": csrf_token(),
@@ -1439,6 +1478,9 @@ def inject_auth_context():
         "is_gerente": bool(user and (user.get("role") == "gerente")),
         "is_auditor": bool(user and (user.get("role") == "auditor")),
         "is_supervisor": bool(user and (user.get("role") == "supervisor")),
+        "show_findings_alerts_modal": show_findings_alerts_modal,
+        "findings_alerts_modal_stats": findings_alerts_modal_stats,
+        "findings_alerts_modal_urls": findings_alerts_modal_urls,
         "can_import": can_import(),
         "can_create_audit": can_create_audit(),
         "can_view_supply_requests": can_view_supply_requests(),
@@ -1524,6 +1566,7 @@ def login():
         session.clear()
         session.permanent = True
         session["user_id"] = user["id"]
+        session["findings_alerts_next_show_at"] = 0
         return redirect(next_url or url_for("main.dashboard"))
 
     return render_template("login.html", next=next_url)
@@ -5271,6 +5314,18 @@ def findings_list():
         has_next_page=has_next_page,
         return_to=return_to,
     )
+
+
+@main.route("/api/findings/alerts/ack", methods=["POST"])
+def ack_findings_alerts():
+    if not current_user() or not can_view_findings():
+        return jsonify({"error": "unauthorized"}), 401
+    csrf_value = (request.headers.get("X-CSRF-Token") or "").strip()
+    if not validate_csrf_token(csrf_value):
+        return jsonify({"error": "csrf_failed"}), 400
+    now = int(time.time())
+    session["findings_alerts_next_show_at"] = now + (4 * 60 * 60)
+    return jsonify({"ok": True, "next_show_at": session["findings_alerts_next_show_at"]})
 
 
 @main.route("/findings/<int:finding_id>")
