@@ -1448,11 +1448,16 @@ def inject_auth_context():
         except (TypeError, ValueError):
             next_show_at = 0
         if now >= next_show_at:
-            stats = fetch_finding_stats(
-                None,
-                auditor_user_id=current_auditor_user_id(),
-                supervisor_scope_names=current_supervisor_scope_names(),
-            )
+            try:
+                stats = fetch_finding_stats(
+                    None,
+                    auditor_user_id=current_auditor_user_id(),
+                    supervisor_scope_names=current_supervisor_scope_names(),
+                )
+            except Exception:
+                current_app.logger.exception("Error al calcular estadísticas de alertas de hallazgos")
+                session["findings_alerts_next_show_at"] = now + (15 * 60)
+                stats = {}
             has_alerts = any(
                 (
                     stats.get("reopened_count"),
@@ -3294,78 +3299,86 @@ def dashboard():
 
     finding_donut = None
     if user and user.get("role") == "supervisor" and can_view_findings():
-        status_rows = fetch_finding_status_breakdown(
-            auditor_user_id=None,
-            supervisor_scope_names=supervisor_scope_names,
-        )
-        counts = {str(row.get("finding_status") or "").strip().lower(): (row.get("findings_count") or 0) for row in status_rows}
-        ordered = ["nuevo", "respondido", "resuelto", "reabierto", "cerrado_definitivo"]
-        status_total = sum(counts.get(key, 0) for key in ordered)
-        palette = {
-            "nuevo": "#6B7280",
-            "respondido": "#2563EB",
-            "resuelto": "#F59E0B",
-            "reabierto": "#DC2626",
-            "cerrado_definitivo": "#16A34A",
-        }
-        circumference = round(2 * 3.1416 * 54, 2)
-        donut_segments = []
-        offset_accum = 0.0
-        for key in ordered:
-            count = counts.get(key, 0)
-            percent = 0.0 if status_total == 0 else round((count / status_total) * 100, 1)
-            segment_len = 0.0 if percent == 0 else round(circumference * (percent / 100), 2)
-            donut_segments.append(
-                {
-                    "key": key,
-                    "label": finding_status_label(key),
-                    "count": count,
-                    "percent": percent,
-                    "color": palette.get(key, "#2563EB"),
-                    "dasharray": f"{segment_len} {round(circumference - segment_len, 2)}",
-                    "dashoffset": round(-offset_accum, 2),
-                }
+        try:
+            status_rows = fetch_finding_status_breakdown(
+                auditor_user_id=None,
+                supervisor_scope_names=supervisor_scope_names,
             )
-            offset_accum += segment_len
-        finding_donut = {"status_total": status_total, "donut_segments": donut_segments}
+            counts = {str(row.get("finding_status") or "").strip().lower(): (row.get("findings_count") or 0) for row in status_rows}
+            ordered = ["nuevo", "respondido", "resuelto", "reabierto", "cerrado_definitivo"]
+            status_total = sum(counts.get(key, 0) for key in ordered)
+            palette = {
+                "nuevo": "#6B7280",
+                "respondido": "#2563EB",
+                "resuelto": "#F59E0B",
+                "reabierto": "#DC2626",
+                "cerrado_definitivo": "#16A34A",
+            }
+            circumference = round(2 * 3.1416 * 54, 2)
+            donut_segments = []
+            offset_accum = 0.0
+            for key in ordered:
+                count = counts.get(key, 0)
+                percent = 0.0 if status_total == 0 else round((count / status_total) * 100, 1)
+                segment_len = 0.0 if percent == 0 else round(circumference * (percent / 100), 2)
+                donut_segments.append(
+                    {
+                        "key": key,
+                        "label": finding_status_label(key),
+                        "count": count,
+                        "percent": percent,
+                        "color": palette.get(key, "#2563EB"),
+                        "dasharray": f"{segment_len} {round(circumference - segment_len, 2)}",
+                        "dashoffset": round(-offset_accum, 2),
+                    }
+                )
+                offset_accum += segment_len
+            finding_donut = {"status_total": status_total, "donut_segments": donut_segments}
+        except Exception:
+            current_app.logger.exception("Error al calcular donut de estados de hallazgos (supervisor)")
+            finding_donut = None
 
     safety_risk_donut = None
     if user and user.get("role") in {"admin", "gerente"} and can_view_findings():
-        status_rows = fetch_finding_status_breakdown(
-            filters={"priority": "alta"},
-            auditor_user_id=None,
-            supervisor_scope_names=None,
-        )
-        counts = {str(row.get("finding_status") or "").strip().lower(): (row.get("findings_count") or 0) for row in status_rows}
-        ordered = ["nuevo", "respondido", "resuelto", "reabierto", "cerrado_definitivo"]
-        status_total = sum(counts.get(key, 0) for key in ordered)
-        palette = {
-            "nuevo": "#6B7280",
-            "respondido": "#2563EB",
-            "resuelto": "#F59E0B",
-            "reabierto": "#DC2626",
-            "cerrado_definitivo": "#16A34A",
-        }
-        circumference = round(2 * 3.1416 * 54, 2)
-        donut_segments = []
-        offset_accum = 0.0
-        for key in ordered:
-            count = counts.get(key, 0)
-            percent = 0.0 if status_total == 0 else round((count / status_total) * 100, 1)
-            segment_len = 0.0 if percent == 0 else round(circumference * (percent / 100), 2)
-            donut_segments.append(
-                {
-                    "key": key,
-                    "label": finding_status_label(key),
-                    "count": count,
-                    "percent": percent,
-                    "color": palette.get(key, "#2563EB"),
-                    "dasharray": f"{segment_len} {round(circumference - segment_len, 2)}",
-                    "dashoffset": round(-offset_accum, 2),
-                }
+        try:
+            status_rows = fetch_finding_status_breakdown(
+                filters={"priority": "alta"},
+                auditor_user_id=None,
+                supervisor_scope_names=None,
             )
-            offset_accum += segment_len
-        safety_risk_donut = {"status_total": status_total, "donut_segments": donut_segments}
+            counts = {str(row.get("finding_status") or "").strip().lower(): (row.get("findings_count") or 0) for row in status_rows}
+            ordered = ["nuevo", "respondido", "resuelto", "reabierto", "cerrado_definitivo"]
+            status_total = sum(counts.get(key, 0) for key in ordered)
+            palette = {
+                "nuevo": "#6B7280",
+                "respondido": "#2563EB",
+                "resuelto": "#F59E0B",
+                "reabierto": "#DC2626",
+                "cerrado_definitivo": "#16A34A",
+            }
+            circumference = round(2 * 3.1416 * 54, 2)
+            donut_segments = []
+            offset_accum = 0.0
+            for key in ordered:
+                count = counts.get(key, 0)
+                percent = 0.0 if status_total == 0 else round((count / status_total) * 100, 1)
+                segment_len = 0.0 if percent == 0 else round(circumference * (percent / 100), 2)
+                donut_segments.append(
+                    {
+                        "key": key,
+                        "label": finding_status_label(key),
+                        "count": count,
+                        "percent": percent,
+                        "color": palette.get(key, "#2563EB"),
+                        "dasharray": f"{segment_len} {round(circumference - segment_len, 2)}",
+                        "dashoffset": round(-offset_accum, 2),
+                    }
+                )
+                offset_accum += segment_len
+            safety_risk_donut = {"status_total": status_total, "donut_segments": donut_segments}
+        except Exception:
+            current_app.logger.exception("Error al calcular donut de riesgo (hallazgos alta prioridad)")
+            safety_risk_donut = None
 
     return render_template(
         "dashboard.html",
