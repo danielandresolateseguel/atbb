@@ -14,11 +14,6 @@ CHECKLIST_SECTIONS = [
                 "label": "Guantes de fibra sintética con palma y dedos de poliuretano",
                 "critical": True,
             },
-            {
-                "key": "guante_dielectrico_1000v",
-                "label": "Guante dieléctrico (tensión de uso 1000 V, tensión de prueba máximo 5000 V)",
-                "critical": True,
-            },
             {"key": "orden_entorno", "label": "Orden y limpieza del entorno", "critical": False},
             {"key": "detector_voltaje", "label": "280300104 - Detector de voltaje", "critical": True},
             {
@@ -28,11 +23,8 @@ CHECKLIST_SECTIONS = [
             },
             {"key": "cinta_peligro", "label": "Cinta de peligro", "critical": True},
             {"key": "conector_cinta_0_8m", "label": "67932 - CONECTOR CINTA 0.8M", "critical": True},
-            {"key": "conos", "label": "Conos", "critical": True},
             {"key": "arnes_completo_anticaidas", "label": "Arnés completo anticaídas", "critical": True},
             {"key": "cola_amarre_separada", "label": "Cola de amarre separada", "critical": True},
-            {"key": "extintor", "label": "Extintor", "critical": True},
-            {"key": "botiquin", "label": "Botiquín de primeros auxilios", "critical": True},
         ],
     },
     {
@@ -188,6 +180,14 @@ CHECKLIST_SECTIONS = [
             {"key": "seguro_vehicular", "label": "Seguro vehicular", "critical": True},
             {"key": "oblea_gnc", "label": "Oblea de GNC", "critical": True},
             {"key": "rto", "label": "RTO", "critical": True},
+            {"key": "conos", "label": "Conos", "critical": True},
+            {"key": "extintor", "label": "Extintor", "critical": True},
+            {"key": "botiquin", "label": "Botiquín de primeros auxilios", "critical": True},
+            {
+                "key": "guante_dielectrico_1000v",
+                "label": "Guante dieléctrico (tensión de uso 1000 V, tensión de prueba máximo 5000 V)",
+                "critical": True,
+            },
             {"key": "neumaticos", "label": "Neumáticos", "critical": True},
             {"key": "luces", "label": "Luces operativas", "critical": True},
             {"key": "elementos_emergencia", "label": "Kit Elementos de Emergencia", "critical": True},
