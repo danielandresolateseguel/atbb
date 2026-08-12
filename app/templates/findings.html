@@ -2,6 +2,55 @@
 
 {% block title %}Hallazgos{% endblock %}
 
+{% macro findings_url(overrides) %}
+  {%- set d = {
+    'from_date': filters.from_date if filters.from_date else '',
+    'to_date': filters.to_date if filters.to_date else '',
+    'audit_id': filters.audit_id if filters.audit_id else '',
+    'mobile_code': filters.mobile_code if filters.mobile_code else '',
+    'location': filters.location if filters.location else '',
+    'auditor': filters.auditor if filters.auditor else '',
+    'owner': filters.owner if filters.owner else '',
+    'technician_supervisor': filters.technician_supervisor if filters.technician_supervisor else '',
+    'section_key': filters.section_key if filters.section_key else '',
+    'finding_status': filters.finding_status if filters.finding_status else '',
+    'priority': filters.priority if filters.priority else '',
+    'validation_status': filters.validation_status if filters.validation_status else '',
+    'effectiveness': filters.effectiveness if filters.effectiveness else '',
+    'quick_filter': filters.quick_filter if filters.quick_filter else '',
+    'q': filters.q if filters.q else '',
+    'sort': filters.sort if filters.sort else '',
+    'dir': filters.dir if filters.dir else '',
+    'page': page,
+    'page_size': page_size,
+  } -%}
+  {%- set overrides = overrides or {} -%}
+  {%- set merged = {} -%}
+  {%- for k, v in d.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {%- for k, v in overrides.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {{ url_for('main.findings_list',
+    from_date=merged.from_date if merged.from_date else none,
+    to_date=merged.to_date if merged.to_date else none,
+    audit_id=merged.audit_id if merged.audit_id else none,
+    mobile_code=merged.mobile_code if merged.mobile_code else none,
+    location=merged.location if merged.location else none,
+    auditor=merged.auditor if merged.auditor else none,
+    owner=merged.owner if merged.owner else none,
+    technician_supervisor=merged.technician_supervisor if merged.technician_supervisor else none,
+    section_key=merged.section_key if merged.section_key else none,
+    finding_status=merged.finding_status if merged.finding_status else none,
+    priority=merged.priority if merged.priority else none,
+    validation_status=merged.validation_status if merged.validation_status else none,
+    effectiveness=merged.effectiveness if merged.effectiveness else none,
+    quick_filter=merged.quick_filter if merged.quick_filter else none,
+    q=merged.q if merged.q else none,
+    sort=merged.sort if merged.sort else none,
+    dir=merged.dir if merged.dir else none,
+    page=merged.page if merged.page and merged.page != 1 else none,
+    page_size=merged.page_size if merged.page_size and merged.page_size != 25 else none)
+  }}
+{%- endmacro %}
+
 {% block content %}
 <section class="section-heading">
     <div>
@@ -187,6 +236,14 @@
             <a class="button button-secondary" href="{{ url_for('main.findings_list') }}">Limpiar</a>
         </div>
     </form>
+    <div class="quick-range findings-quick-range">
+        <span>Filas por pág:</span>
+        <select class="page-size-select" onchange="window.location.href=this.value">
+            {% for ps in (10, 25, 50, 100) %}
+                <option value="{{ findings_url({'page_size': ps, 'page': 1}) }}" {% if page_size == ps %}selected{% endif %}>{{ ps }}</option>
+            {% endfor %}
+        </select>
+    </div>
 </section>
 
 <section class="card table-card findings-table-card">
@@ -329,17 +386,26 @@
                 </tbody>
             </table>
         </div>
-        {% if findings_total > page_size %}
-            <div class="button-row">
-                {% if has_prev_page %}
-                    <a class="button button-secondary" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, quick_filter=filters.quick_filter, q=filters.q, sort=filters.sort, dir=filters.dir, page=page-1) }}">Anterior</a>
-                {% endif %}
-                {% if has_next_page %}
-                    <a class="button button-secondary" href="{{ url_for('main.findings_list', from_date=filters.from_date, to_date=filters.to_date, audit_id=filters.audit_id, mobile_code=filters.mobile_code, location=filters.location, auditor=filters.auditor, owner=filters.owner, technician_supervisor=filters.technician_supervisor, section_key=filters.section_key, finding_status=filters.finding_status, priority=filters.priority, validation_status=filters.validation_status, effectiveness=filters.effectiveness, quick_filter=filters.quick_filter, q=filters.q, sort=filters.sort, dir=filters.dir, page=page+1) }}">Siguiente</a>
-                {% endif %}
-                <span>Página {{ page }} de {{ page_count }}.</span>
+        <div class="button-row pagination-row">
+            {% if has_prev_page %}
+                <a class="button button-secondary" href="{{ findings_url({'page': page - 1}) }}">Anterior</a>
+            {% endif %}
+
+            <div class="page-chips">
+                {% for p in pages_window_findings %}
+                    {% if p is none %}
+                        <span class="page-chip page-chip-ellipsis">&hellip;</span>
+                    {% else %}
+                        <a class="page-chip {% if p == page %}page-chip-active{% endif %}" href="{{ findings_url({'page': p}) }}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
             </div>
-        {% endif %}
+
+            {% if has_next_page %}
+                <a class="button button-secondary" href="{{ findings_url({'page': page + 1}) }}">Siguiente</a>
+            {% endif %}
+            <span>Página {{ page }} de {{ page_count }}.</span>
+        </div>
     {% else %}
         {% if filter_active %}
             <p class="empty-state">No hay hallazgos para los filtros aplicados.</p>
@@ -348,6 +414,77 @@
         {% endif %}
     {% endif %}
 </section>
+
+<style>
+    .quick-range {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-size: 0.85rem;
+        color: #4B5563;
+    }
+    .page-size-select {
+        padding: 4px 8px;
+        border-radius: 6px;
+        border: 1px solid #D1D5DB;
+        font-size: 0.8rem;
+        background: #fff;
+        color: #111827;
+        width: auto;
+        max-width: 90px;
+    }
+    .pagination-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #E5E7EB;
+        justify-content: flex-end;
+    }
+    .page-chips {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .page-chip {
+        padding: 4px 10px;
+        border-radius: 8px;
+        background: #F9FAFB;
+        border: 1px solid #E5E7EB;
+        color: #111827;
+        text-decoration: none;
+        font-size: 0.85rem;
+        min-width: 32px;
+        text-align: center;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .page-chip:hover { background: #EFF6FF; border-color: #BFDBFE; }
+    .page-chip-active {
+        background: #1D4ED8;
+        color: #fff;
+        border-color: #1D4ED8;
+        font-weight: 700;
+    }
+    .page-chip-active:hover { background: #1E40AF; }
+    .page-chip-ellipsis {
+        background: transparent;
+        border: none;
+        color: #6B7280;
+    }
+    .button-row > span {
+        font-size: 0.85rem;
+        color: #4B5563;
+        margin-left: 4px;
+    }
+</style>
 
 <script>
     (function () {

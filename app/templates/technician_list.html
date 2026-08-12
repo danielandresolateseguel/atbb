@@ -1,0 +1,501 @@
+{% extends "base.html" %}
+
+{% block title %}Perfiles Técnicos{% endblock %}
+
+{% macro technician_list_url(overrides) %}
+  {%- set d = {
+    'from_date': filters.from_date if filters.from_date else '',
+    'to_date': filters.to_date if filters.to_date else '',
+    'q': filters.q,
+    'region': filters.region,
+    'supervisor': filters.supervisor,
+    'center': filters.center,
+    'company': filters.company,
+    'is_active': filters.is_active if filters.is_active is not none else '',
+    'all_time': '1' if filters.all_time else '',
+    'page': page,
+    'page_size': page_size,
+  } -%}
+  {%- set overrides = overrides or {} -%}
+  {%- set merged = {} -%}
+  {%- for k, v in d.items() -%}
+    {%- set _t = merged.update({k: v}) -%}
+  {%- endfor -%}
+  {%- for k, v in overrides.items() -%}
+    {%- set _t = merged.update({k: v}) -%}
+  {%- endfor -%}
+  {{ url_for('main.technician_list',
+    from_date=merged.from_date if merged.from_date else none,
+    to_date=merged.to_date if merged.to_date else none,
+    q=merged.q if merged.q else none,
+    region=merged.region if merged.region else none,
+    supervisor=merged.supervisor if merged.supervisor else none,
+    center=merged.center if merged.center else none,
+    company=merged.company if merged.company else none,
+    is_active=merged.is_active if merged.is_active != '' else none,
+    all_time=merged.all_time if merged.all_time == '1' else none,
+    page=merged.page if merged.page and merged.page != 1 else none,
+    page_size=merged.page_size if merged.page_size and merged.page_size != 20 else none)
+  }}
+{%- endmacro %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Perfiles</p>
+        <h2>Perfiles Técnicos</h2>
+        <p class="hero-copy">Vista global de performance por técnico: Auditorías, QC Instalaciones, Service y tNPS. Haz clic en una fila para abrir el perfil completo.</p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
+        <a class="button button-secondary" href="{{ url_for('main.reports') }}">Reportes Auditorías</a>
+    </div>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Técnicos totales</span>
+        <strong class="stat-value">{{ summary.total_technicians }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Activos</span>
+        <strong class="stat-value">{{ summary.active_count }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Inactivos</span>
+        <strong class="stat-value">{{ summary.inactive_count }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Score Audit prom
+            {% if summary.total_audits %}<div class="meta">{{ summary.total_audits }} auditorías</div>{% endif %}
+        </span>
+        <strong class="stat-value {% if summary.total_audits == 0 %}stat-value-dim{% endif %}">
+            {% if summary.total_audits %}{{ summary.avg_audit_score_global }}{% else %}-{% endif %}
+        </strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Score QC prom
+            {% if summary.total_qc %}<div class="meta">{{ summary.total_qc }} sesiones</div>{% endif %}
+        </span>
+        <strong class="stat-value {% if summary.total_qc == 0 %}stat-value-dim{% endif %}">
+            {% if summary.total_qc %}{{ summary.avg_qc_score_global }}{% else %}-{% endif %}
+        </strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">NPS prom
+            {% if summary.nps_total_weight %}<div class="meta">{{ summary.nps_total_weight }} resp.</div>{% endif %}
+        </span>
+        <strong class="stat-value {% if summary.nps_total_weight == 0 %}stat-value-dim{% endif %}">
+            {% if summary.nps_total_weight %}{{ summary.avg_nps_global }}{% else %}-{% endif %}
+        </strong>
+    </article>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.technician_list') }}">
+        <label>
+            <span>Buscar (nombre / legajo)</span>
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="Ej: Perez, 1234">
+        </label>
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ show_from }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ show_to }}">
+        </label>
+        <label>
+            <span>Región</span>
+            <select name="region">
+                <option value="" {% if not filters.region %}selected{% endif %}>Todas</option>
+                {% for r in filter_options.regions %}
+                    <option value="{{ r }}" {% if filters.region == r %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Supervisor</span>
+            <select name="supervisor">
+                <option value="" {% if not filters.supervisor %}selected{% endif %}>Todos</option>
+                {% for s in filter_options.supervisors %}
+                    <option value="{{ s }}" {% if filters.supervisor == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Centro</span>
+            <select name="center">
+                <option value="" {% if not filters.center %}selected{% endif %}>Todos</option>
+                {% for c in filter_options.centers %}
+                    <option value="{{ c }}" {% if filters.center == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Empresa</span>
+            <select name="company">
+                <option value="" {% if not filters.company %}selected{% endif %}>Todas</option>
+                {% for c in filter_options.companies %}
+                    <option value="{{ c }}" {% if filters.company == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="is_active">
+                <option value="" {% if filters.is_active is none %}selected{% endif %}>Todos</option>
+                <option value="1" {% if filters.is_active == 1 %}selected{% endif %}>Activo</option>
+                <option value="0" {% if filters.is_active == 0 %}selected{% endif %}>Inactivo</option>
+            </select>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.technician_list') }}">Limpiar</a>
+        </div>
+    </form>
+    <div class="quick-range">
+        <span>Rápido:</span>
+        <a class="chip {% if filters.all_time %}chip-active{% endif %}" data-range="all" title="Todo el histórico">Todo histórico</a>
+        <a class="chip" data-range="30">Último mes</a>
+        <a class="chip chip-active-default" data-range="90">Último trimestre</a>
+        <a class="chip" data-range="180">Último semestre</a>
+        <a class="chip" data-range="365">Último año</a>
+        <span class="quick-range-sep"></span>
+        <span style="font-size: 0.8rem; color: #6B7280;">Filas por pág:</span>
+        <select class="page-size-select" onchange="window.location.href=this.value">
+            {% for ps in (10, 20, 50, 100) %}
+                <option value="{{ technician_list_url({'page_size': ps, 'page': 1}) }}" {% if page_size == ps %}selected{% endif %}>{{ ps }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</section>
+
+<section class="card table-card findings-table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Listado</p>
+            <h3>Técnicos ({{ technicians_total }})</h3>
+        </div>
+        <div class="filter-actions">
+            <span class="metric-pill metric-neutral">Total {{ technicians_total }}</span>
+            <span class="metric-pill metric-neutral">Página {{ page }} de {{ page_count }}</span>
+            <span class="metric-pill metric-neutral">Mostrando {{ technicians|length }} de {{ technicians_total }}</span>
+        </div>
+    </div>
+    {% if technicians %}
+        <div class="table-wrap findings-table-wrap" data-table-scroll-target>
+            <table class="data-table clickable-rows">
+                <thead>
+                    <tr>
+                        <th>Técnico</th>
+                        <th>Legajo</th>
+                        <th>Región</th>
+                        <th>Supervisor</th>
+                        <th>Centro</th>
+                        <th>Empresa</th>
+                        <th>Auditorías</th>
+                        <th>% Aprob. Audit</th>
+                        <th>Score Audit</th>
+                        <th>QC</th>
+                        <th>% Aprob. QC</th>
+                        <th>Score QC</th>
+                        <th>Service</th>
+                        <th>NPS</th>
+                        <th>Última activ.</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in technicians %}
+                        {% set last_any = t.last_audit_date or t.last_qc_date or t.last_service_date %}
+                        <tr data-technician-id="{{ t.id }}" title="Abrir perfil de {{ t.name }}">
+                            <td>
+                                <strong>{{ t.name }}</strong>
+                                {% if t.team %}
+                                    <div class="meta">{{ t.team }}</div>
+                                {% endif %}
+                            </td>
+                            <td>{{ t.employee_code or '-' }}</td>
+                            <td>{{ t.region or '-' }}</td>
+                            <td>{{ t.supervisor_name or '-' }}</td>
+                            <td>{{ t.center_name or '-' }}</td>
+                            <td>{{ t.company_name or '-' }}</td>
+                            <td class="num">{{ t.audits_count }}</td>
+                            <td class="num">
+                                {% if t.audits_count > 0 %}
+                                    {{ t.audit_approval_rate }}%
+                                    {% if t.audit_critical_count > 0 %}
+                                        <div class="pill pill-danger" title="Críticas">{{ t.audit_critical_count }} crític.</div>
+                                    {% endif %}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="num">
+                                {% if t.audits_count > 0 %}
+                                    <strong class="score {% if t.audit_avg_score >= 85 %}score-good{% elif t.audit_avg_score >= 70 %}score-warn{% else %}score-bad{% endif %}">{{ t.audit_avg_score }}</strong>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="num">{{ t.qc_count }}</td>
+                            <td class="num">
+                                {% if t.qc_count > 0 %}
+                                    {{ t.qc_approval_rate }}%
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="num">
+                                {% if t.qc_count > 0 %}
+                                    <strong class="score {% if t.qc_avg_score >= 85 %}score-good{% elif t.qc_avg_score >= 70 %}score-warn{% else %}score-bad{% endif %}">{{ t.qc_avg_score }}</strong>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="num">
+                                {% if t.service_count > 0 %}{{ t.service_count }}{% else %}-{% endif %}
+                            </td>
+                            <td class="num">
+                                {% if t.nps_count > 0 %}
+                                    <strong class="score {% if t.avg_nps >= 9 %}score-good{% elif t.avg_nps >= 7 %}score-warn{% else %}score-bad{% endif %}">{{ t.avg_nps }}</strong>
+                                    <div class="meta">{{ t.nps_count }} resp.</div>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="num">
+                                {% if last_any %}{{ last_any }}{% else %}-{% endif %}
+                            </td>
+                            <td>
+                                {% if t.is_active %}
+                                    <span class="pill pill-ok">Activo</span>
+                                {% else %}
+                                    <span class="pill pill-muted">Inactivo</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="button-row pagination-row">
+            {% if has_prev_page %}
+                <a class="button button-secondary" href="{{ technician_list_url({'page': page - 1}) }}">Anterior</a>
+            {% endif %}
+
+            <div class="page-chips">
+                {% for p in pages_window %}
+                    {% if p is none %}
+                        <span class="page-chip page-chip-ellipsis">&hellip;</span>
+                    {% else %}
+                        <a class="page-chip {% if p == page %}page-chip-active{% endif %}" href="{{ technician_list_url({'page': p}) }}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            {% if has_next_page %}
+                <a class="button button-secondary" href="{{ technician_list_url({'page': page + 1}) }}">Siguiente</a>
+            {% endif %}
+            <span>Página {{ page }} de {{ page_count }}.</span>
+        </div>
+    {% else %}
+        <p class="empty-state">No se encontraron técnicos con los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<style>
+    .quick-range {
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-size: 0.85rem;
+        color: #4B5563;
+    }
+    .quick-range-sep {
+        width: 1px;
+        align-self: stretch;
+        background: #E5E7EB;
+        margin: 0 6px;
+    }
+    .page-size-select {
+        padding: 4px 8px;
+        border-radius: 6px;
+        border: 1px solid #D1D5DB;
+        font-size: 0.8rem;
+        background: #fff;
+        color: #111827;
+        width: auto;
+        max-width: 90px;
+    }
+    .chip {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #F3F4F6;
+        color: #111827;
+        border: 1px solid #E5E7EB;
+        text-decoration: none;
+        font-size: 0.8rem;
+        cursor: pointer;
+        user-select: none;
+    }
+    .chip:hover { background: #E5E7EB; }
+    .chip-active,
+    .chip-active-default {
+        background: #1D4ED8;
+        color: #fff;
+        border-color: #1D4ED8;
+    }
+    .chip-active:hover,
+    .chip-active-default:hover { background: #1E40AF; }
+    .chip:not(.chip-active) {
+        background: #F3F4F6;
+        color: #111827;
+    }
+    .clickable-rows tbody tr {
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+    .clickable-rows tbody tr:hover { background: #F0F9FF; }
+    .meta { font-size: 0.75rem; color: #6B7280; }
+    .num { text-align: right; white-space: nowrap; }
+    .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+    .pill-ok { background: #D1FAE5; color: #065F46; }
+    .pill-muted { background: #E5E7EB; color: #374151; }
+    .pill-danger { background: #FEE2E2; color: #991B1B; }
+    .score-good { color: #065F46; }
+    .score-warn { color: #92400E; }
+    .score-bad { color: #991B1B; }
+    .stat-value-dim { color: #9CA3AF; }
+    .pagination-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #E5E7EB;
+        justify-content: flex-end;
+    }
+    .page-chips {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .page-chip {
+        padding: 4px 10px;
+        border-radius: 8px;
+        background: #F9FAFB;
+        border: 1px solid #E5E7EB;
+        color: #111827;
+        text-decoration: none;
+        font-size: 0.85rem;
+        min-width: 32px;
+        text-align: center;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .page-chip:hover { background: #EFF6FF; border-color: #BFDBFE; }
+    .page-chip-active {
+        background: #1D4ED8;
+        color: #fff;
+        border-color: #1D4ED8;
+        font-weight: 700;
+    }
+    .page-chip-active:hover { background: #1E40AF; }
+    .page-chip-ellipsis {
+        background: transparent;
+        border: none;
+        color: #6B7280;
+    }
+    .button-row > span {
+        font-size: 0.85rem;
+        color: #4B5563;
+        margin-left: 4px;
+    }
+</style>
+
+<script>
+    (function () {
+        var rows = document.querySelectorAll(".clickable-rows tbody tr");
+        Array.prototype.forEach.call(rows, function (row) {
+            row.addEventListener("click", function (e) {
+                if (e.target.closest("a, button, input, select")) return;
+                var id = row.getAttribute("data-technician-id");
+                if (id) {
+                    flashComingSoon(id, row.querySelector("strong").textContent.trim());
+                }
+            });
+        });
+
+        function buildPreserveParams(extra) {
+            var params = new URLSearchParams(window.location.search);
+            Object.keys(extra).forEach(function (k) {
+                if (extra[k] === null || extra[k] === undefined || extra[k] === "") {
+                    params.delete(k);
+                } else {
+                    params.set(k, extra[k]);
+                }
+            });
+            return params.toString();
+        }
+
+        var chips = document.querySelectorAll(".chip[data-range]");
+        Array.prototype.forEach.call(chips, function (chip) {
+            chip.addEventListener("click", function (e) {
+                e.preventDefault();
+                var range = chip.getAttribute("data-range");
+                var extra = {};
+                if (range === "all") {
+                    extra.all_time = "1";
+                    extra.from_date = "";
+                    extra.to_date = "";
+                } else {
+                    var days = parseInt(range || "90", 10);
+                    var to = new Date();
+                    var from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+                    var fmt = function (d) {
+                        var y = d.getFullYear();
+                        var m = String(d.getMonth() + 1).padStart(2, "0");
+                        var day = String(d.getDate()).padStart(2, "0");
+                        return y + "-" + m + "-" + day;
+                    };
+                    extra.all_time = "";
+                    extra.from_date = fmt(from);
+                    extra.to_date = fmt(to);
+                }
+                extra.page = "1";
+                var qs = buildPreserveParams(extra);
+                window.location.href = window.location.pathname + (qs ? "?" + qs : "");
+            });
+        });
+
+        function flashComingSoon(id, name) {
+            var div = document.createElement("div");
+            div.className = "flash flash-info";
+            div.textContent = "Perfil individual de " + name + " — Paso 2 en desarrollo.";
+            div.style.position = "fixed";
+            div.style.top = "20px";
+            div.style.right = "20px";
+            div.style.zIndex = "9999";
+            div.style.boxShadow = "0 10px 25px rgba(0,0,0,0.12)";
+            document.body.appendChild(div);
+            setTimeout(function () { div.remove(); }, 2600);
+        }
+    })();
+</script>
+
+{% endblock %}

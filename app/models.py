@@ -9756,3 +9756,329 @@ def normalize_yes_no_value(value):
 def empty_as_none(value):
     cleaned_value = (value or "").strip()
     return cleaned_value or None
+
+
+def fetch_distinct_supervisors():
+    rows = get_db().execute(
+        """
+        SELECT DISTINCT COALESCE(supervisor_name, '') AS supervisor_name
+        FROM technicians
+        WHERE COALESCE(supervisor_name, '') != ''
+        ORDER BY supervisor_name ASC
+        """
+    ).fetchall()
+    return [row["supervisor_name"] for row in rows]
+
+
+def fetch_distinct_centers():
+    rows = get_db().execute(
+        """
+        SELECT DISTINCT COALESCE(center_name, '') AS center_name
+        FROM technicians
+        WHERE COALESCE(center_name, '') != ''
+        ORDER BY center_name ASC
+        """
+    ).fetchall()
+    return [row["center_name"] for row in rows]
+
+
+def fetch_distinct_regions():
+    rows = get_db().execute(
+        """
+        SELECT DISTINCT COALESCE(region, '') AS region
+        FROM technicians
+        WHERE COALESCE(region, '') != ''
+        ORDER BY region ASC
+        """
+    ).fetchall()
+    return [row["region"] for row in rows]
+
+
+def fetch_distinct_companies():
+    rows = get_db().execute(
+        """
+        SELECT DISTINCT COALESCE(company_name, '') AS company_name
+        FROM technicians
+        WHERE COALESCE(company_name, '') != ''
+        ORDER BY company_name ASC
+        """
+    ).fetchall()
+    return [row["company_name"] for row in rows]
+
+
+def _build_technician_list_where_and_params(
+    filters,
+    supervisor_scope_names=None,
+):
+    filters = filters or {}
+    where_clauses = ["1=1"]
+    params = []
+
+    q = (filters.get("q") or "").strip()
+    region = (filters.get("region") or "").strip()
+    supervisor = (filters.get("supervisor") or "").strip()
+    center = (filters.get("center") or "").strip()
+    company = (filters.get("company") or "").strip()
+    is_active_raw = filters.get("is_active")
+
+    if is_active_raw is not None and str(is_active_raw) != "":
+        try:
+            active_val = int(is_active_raw)
+            where_clauses.append("technicians.is_active = ?")
+            params.append(active_val)
+        except (TypeError, ValueError):
+            pass
+
+    if q:
+        like_value = f"%{q}%"
+        if is_postgres():
+            where_clauses.append(
+                "(technicians.name ILIKE ? OR technicians.employee_code ILIKE ?)"
+            )
+        else:
+            where_clauses.append(
+                "(LOWER(technicians.name) LIKE ? OR LOWER(technicians.employee_code) LIKE ?)"
+            )
+        params.append(like_value)
+        params.append(like_value)
+
+    if region:
+        if is_postgres():
+            where_clauses.append("technicians.region ILIKE ?")
+            params.append(region)
+        else:
+            where_clauses.append("LOWER(technicians.region) = ?")
+            params.append(region.lower())
+
+    if supervisor:
+        if is_postgres():
+            where_clauses.append("technicians.supervisor_name ILIKE ?")
+            params.append(supervisor)
+        else:
+            where_clauses.append("LOWER(COALESCE(technicians.supervisor_name, '')) = ?")
+            params.append(supervisor.lower())
+
+    if center:
+        if is_postgres():
+            where_clauses.append("technicians.center_name ILIKE ?")
+            params.append(center)
+        else:
+            where_clauses.append("LOWER(COALESCE(technicians.center_name, '')) = ?")
+            params.append(center.lower())
+
+    if company:
+        if is_postgres():
+            where_clauses.append("technicians.company_name ILIKE ?")
+            params.append(company)
+        else:
+            where_clauses.append("LOWER(COALESCE(technicians.company_name, '')) = ?")
+            params.append(company.lower())
+
+    if supervisor_scope_names:
+        normalized = normalize_supervisor_scope_names(supervisor_scope_names)
+        if normalized:
+            placeholders = ", ".join(["?"] * len(normalized))
+            if is_postgres():
+                where_clauses.append(
+                    f"UPPER(TRIM(COALESCE(technicians.supervisor_name, ''))) IN ({placeholders})"
+                )
+            else:
+                where_clauses.append(
+                    f"UPPER(TRIM(COALESCE(technicians.supervisor_name, ''))) IN ({placeholders})"
+                )
+            params.extend([s.upper().strip() for s in normalized])
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+    return where_sql, list(params)
+
+
+def fetch_technician_list_summary(
+    filters=None,
+    auditor_user_id=None,
+    supervisor_scope_names=None,
+    limit=500,
+    offset=0,
+):
+    filters = filters or {}
+    where_sql, params = _build_technician_list_where_and_params(
+        filters, supervisor_scope_names=supervisor_scope_names
+    )
+
+    from_date = (filters.get("from_date") or "").strip()
+    to_date = (filters.get("to_date") or "").strip()
+
+    audit_date_from = ""
+    audit_date_to = ""
+    qc_date_from = ""
+    qc_date_to = ""
+    service_date_from = ""
+    service_date_to = ""
+    tnps_date_from = ""
+    tnps_date_to = ""
+    if from_date:
+        audit_date_from = "AND audits.audit_date >= ?"
+        qc_date_from = "AND qc_sessions.qc_date >= ?"
+        service_date_from = "AND service_sessions.service_date >= ?"
+        tnps_date_from = "AND tnps_responses.response_date >= ?"
+        params.extend([from_date, from_date, from_date, from_date])
+    if to_date:
+        audit_date_to = "AND audits.audit_date <= ?"
+        qc_date_to = "AND qc_sessions.qc_date <= ?"
+        service_date_to = "AND service_sessions.service_date <= ?"
+        tnps_date_to = "AND tnps_responses.response_date <= ?"
+        params.extend([to_date, to_date, to_date, to_date])
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            technicians.id,
+            technicians.name,
+            technicians.employee_code,
+            technicians.region,
+            technicians.team,
+            technicians.company_name,
+            technicians.union_name,
+            technicians.supervisor_name,
+            technicians.center_name,
+            technicians.is_active,
+            COALESCE(audit_stats.audits_count, 0) AS audits_count,
+            COALESCE(audit_stats.average_score, 0) AS audit_avg_score,
+            COALESCE(audit_stats.approval_rate, 0) AS audit_approval_rate,
+            COALESCE(audit_stats.critical_count, 0) AS audit_critical_count,
+            COALESCE(qc_stats.qc_count, 0) AS qc_count,
+            COALESCE(qc_stats.average_score, 0) AS qc_avg_score,
+            COALESCE(qc_stats.approval_rate, 0) AS qc_approval_rate,
+            COALESCE(service_stats.service_count, 0) AS service_count,
+            COALESCE(service_stats.average_score, 0) AS service_avg_score,
+            COALESCE(tnps_stats.avg_nps, 0) AS avg_nps,
+            COALESCE(tnps_stats.nps_count, 0) AS nps_count,
+            COALESCE(audit_stats.last_audit_date, '') AS last_audit_date,
+            COALESCE(qc_stats.last_qc_date, '') AS last_qc_date,
+            COALESCE(service_stats.last_service_date, '') AS last_service_date
+        FROM technicians
+        LEFT JOIN (
+            SELECT
+                audits.technician_id AS tid,
+                COUNT(*) AS audits_count,
+                AVG(audits.total_score) AS average_score,
+                CASE WHEN COUNT(*) = 0 THEN 0 ELSE
+                    ROUND(100.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / COUNT(*), 1)
+                END AS approval_rate,
+                SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
+                MAX(audits.audit_date) AS last_audit_date
+            FROM audits
+            WHERE audits.technician_id IS NOT NULL
+            {audit_date_from}
+            {audit_date_to}
+            GROUP BY audits.technician_id
+        ) audit_stats ON audit_stats.tid = technicians.id
+        LEFT JOIN (
+            SELECT
+                qc_sessions.technician_id AS tid,
+                COUNT(*) AS qc_count,
+                AVG(qc_sessions.total_score) AS average_score,
+                CASE WHEN COUNT(*) = 0 THEN 0 ELSE
+                    ROUND(100.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / COUNT(*), 1)
+                END AS approval_rate,
+                MAX(qc_sessions.qc_date) AS last_qc_date
+            FROM qc_sessions
+            WHERE 1=1
+            {qc_date_from}
+            {qc_date_to}
+            GROUP BY qc_sessions.technician_id
+        ) qc_stats ON qc_stats.tid = technicians.id
+        LEFT JOIN (
+            SELECT
+                service_sessions.technician_id AS tid,
+                COUNT(*) AS service_count,
+                AVG(service_sessions.total_score) AS average_score,
+                MAX(service_sessions.service_date) AS last_service_date
+            FROM service_sessions
+            WHERE 1=1
+            {service_date_from}
+            {service_date_to}
+            GROUP BY service_sessions.technician_id
+        ) service_stats ON service_stats.tid = technicians.id
+        LEFT JOIN (
+            SELECT
+                tnps_responses.technician_id AS tid,
+                AVG(tnps_responses.score) AS avg_nps,
+                COUNT(*) AS nps_count
+            FROM tnps_responses
+            WHERE tnps_responses.technician_id IS NOT NULL
+            {tnps_date_from}
+            {tnps_date_to}
+            GROUP BY tnps_responses.technician_id
+        ) tnps_stats ON tnps_stats.tid = technicians.id
+        {where_sql}
+        ORDER BY technicians.is_active DESC, technicians.name ASC
+        LIMIT ? OFFSET ?
+        """,
+        tuple(params + [int(limit), max(0, int(offset or 0))]),
+    ).fetchall()
+
+    result = []
+    for row in rows:
+        r = dict(row)
+
+        ec = (r.get("employee_code") or "")
+        ec_clean = str(ec).strip()
+        if ec_clean:
+            try:
+                ec_num = float(ec_clean)
+                if ec_num.is_integer():
+                    ec_clean = str(int(ec_num))
+                else:
+                    ec_clean = str(ec_num)
+            except (TypeError, ValueError):
+                pass
+        r["employee_code"] = ec_clean
+
+        r["audits_count"] = int(r.get("audits_count") or 0)
+        r["qc_count"] = int(r.get("qc_count") or 0)
+        r["service_count"] = int(r.get("service_count") or 0)
+        r["nps_count"] = int(r.get("nps_count") or 0)
+        r["audit_critical_count"] = int(r.get("audit_critical_count") or 0)
+
+        def _fmt_num(v, decimals=1):
+            try:
+                f = float(v or 0)
+            except (TypeError, ValueError):
+                f = 0.0
+            r_rounded = round(f, decimals)
+            if r_rounded == int(r_rounded):
+                return int(r_rounded)
+            return r_rounded
+
+        r["audit_avg_score"] = _fmt_num(r.get("audit_avg_score"), 1)
+        r["qc_avg_score"] = _fmt_num(r.get("qc_avg_score"), 1)
+        r["service_avg_score"] = _fmt_num(r.get("service_avg_score"), 1)
+        r["avg_nps"] = _fmt_num(r.get("avg_nps"), 1)
+        r["audit_approval_rate"] = _fmt_num(r.get("audit_approval_rate"), 1)
+        r["qc_approval_rate"] = _fmt_num(r.get("qc_approval_rate"), 1)
+        result.append(r)
+    return result
+
+
+def count_technicians_list(
+    filters=None,
+    auditor_user_id=None,
+    supervisor_scope_names=None,
+):
+    filters = filters or {}
+    where_sql, params = _build_technician_list_where_and_params(
+        filters, supervisor_scope_names=supervisor_scope_names
+    )
+    row = get_db().execute(
+        f"""
+        SELECT COUNT(*) AS c
+        FROM technicians
+        {where_sql}
+        """,
+        tuple(params),
+    ).fetchone()
+    try:
+        return int(dict(row or {}).get("c") or 0)
+    except (TypeError, ValueError):
+        return 0
+

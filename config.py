@@ -60,3 +60,5 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = (os.environ.get("SESSION_COOKIE_SAMESITE") or "Lax").strip() or "Lax"
     SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", False)
+    TEMPLATES_AUTO_RELOAD = True
+    EXPLAIN_TEMPLATE_LOADING = False

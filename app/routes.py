@@ -11,7 +11,7 @@ import time
 import traceback
 from pathlib import Path
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, abort, current_app, flash, g, jsonify, make_response, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
@@ -104,6 +104,12 @@ from app.models import (
     fetch_storage_locations,
     fetch_storage_locations_summary,
     fetch_technicians,
+    fetch_technician_list_summary,
+    count_technicians_list,
+    fetch_distinct_supervisors,
+    fetch_distinct_centers,
+    fetch_distinct_regions,
+    fetch_distinct_companies,
     fetch_vehicles,
     fetch_mobile_units,
     fetch_qc_sessions,
@@ -4450,6 +4456,187 @@ def qc_reports():
     )
 
 
+def _default_technician_profile_range():
+    today = datetime.now()
+    try:
+        app_tz = _app_timezone()
+        today = datetime.now(app_tz).replace(tzinfo=None)
+    except Exception:
+        pass
+    to_date = today.strftime("%Y-%m-%d")
+    from_date = (today - timedelta(days=90)).strftime("%Y-%m-%d")
+    return from_date, to_date
+
+
+@main.route("/technicians")
+def technician_list():
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    supervisor_scope_names = current_supervisor_scope_names()
+
+    has_any_filter_arg = any(k in request.args for k in (
+        "from_date", "to_date", "q", "region", "supervisor", "center", "company", "is_active", "all_time"
+    ))
+    all_time_flag = request.args.get("all_time", "").strip() == "1"
+
+    default_from, default_to = _default_technician_profile_range()
+    if all_time_flag:
+        from_date = ""
+        to_date = ""
+    else:
+        from_date_raw = request.args.get("from_date", "").strip()
+        to_date_raw = request.args.get("to_date", "").strip()
+        if not has_any_filter_arg:
+            from_date = default_from
+            to_date = default_to
+        else:
+            from_date = from_date_raw
+            to_date = to_date_raw
+
+    q = request.args.get("q", "").strip()
+    region = request.args.get("region", "").strip()
+    supervisor = request.args.get("supervisor", "").strip()
+    center = request.args.get("center", "").strip()
+    company = request.args.get("company", "").strip()
+    is_active = request.args.get("is_active", "").strip()
+    page_raw = request.args.get("page", "").strip()
+    page_size_raw = request.args.get("page_size", "").strip()
+
+    try:
+        page = max(1, int(page_raw)) if page_raw else 1
+    except (TypeError, ValueError):
+        page = 1
+
+    try:
+        page_size = max(1, min(200, int(page_size_raw))) if page_size_raw else 20
+    except (TypeError, ValueError):
+        page_size = 20
+
+    filters = {
+        "from_date": from_date,
+        "to_date": to_date,
+        "q": q,
+        "region": region,
+        "supervisor": supervisor,
+        "center": center,
+        "company": company,
+        "is_active": is_active if is_active != "" else None,
+        "all_time": all_time_flag,
+        "page": page,
+        "page_size": page_size,
+    }
+
+    technicians_total = count_technicians_list(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    page_count = max(1, (technicians_total + page_size - 1) // page_size) if technicians_total else 1
+    if page > page_count:
+        page = page_count
+    offset = (page - 1) * page_size
+
+    rows = fetch_technician_list_summary(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+        limit=page_size,
+        offset=offset,
+    )
+
+    active_count = sum(1 for r in rows if r.get("is_active"))
+    inactive_count = sum(1 for r in rows if not r.get("is_active"))
+    total_audits = sum(r["audits_count"] for r in rows)
+    total_qc = sum(r["qc_count"] for r in rows)
+    total_service = sum(r["service_count"] for r in rows)
+    nps_total_weight = sum(r["nps_count"] for r in rows)
+
+    def _clean_num(v):
+        try:
+            f = float(v or 0)
+        except (TypeError, ValueError):
+            f = 0.0
+        if f == 0:
+            return 0
+        r_rounded = round(f, 1)
+        if r_rounded == int(r_rounded):
+            return int(r_rounded)
+        return r_rounded
+
+    avg_audit_score_global = 0
+    if rows and total_audits > 0:
+        weighted = sum(r["audit_avg_score"] * r["audits_count"] for r in rows)
+        avg_audit_score_global = _clean_num(weighted / total_audits if total_audits else 0)
+
+    avg_qc_score_global = 0
+    if rows and total_qc > 0:
+        weighted = sum(r["qc_avg_score"] * r["qc_count"] for r in rows)
+        avg_qc_score_global = _clean_num(weighted / total_qc if total_qc else 0)
+
+    avg_nps_global = 0
+    if rows and nps_total_weight > 0:
+        weighted = sum(r["avg_nps"] * r["nps_count"] for r in rows)
+        avg_nps_global = _clean_num(weighted / nps_total_weight if nps_total_weight else 0)
+
+    show_date_filter_values_from = from_date if from_date else default_from
+    show_date_filter_values_to = to_date if to_date else default_to
+
+    has_prev_page = page > 1
+    has_next_page = (offset + page_size) < technicians_total
+
+    pages_window = []
+    if page_count <= 9:
+        pages_window = list(range(1, page_count + 1))
+    else:
+        pages_window.append(1)
+        if page - 2 > 2:
+            pages_window.append(None)
+        start = max(2, page - 2)
+        end = min(page_count - 1, page + 2)
+        for p in range(start, end + 1):
+            pages_window.append(p)
+        if page + 2 < page_count - 1:
+            pages_window.append(None)
+        pages_window.append(page_count)
+
+    return render_template(
+        "technician_list.html",
+        technicians=rows,
+        technicians_total=technicians_total,
+        filters=filters,
+        show_from=show_date_filter_values_from,
+        show_to=show_date_filter_values_to,
+        page=page,
+        page_count=page_count,
+        page_size=page_size,
+        has_prev_page=has_prev_page,
+        has_next_page=has_next_page,
+        pages_window=pages_window,
+        filter_options={
+            "regions": fetch_distinct_regions(),
+            "supervisors": fetch_distinct_supervisors(),
+            "centers": fetch_distinct_centers(),
+            "companies": fetch_distinct_companies(),
+        },
+        summary={
+            "total_technicians": technicians_total,
+            "active_count": active_count,
+            "inactive_count": inactive_count,
+            "total_audits": total_audits,
+            "total_qc": total_qc,
+            "total_service": total_service,
+            "avg_audit_score_global": avg_audit_score_global,
+            "avg_qc_score_global": avg_qc_score_global,
+            "avg_nps_global": avg_nps_global,
+            "nps_total_weight": nps_total_weight,
+        },
+        page_class="page-wide",
+    )
+
+
 @main.route("/reports/technicians")
 def technician_reports():
     if not can_view_reports():
@@ -5327,6 +5514,21 @@ def findings_list():
     filter_active = any(filters.values())
     has_prev_page = page > 1
     has_next_page = (offset + page_size) < findings_total
+
+    pages_window_findings = []
+    if page_count <= 9:
+        pages_window_findings = list(range(1, page_count + 1))
+    else:
+        pages_window_findings.append(1)
+        if page - 2 > 2:
+            pages_window_findings.append(None)
+        start = max(2, page - 2)
+        end = min(page_count - 1, page + 2)
+        for p in range(start, end + 1):
+            pages_window_findings.append(p)
+        if page + 2 < page_count - 1:
+            pages_window_findings.append(None)
+        pages_window_findings.append(page_count)
     mobile_units = fetch_mobile_units()
     location_options = fetch_distinct_finding_locations(
         panel_filters,
@@ -5484,6 +5686,7 @@ def findings_list():
         page_count=page_count,
         has_prev_page=has_prev_page,
         has_next_page=has_next_page,
+        pages_window_findings=pages_window_findings,
         return_to=return_to,
     )
 
