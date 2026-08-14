@@ -1917,7 +1917,23 @@ def calculate_section_score(section, form_data, files):
                 )
             )
         )
-        if requires_photo and not (has_uploaded_file(photo_file) or uploaded_photo_path):
+        has_any_photo_upload = has_uploaded_file(photo_file)
+        if not has_any_photo_upload and photo_files:
+            has_any_photo_upload = any(has_uploaded_file(entry) for entry in photo_files)
+        has_any_uploaded_photo_path = False
+        if uploaded_photo_path:
+            stripped = str(uploaded_photo_path).strip()
+            if stripped and stripped != "-":
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, list) and any(str(v or "").strip() and str(v or "").strip() != "-" for v in parsed):
+                            has_any_uploaded_photo_path = True
+                    except Exception:
+                        has_any_uploaded_photo_path = True
+                else:
+                    has_any_uploaded_photo_path = True
+        if requires_photo and not (has_any_photo_upload or has_any_uploaded_photo_path):
             raise ValueError(f"Debes adjuntar evidencia fotografica en: {item['label']}")
 
         if status != "no_aplica" and not score_excluded_non_compliance:

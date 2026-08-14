@@ -142,12 +142,19 @@
             <div>
                 <p class="eyebrow">Checklist</p>
                 <h3>{{ section["title"] }}</h3>
-                <p class="empty-state">Evidencia fotográfica: mínimo 2 fotos en total (en cualquier ítem del checklist y/o en la foto general del QC).</p>
+                <p class="empty-state">Evidencia fotográfica: mínimo 2 fotos en total (en cualquier ítem del checklist y/o en la foto general del QC). Cada ítem permite hasta 3 fotografías.</p>
             </div>
         </div>
         <div class="audit-detail-grid">
             {% for item in section["items"] %}
-                <article class="checklist-item" id="item__{{ item['key'] }}" data-item-key="{{ item['key'] }}" data-item-label="{{ item['label'] }}">
+                <article
+                    class="checklist-item"
+                    id="item__{{ item['key'] }}"
+                    data-item-key="{{ item['key'] }}"
+                    data-item-label="{{ item['label'] }}"
+                    data-max-photos="{{ item.get('max_photos', 3) if item.get('multi_photo') else 1 }}"
+                    data-multi-evidence="{{ '1' if item.get('multi_photo') else '0' }}"
+                >
                     <div class="checklist-header">
                         <div>
                             <strong>{{ item["label"] }}</strong>
@@ -164,9 +171,32 @@
                         <textarea name="notes__{{ item['key'] }}" rows="3">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
                     </label>
                     <label>
-                        <span>Evidencia (obligatoria en NC menor/mayor)</span>
+                        <span>Evidencia (obligatoria en NC menor/mayor) · Máx. {{ item.get('max_photos', 3) if item.get('multi_photo') else 1 }} foto{{ 's' if item.get('multi_photo') else '' }}</span>
                         <div class="evidence-upload-row">
                             <input type="hidden" name="uploaded_photo_path__{{ item['key'] }}" value="{{ request.form.get('uploaded_photo_path__' + item['key'], '') }}">
+                            {% if item.get('multi_photo') %}
+                            <input
+                                type="file"
+                                id="photos__{{ item['key'] }}"
+                                name="photos__{{ item['key'] }}"
+                                accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                multiple
+                                style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                tabindex="-1"
+                                aria-hidden="true"
+                            >
+                            <input
+                                type="file"
+                                id="photos_camera__{{ item['key'] }}"
+                                name="photos_camera__{{ item['key'] }}"
+                                accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                                capture="environment"
+                                multiple
+                                style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;"
+                                tabindex="-1"
+                                aria-hidden="true"
+                            >
+                            {% else %}
                             <input
                                 type="file"
                                 id="photo__{{ item['key'] }}"
@@ -186,12 +216,13 @@
                                 tabindex="-1"
                                 aria-hidden="true"
                             >
-                            <button type="button" class="button button-primary evidence-action" data-file-trigger="photo__{{ item['key'] }}" aria-label="Seleccionar archivo" title="Seleccionar archivo">
+                            {% endif %}
+                            <button type="button" class="button button-primary evidence-action" data-file-trigger="{{ 'photos__' if item.get('multi_photo') else 'photo__' }}{{ item['key'] }}" aria-label="Seleccionar archivo" title="Seleccionar archivo">
                                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                     <path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm1 7V3.5L18.5 9H15zM8 13h8v2H8v-2zm0 4h6v2H8v-2z"/>
                                 </svg>
                             </button>
-                            <button type="button" class="button button-primary evidence-action" data-file-trigger="photo_camera__{{ item['key'] }}" aria-label="Abrir cámara" title="Abrir cámara">
+                            <button type="button" class="button button-primary evidence-action" data-file-trigger="{{ 'photos_camera__' if item.get('multi_photo') else 'photo_camera__' }}{{ item['key'] }}" aria-label="Abrir cámara" title="Abrir cámara">
                                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                                     <path fill="currentColor" d="M9 4l1.83 2H14l1.83-2H18a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h3zm3 5a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>
                                 </svg>
@@ -333,6 +364,30 @@
             return [raw];
         }
 
+        function serializeUploadedPaths(paths) {
+            const clean = (paths || []).map((v) => String(v || "").trim()).filter((v) => v && v !== "-");
+            if (clean.length === 0) {
+                return "";
+            }
+            if (clean.length === 1) {
+                return clean[0];
+            }
+            return JSON.stringify(clean, null, 0);
+        }
+
+        function getItemMaxPhotos(checklistItem) {
+            const raw = checklistItem && checklistItem.dataset && checklistItem.dataset.maxPhotos;
+            const parsed = parseInt(raw, 10);
+            if (!Number.isNaN(parsed) && parsed > 0) {
+                return parsed;
+            }
+            return checklistItem && checklistItem.dataset && checklistItem.dataset.multiEvidence === "1" ? 3 : 1;
+        }
+
+        function isItemMultiEvidence(checklistItem) {
+            return Boolean(checklistItem && checklistItem.dataset && checklistItem.dataset.multiEvidence === "1");
+        }
+
         const qcLiveSelect = form.querySelector("#qc_live_installation");
         if (qcLiveSelect) {
             qcLiveSelect.addEventListener("change", toggleInstallationFields);
@@ -448,6 +503,31 @@
             }
         }
 
+        function collectPendingFilesFromItem(checklistItem) {
+            const itemKey = String(checklistItem.dataset.itemKey || "").trim();
+            const multi = isItemMultiEvidence(checklistItem);
+            const collected = [];
+            if (multi) {
+                const fileInput = checklistItem.querySelector(`input[name="photos__${CSS.escape(itemKey)}"]`);
+                const cameraInput = checklistItem.querySelector(`input[name="photos_camera__${CSS.escape(itemKey)}"]`);
+                if (fileInput && fileInput.files) {
+                    Array.from(fileInput.files).forEach((entry) => entry && collected.push({ file: entry, isCamera: false }));
+                }
+                if (cameraInput && cameraInput.files) {
+                    Array.from(cameraInput.files).forEach((entry) => entry && collected.push({ file: entry, isCamera: true }));
+                }
+            } else {
+                const fileInput = checklistItem.querySelector(`input[name="photo__${CSS.escape(itemKey)}"]`);
+                const cameraInput = checklistItem.querySelector(`input[name="photo_camera__${CSS.escape(itemKey)}"]`);
+                if (fileInput && fileInput.files && fileInput.files[0]) {
+                    collected.push({ file: fileInput.files[0], isCamera: false });
+                } else if (cameraInput && cameraInput.files && cameraInput.files[0]) {
+                    collected.push({ file: cameraInput.files[0], isCamera: true });
+                }
+            }
+            return collected;
+        }
+
         function syncEvidenceFilename(checklistItem) {
             if (!checklistItem) {
                 return;
@@ -457,30 +537,40 @@
                 return;
             }
             const itemKey = String(checklistItem.dataset.itemKey || "").trim();
-            if (itemKey) {
-                const uploaded = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
-                const uploadedValue = uploaded ? String(uploaded.value || "").trim() : "";
-                if (uploadedValue && uploadedValue !== "-") {
-                    filenameTarget.textContent = "Evidencia subida.";
-                    return;
-                }
-            }
-            const fileInput = checklistItem.querySelector('input[name^="photo__"]');
-            const cameraInput = checklistItem.querySelector('input[name^="photo_camera__"]');
-            const files = [];
-            if (fileInput && fileInput.files && fileInput.files.length > 0) {
-                Array.from(fileInput.files).forEach((entry) => files.push(entry));
-            }
-            if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
-                Array.from(cameraInput.files).forEach((entry) => files.push(entry));
-            }
-            if (files.length === 0) {
-                filenameTarget.textContent = "Sin archivo seleccionado.";
+            const multi = isItemMultiEvidence(checklistItem);
+            const maxPhotos = getItemMaxPhotos(checklistItem);
+
+            const uploadedInput = itemKey ? checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`) : null;
+            const uploadedPaths = uploadedInput ? parseUploadedPaths(uploadedInput.value) : [];
+            const pending = collectPendingFilesFromItem(checklistItem);
+            const totalCount = uploadedPaths.length + pending.length;
+
+            if (totalCount === 0) {
+                filenameTarget.textContent = multi ? "Sin archivos seleccionados." : "Sin archivo seleccionado.";
                 return;
             }
-            const selected = files[0];
-            const sizeKb = Math.max(1, Math.round((selected.size || 0) / 1024));
-            filenameTarget.textContent = `${selected.name} · ${sizeKb} KB`;
+
+            const parts = [];
+            if (uploadedPaths.length > 0) {
+                parts.push(uploadedPaths.length === 1 ? "1 evidencia subida" : `${uploadedPaths.length} evidencias subidas`);
+            }
+            if (pending.length > 0) {
+                const first = pending[0].file;
+                const sizeKb = Math.max(1, Math.round((first.size || 0) / 1024));
+                if (pending.length === 1) {
+                    parts.push(`${first.name} · ${sizeKb} KB (pendiente)`);
+                } else {
+                    parts.push(`${pending.length} archivos seleccionados (pendientes)`);
+                }
+            }
+
+            let base = parts.join(" · ");
+            if (multi && totalCount > maxPhotos) {
+                base = `⚠ Límite excedido: tienes ${totalCount} / máx. ${maxPhotos} · ${base}`;
+            } else if (multi) {
+                base = `${base} (${totalCount}/${maxPhotos})`;
+            }
+            filenameTarget.textContent = base;
         }
 
         function syncQcPhotoFilename() {
@@ -517,14 +607,17 @@
             filenameTarget.textContent = `${selected.name} · ${sizeKb} KB`;
         }
 
-        async function uploadQcEvidenceFile(itemKey, itemLabel, qcDate, file) {
+        async function uploadQcEvidenceFile(itemKey, itemLabel, qcDate, filesForUpload) {
             const payload = new FormData();
             payload.append("item_key", itemKey);
             payload.append("item_label", itemLabel);
             if (qcDate) {
                 payload.append("qc_date", qcDate);
             }
-            payload.append("file", file, file && file.name ? file.name : "evidencia.webp");
+            const list = Array.isArray(filesForUpload) ? filesForUpload : [filesForUpload];
+            for (const file of list) {
+                payload.append("file", file, file && file.name ? file.name : "evidencia.webp");
+            }
             const response = await fetch("/api/qc/upload-evidence", {
                 method: "POST",
                 body: payload,
@@ -551,6 +644,33 @@
             return { response, data };
         }
 
+        function clearPendingFileInputsForItem(checklistItem) {
+            const itemKey = String(checklistItem.dataset.itemKey || "").trim();
+            if (!itemKey) {
+                return;
+            }
+            const multi = isItemMultiEvidence(checklistItem);
+            if (multi) {
+                const fileInput = checklistItem.querySelector(`input[name="photos__${CSS.escape(itemKey)}"]`);
+                const cameraInput = checklistItem.querySelector(`input[name="photos_camera__${CSS.escape(itemKey)}"]`);
+                if (fileInput && fileInput instanceof HTMLInputElement) {
+                    fileInput.value = "";
+                }
+                if (cameraInput && cameraInput instanceof HTMLInputElement) {
+                    cameraInput.value = "";
+                }
+            } else {
+                const fileInput = checklistItem.querySelector(`input[name="photo__${CSS.escape(itemKey)}"]`);
+                const cameraInput = checklistItem.querySelector(`input[name="photo_camera__${CSS.escape(itemKey)}"]`);
+                if (fileInput && fileInput instanceof HTMLInputElement) {
+                    fileInput.value = "";
+                }
+                if (cameraInput && cameraInput instanceof HTMLInputElement) {
+                    cameraInput.value = "";
+                }
+            }
+        }
+
         async function uploadEvidenceFromInput(input) {
             if (!input || !(input instanceof HTMLInputElement) || !input.files || input.files.length === 0) {
                 return;
@@ -568,39 +688,60 @@
             if (!uploadedInput) {
                 return;
             }
+
+            const multi = isItemMultiEvidence(checklistItem);
+            const maxPhotos = getItemMaxPhotos(checklistItem);
             const qcDate = getQcDate();
             const filenameTarget = checklistItem.querySelector("[data-evidence-filename]");
-            const isCameraEvidence = Boolean(String(input.name || "").startsWith("photo_camera__"));
-            const original = input.files[0];
-            if (!original) {
-                return;
-            }
-            if (filenameTarget) {
-                filenameTarget.textContent = "Subiendo evidencia...";
-            }
-            const compressed = await compressEvidenceFileForUpload(original, isCameraEvidence);
-            const { response, data } = await uploadQcEvidenceFile(itemKey, itemLabel, qcDate, compressed);
-            if (!response.ok || !data) {
-                if (filenameTarget) {
-                    filenameTarget.textContent = data && data.error ? data.error : "No se pudo subir la evidencia.";
-                }
-                return;
-            }
-            const paths = (data.photo_paths && Array.isArray(data.photo_paths))
-                ? data.photo_paths
-                : (data.photo_path ? [data.photo_path] : []);
-            const first = paths[0] ? String(paths[0]) : "";
-            uploadedInput.value = first;
+            const isCameraEvidence = Boolean(String(input.name || "").includes("camera"));
 
-            const fileInput = checklistItem.querySelector(`input[name="photo__${CSS.escape(itemKey)}"]`);
-            const cameraInput = checklistItem.querySelector(`input[name="photo_camera__${CSS.escape(itemKey)}"]`);
-            if (fileInput && fileInput instanceof HTMLInputElement) {
-                fileInput.value = "";
+            const existingPaths = parseUploadedPaths(uploadedInput.value);
+            const pending = Array.from(input.files).filter((f) => f);
+
+            if (multi && existingPaths.length + pending.length > maxPhotos) {
+                window.alert(`El ítem "${itemLabel}" admite hasta ${maxPhotos} fotografías en total. Ya tienes ${existingPaths.length} subidas y estás agregando ${pending.length} (total ${existingPaths.length + pending.length}). Selecciona menos archivos.`);
+                input.value = "";
+                syncEvidenceFilename(checklistItem);
+                return;
             }
-            if (cameraInput && cameraInput instanceof HTMLInputElement) {
-                cameraInput.value = "";
+
+            if (filenameTarget) {
+                filenameTarget.textContent = pending.length > 1 ? `Subiendo evidencia (1/${pending.length})...` : "Subiendo evidencia...";
             }
-            syncEvidenceFilename(checklistItem);
+
+            try {
+                const compressed = [];
+                for (let i = 0; i < pending.length; i += 1) {
+                    const file = await compressEvidenceFileForUpload(pending[i], isCameraEvidence);
+                    compressed.push(file);
+                }
+                const { response, data } = await uploadQcEvidenceFile(itemKey, itemLabel, qcDate, compressed);
+                if (!response.ok || !data) {
+                    if (filenameTarget) {
+                        filenameTarget.textContent = data && data.error ? data.error : "No se pudo subir la evidencia.";
+                    }
+                    return;
+                }
+                const paths = (data.photo_paths && Array.isArray(data.photo_paths))
+                    ? data.photo_paths
+                    : (data.photo_path ? [data.photo_path] : []);
+                let merged = existingPaths.slice();
+                for (const p of paths) {
+                    if (p && !merged.includes(String(p))) {
+                        merged.push(String(p));
+                    }
+                }
+                if (multi && merged.length > maxPhotos) {
+                    merged = merged.slice(0, maxPhotos);
+                }
+                uploadedInput.value = serializeUploadedPaths(merged);
+                clearPendingFileInputsForItem(checklistItem);
+                syncEvidenceFilename(checklistItem);
+            } catch (err) {
+                if (filenameTarget) {
+                    filenameTarget.textContent = "No se pudo subir la evidencia.";
+                }
+            }
         }
 
         async function uploadQcPhotoFromInput(input) {
@@ -693,18 +834,11 @@
                     if (uploadedInput) {
                         uploadedInput.value = "";
                     }
-                    const fileInput = checklistItem.querySelector(`input[name="photo__${CSS.escape(itemKey)}"]`);
-                    const cameraInput = checklistItem.querySelector(`input[name="photo_camera__${CSS.escape(itemKey)}"]`);
-                    if (fileInput && fileInput instanceof HTMLInputElement) {
-                        fileInput.value = "";
-                    }
-                    if (cameraInput && cameraInput instanceof HTMLInputElement) {
-                        cameraInput.value = "";
-                    }
+                    clearPendingFileInputsForItem(checklistItem);
                     syncEvidenceFilename(checklistItem);
                     return;
                 }
-                const ok = window.confirm("¿Quitar la evidencia cargada para este ítem?");
+                const ok = window.confirm(`¿Quitar la evidencia cargada para este ítem? (${paths.length} foto${paths.length === 1 ? "" : "s"})`);
                 if (!ok) {
                     return;
                 }
@@ -731,14 +865,7 @@
                         if (uploadedInput) {
                             uploadedInput.value = "";
                         }
-                        const fileInput = checklistItem.querySelector(`input[name="photo__${CSS.escape(itemKey)}"]`);
-                        const cameraInput = checklistItem.querySelector(`input[name="photo_camera__${CSS.escape(itemKey)}"]`);
-                        if (fileInput && fileInput instanceof HTMLInputElement) {
-                            fileInput.value = "";
-                        }
-                        if (cameraInput && cameraInput instanceof HTMLInputElement) {
-                            cameraInput.value = "";
-                        }
+                        clearPendingFileInputsForItem(checklistItem);
                         syncEvidenceFilename(checklistItem);
                     } finally {
                         removeItemButton.removeAttribute("disabled");
@@ -767,7 +894,7 @@
                     syncQcPhotoFilename();
                     return;
                 }
-                const ok = window.confirm("¿Quitar la foto del QC?");
+                const ok = window.confirm(`¿Quitar la foto del QC? (${paths.length} foto${paths.length === 1 ? "" : "s"})`);
                 if (!ok) {
                     return;
                 }
@@ -818,7 +945,12 @@
             if (
                 target instanceof HTMLInputElement
                 && target.name
-                && (target.name.startsWith("photo__") || target.name.startsWith("photo_camera__"))
+                && (
+                    target.name.startsWith("photo__")
+                    || target.name.startsWith("photo_camera__")
+                    || target.name.startsWith("photos__")
+                    || target.name.startsWith("photos_camera__")
+                )
             ) {
                 const checklistItem = target.closest(".checklist-item");
                 syncEvidenceFilename(checklistItem);
@@ -833,25 +965,35 @@
 
         form.addEventListener("submit", function (event) {
             const evidencePaths = new Set();
+            let maxPhotosViolation = null;
 
             form.querySelectorAll(".checklist-item").forEach((checklistItem) => {
                 const itemKey = String(checklistItem.dataset.itemKey || "").trim();
                 if (!itemKey) {
                     return;
                 }
+                const multi = isItemMultiEvidence(checklistItem);
+                const maxPhotos = getItemMaxPhotos(checklistItem);
                 const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
                 const uploadedPaths = uploadedInput ? parseUploadedPaths(uploadedInput.value) : [];
                 uploadedPaths.forEach((entry) => evidencePaths.add(entry));
 
-                const fileInput = checklistItem.querySelector(`input[name="photo__${CSS.escape(itemKey)}"]`);
-                const cameraInput = checklistItem.querySelector(`input[name="photo_camera__${CSS.escape(itemKey)}"]`);
-                if (fileInput && fileInput.files && fileInput.files.length > 0) {
-                    Array.from(fileInput.files).forEach((_entry, index) => evidencePaths.add(`${itemKey}__file__${index}`));
+                const pending = collectPendingFilesFromItem(checklistItem);
+                const totalForItem = uploadedPaths.length + pending.length;
+                if (multi && totalForItem > maxPhotos) {
+                    const itemLabel = String(checklistItem.dataset.itemLabel || itemKey);
+                    maxPhotosViolation = { itemKey, itemLabel, total: totalForItem, max: maxPhotos };
                 }
-                if (cameraInput && cameraInput.files && cameraInput.files.length > 0) {
-                    Array.from(cameraInput.files).forEach((_entry, index) => evidencePaths.add(`${itemKey}__camera__${index}`));
-                }
+                pending.forEach((entry, index) => {
+                    evidencePaths.add(`${itemKey}__${entry.isCamera ? "camera" : "file"}__${index}`);
+                });
             });
+
+            if (maxPhotosViolation) {
+                event.preventDefault();
+                window.alert(`El ítem "${maxPhotosViolation.itemLabel}" supera el límite de fotografías: tienes ${maxPhotosViolation.total} y el máximo es ${maxPhotosViolation.max}. Quita algunas fotos.`);
+                return;
+            }
 
             const uploadedQcInput = form.querySelector("#uploaded_qc_photo_path");
             const uploadedQcPaths = uploadedQcInput ? parseUploadedPaths(uploadedQcInput.value) : [];
