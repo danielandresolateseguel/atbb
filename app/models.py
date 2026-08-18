@@ -156,6 +156,20 @@ class PostgresConnection:
         self._connection.close()
 
 
+def _sqlite_greatest(*args):
+    non_null = [a for a in args if a is not None]
+    if not non_null:
+        return None
+    return max(non_null)
+
+
+def _sqlite_least(*args):
+    non_null = [a for a in args if a is not None]
+    if not non_null:
+        return None
+    return min(non_null)
+
+
 def get_db():
     if "db_conn" not in g:
         if is_postgres():
@@ -167,6 +181,11 @@ def get_db():
         else:
             connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
             connection.row_factory = sqlite3.Row
+            try:
+                connection.create_function("GREATEST", -1, _sqlite_greatest)
+                connection.create_function("LEAST", -1, _sqlite_least)
+            except Exception:
+                pass
             g.db_conn = connection
     return g.db_conn
 
@@ -9833,12 +9852,15 @@ def _build_technician_list_where_and_params(
         like_value = f"%{q}%"
         if is_postgres():
             where_clauses.append(
-                "(technicians.name ILIKE ? OR technicians.employee_code ILIKE ?)"
+                "(technicians.name ILIKE ? OR technicians.employee_code ILIKE ? OR technicians.phone ILIKE ? OR technicians.commune ILIKE ? OR technicians.team ILIKE ?)"
             )
         else:
             where_clauses.append(
-                "(LOWER(technicians.name) LIKE ? OR LOWER(technicians.employee_code) LIKE ?)"
+                "(LOWER(technicians.name) LIKE ? OR LOWER(technicians.employee_code) LIKE ? OR LOWER(COALESCE(technicians.phone, '')) LIKE ? OR LOWER(COALESCE(technicians.commune, '')) LIKE ? OR LOWER(COALESCE(technicians.team, '')) LIKE ?)"
             )
+        params.append(like_value)
+        params.append(like_value)
+        params.append(like_value)
         params.append(like_value)
         params.append(like_value)
 
@@ -9892,10 +9914,43 @@ def _build_technician_list_where_and_params(
     return where_sql, list(params)
 
 
+_TECHNICIAN_SORT_WHITELIST = {
+    "name": "technicians.name",
+    "employee_code": "technicians.employee_code",
+    "region": "technicians.region",
+    "supervisor_name": "technicians.supervisor_name",
+    "center_name": "technicians.center_name",
+    "company_name": "technicians.company_name",
+    "audits_count": "audits_count",
+    "audit_approval_rate": "audit_approval_rate",
+    "audit_avg_score": "audit_avg_score",
+    "audit_critical_count": "audit_critical_count",
+    "qc_count": "qc_count",
+    "qc_approval_rate": "qc_approval_rate",
+    "qc_avg_score": "qc_avg_score",
+    "service_count": "service_count",
+    "avg_nps": "avg_nps",
+    "last_activity": "last_activity_expr",
+    "is_active": "technicians.is_active",
+}
+
+
+def _build_technician_sort_order(sort_by, sort_dir):
+    normalized_by = str(sort_by or "").strip().lower() or "name"
+    normalized_dir = str(sort_dir or "").strip().lower()
+    asc = normalized_dir != "desc"
+    col_sql = _TECHNICIAN_SORT_WHITELIST.get(normalized_by, "technicians.name")
+    dir_sql = "ASC" if asc else "DESC"
+    tiebreaker = "technicians.is_active DESC, technicians.name ASC"
+    return f"ORDER BY {col_sql} {dir_sql}, {tiebreaker}"
+
+
 def fetch_technician_list_summary(
     filters=None,
     auditor_user_id=None,
     supervisor_scope_names=None,
+    sort_by=None,
+    sort_dir=None,
     limit=500,
     offset=0,
 ):
@@ -9928,6 +9983,8 @@ def fetch_technician_list_summary(
         tnps_date_to = "AND tnps_responses.response_date <= ?"
         params.extend([to_date, to_date, to_date, to_date])
 
+    order_sql = _build_technician_sort_order(sort_by, sort_dir)
+
     rows = get_db().execute(
         f"""
         SELECT
@@ -9954,7 +10011,12 @@ def fetch_technician_list_summary(
             COALESCE(tnps_stats.nps_count, 0) AS nps_count,
             COALESCE(audit_stats.last_audit_date, '') AS last_audit_date,
             COALESCE(qc_stats.last_qc_date, '') AS last_qc_date,
-            COALESCE(service_stats.last_service_date, '') AS last_service_date
+            COALESCE(service_stats.last_service_date, '') AS last_service_date,
+            GREATEST(
+                COALESCE(audit_stats.last_audit_date, ''),
+                COALESCE(qc_stats.last_qc_date, ''),
+                COALESCE(service_stats.last_service_date, '')
+            ) AS last_activity_expr
         FROM technicians
         LEFT JOIN (
             SELECT
@@ -10011,7 +10073,7 @@ def fetch_technician_list_summary(
             GROUP BY tnps_responses.technician_id
         ) tnps_stats ON tnps_stats.tid = technicians.id
         {where_sql}
-        ORDER BY technicians.is_active DESC, technicians.name ASC
+        {order_sql}
         LIMIT ? OFFSET ?
         """,
         tuple(params + [int(limit), max(0, int(offset or 0))]),
@@ -10081,4 +10143,881 @@ def count_technicians_list(
         return int(dict(row or {}).get("c") or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def fetch_technician_by_id(technician_id):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return None
+    row = get_db().execute(
+        """
+        SELECT id, name, employee_code, region, phone, commune, team,
+               company_name, union_name, supervisor_name, center_name,
+               is_active
+        FROM technicians
+        WHERE id = ?
+        """,
+        (tid,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _fmt_num(v, digits=1):
+    try:
+        if v is None:
+            return 0
+        fv = float(v)
+    except (TypeError, ValueError):
+        return 0
+    rounded = round(fv, digits)
+    if rounded == int(rounded):
+        return int(rounded)
+    return rounded
+
+
+def _build_range_params(filters):
+    params = []
+    audit_from = audit_to = qc_from = qc_to = service_from = service_to = tnps_from = tnps_to = ""
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    if from_date:
+        audit_from = "AND audits.audit_date >= ?"
+        qc_from = "AND qc_sessions.qc_date >= ?"
+        service_from = "AND service_sessions.service_date >= ?"
+        tnps_from = "AND tnps_responses.response_date >= ?"
+        params.extend([from_date, from_date, from_date, from_date])
+    if to_date:
+        audit_to = "AND audits.audit_date <= ?"
+        qc_to = "AND qc_sessions.qc_date <= ?"
+        service_to = "AND service_sessions.service_date <= ?"
+        tnps_to = "AND tnps_responses.response_date <= ?"
+        params.extend([to_date, to_date, to_date, to_date])
+    return (audit_from, audit_to, qc_from, qc_to, service_from, service_to, tnps_from, tnps_to), params
+
+
+def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_id=None):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return None
+    (audit_from, audit_to, qc_from, qc_to, service_from, service_to, tnps_from, tnps_to), range_params = _build_range_params(filters)
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    n_params = 0
+    if from_date:
+        n_params += 1
+    if to_date:
+        n_params += 1
+    audit_rp = range_params[:n_params]
+    qc_rp = range_params[n_params:2 * n_params]
+    service_rp = range_params[2 * n_params:3 * n_params]
+    tnps_rp = range_params[3 * n_params:4 * n_params]
+
+    audit_sql = f"""
+        SELECT
+            COUNT(*) AS audits_count,
+            ROUND(AVG(audits.total_score), 1) AS audit_avg_score,
+            SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS audit_approved,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS audit_critical,
+            MAX(audits.audit_date) AS last_audit_date,
+            MIN(audits.audit_date) AS first_audit_date
+        FROM audits
+        WHERE audits.technician_id = ?
+        {audit_from}
+        {audit_to}
+    """
+    qc_sql = f"""
+        SELECT
+            COUNT(*) AS qc_count,
+            ROUND(AVG(qc_sessions.total_score), 1) AS qc_avg_score,
+            SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS qc_approved,
+            MAX(qc_sessions.qc_date) AS last_qc_date,
+            MIN(qc_sessions.qc_date) AS first_qc_date
+        FROM qc_sessions
+        WHERE qc_sessions.technician_id = ?
+        {qc_from}
+        {qc_to}
+    """
+    service_sql = f"""
+        SELECT
+            COUNT(*) AS service_count,
+            ROUND(AVG(service_sessions.total_score), 1) AS service_avg_score,
+            MAX(service_sessions.service_date) AS last_service_date,
+            MIN(service_sessions.service_date) AS first_service_date
+        FROM service_sessions
+        WHERE service_sessions.technician_id = ?
+        {service_from}
+        {service_to}
+    """
+    tnps_sql = f"""
+        SELECT
+            COUNT(*) AS nps_count,
+            ROUND(AVG(tnps_responses.score), 1) AS avg_nps,
+            MIN(tnps_responses.response_date) AS first_tnps_date
+        FROM tnps_responses
+        WHERE tnps_responses.technician_id = ?
+        {tnps_from}
+        {tnps_to}
+    """
+    audit_critical_items_sql = f"""
+        SELECT
+            audit_items.item_label AS label,
+            COUNT(*) AS cnt
+        FROM audits
+        JOIN audit_items ON audit_items.audit_id = audits.id
+        WHERE audits.technician_id = ?
+          AND audit_items.status = 'no_cumple'
+        {audit_from}
+        {audit_to}
+        GROUP BY audit_items.item_label
+        ORDER BY cnt DESC, audit_items.item_label ASC
+        LIMIT 5
+    """
+    qc_nc_major_items_sql = f"""
+        SELECT
+            qc_items.item_label AS label,
+            COUNT(*) AS cnt
+        FROM qc_sessions
+        JOIN qc_items ON qc_items.qc_session_id = qc_sessions.id
+        WHERE qc_sessions.technician_id = ?
+          AND qc_items.status = 'nc_mayor'
+        {qc_from}
+        {qc_to}
+        GROUP BY qc_items.item_label
+        ORDER BY cnt DESC, qc_items.item_label ASC
+        LIMIT 5
+    """
+
+    db = get_db()
+    audit_row = db.execute(audit_sql, tuple([tid] + list(audit_rp))).fetchone()
+    qc_row = db.execute(qc_sql, tuple([tid] + list(qc_rp))).fetchone()
+    service_row = db.execute(service_sql, tuple([tid] + list(service_rp))).fetchone()
+    tnps_row = db.execute(tnps_sql, tuple([tid] + list(tnps_rp))).fetchone()
+    audit_items_rows = db.execute(audit_critical_items_sql, tuple([tid] + list(audit_rp))).fetchall()
+    qc_items_rows = db.execute(qc_nc_major_items_sql, tuple([tid] + list(qc_rp))).fetchall()
+
+    a = dict(audit_row or {})
+    q = dict(qc_row or {})
+    s = dict(service_row or {})
+    t = dict(tnps_row or {})
+
+    audits_count = int(a.get("audits_count") or 0)
+    qc_count = int(q.get("qc_count") or 0)
+    service_count = int(s.get("service_count") or 0)
+    audit_approved = int(a.get("audit_approved") or 0)
+    qc_approved = int(q.get("qc_approved") or 0)
+    audit_critical = int(a.get("audit_critical") or 0)
+    nps_count = int(t.get("nps_count") or 0)
+
+    activity_dates = [
+        a.get("last_audit_date") or "",
+        q.get("last_qc_date") or "",
+        s.get("last_service_date") or "",
+    ]
+    first_candidates = [
+        d for d in [
+            a.get("first_audit_date") or "",
+            q.get("first_qc_date") or "",
+            s.get("first_service_date") or "",
+            t.get("first_tnps_date") or "",
+        ] if d
+    ]
+    first_activity = min(first_candidates) if first_candidates else ""
+    last_activity = ""
+    last_non_empty = [x for x in activity_dates if x]
+    if last_non_empty:
+        last_activity = max(last_non_empty)
+
+    return {
+        "audits_count": audits_count,
+        "audit_avg_score": _fmt_num(a.get("audit_avg_score"), 1),
+        "audit_approval_rate": _fmt_num((100.0 * audit_approved / audits_count) if audits_count else 0, 1),
+        "audit_critical_count": audit_critical,
+        "audit_rejected_count": max(0, audits_count - audit_approved - audit_critical),
+        "last_audit_date": a.get("last_audit_date") or "",
+        "qc_count": qc_count,
+        "qc_avg_score": _fmt_num(q.get("qc_avg_score"), 1),
+        "qc_approval_rate": _fmt_num((100.0 * qc_approved / qc_count) if qc_count else 0, 1),
+        "last_qc_date": q.get("last_qc_date") or "",
+        "service_count": service_count,
+        "service_avg_score": _fmt_num(s.get("service_avg_score"), 1),
+        "last_service_date": s.get("last_service_date") or "",
+        "nps_count": nps_count,
+        "avg_nps": _fmt_num(t.get("avg_nps"), 1),
+        "first_activity": first_activity,
+        "last_activity": last_activity,
+        "top_audit_no_cumple_items": [
+            {"label": r["label"], "count": int(r["cnt"] or 0)}
+            for r in audit_items_rows
+        ],
+        "top_qc_nc_mayor_items": [
+            {"label": r["label"], "count": int(r["cnt"] or 0)}
+            for r in qc_items_rows
+        ],
+    }
+
+
+def fetch_technician_profile_benchmarks(technician_id, filters=None, auditor_user_id=None):
+    tech = fetch_technician_by_id(technician_id)
+    if not tech:
+        return None
+    supervisor = (tech.get("supervisor_name") or "").strip()
+    center = (tech.get("center_name") or "").strip()
+    region = (tech.get("region") or "").strip()
+    company = (tech.get("company_name") or "").strip()
+
+    peer_where = "1=1"
+    peer_params = []
+    scope_hint = "Empresa"
+    if supervisor:
+        peer_where = "UPPER(TRIM(COALESCE(technicians.supervisor_name, ''))) = UPPER(?)"
+        peer_params = [supervisor]
+        scope_hint = "Supervisor"
+    elif center:
+        peer_where = "UPPER(TRIM(COALESCE(technicians.center_name, ''))) = UPPER(?)"
+        peer_params = [center]
+        scope_hint = "Centro"
+    elif region:
+        peer_where = "UPPER(TRIM(COALESCE(technicians.region, ''))) = UPPER(?)"
+        peer_params = [region]
+        scope_hint = "Región"
+    elif company:
+        peer_where = "UPPER(TRIM(COALESCE(technicians.company_name, ''))) = UPPER(?)"
+        peer_params = [company]
+        scope_hint = "Empresa"
+
+    (audit_from, audit_to, qc_from, qc_to, service_from, service_to, tnps_from, tnps_to), range_params = _build_range_params(filters)
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    n_params = 0
+    if from_date:
+        n_params += 1
+    if to_date:
+        n_params += 1
+    audit_rp = range_params[:n_params]
+    qc_rp = range_params[n_params:2 * n_params]
+    service_rp = range_params[2 * n_params:3 * n_params]
+    tnps_rp = range_params[3 * n_params:4 * n_params]
+
+    db = get_db()
+    peers_ids_sql = f"""
+        SELECT DISTINCT technicians.id
+        FROM technicians
+        WHERE {peer_where}
+          AND technicians.is_active = 1
+    """
+    peer_rows = db.execute(peers_ids_sql, tuple(peer_params)).fetchall()
+    peer_ids = [r["id"] for r in peer_rows]
+    if int(tech["id"]) not in peer_ids:
+        peer_ids.append(int(tech["id"]))
+    peers_count = len(peer_ids)
+
+    def _avg_over_peers(base_agg_sql, peer_ids, extra_params):
+        if not peer_ids:
+            return None
+        placeholders = ",".join(["?"] * len(peer_ids))
+        sql = base_agg_sql.format(peer_ids_where=f"IN ({placeholders})")
+        params = list(peer_ids) + list(extra_params)
+        row = db.execute(sql, tuple(params)).fetchone()
+        return dict(row or {}) if row else {}
+
+    audit_agg_sql = f"""
+        SELECT
+            COUNT(DISTINCT audits.id) AS total_count,
+            COUNT(DISTINCT audits.technician_id) AS tech_count,
+            ROUND(AVG(audits.total_score), 1) AS avg_score,
+            1.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS approval_rate
+        FROM audits
+        WHERE audits.technician_id {{peer_ids_where}}
+        {audit_from}
+        {audit_to}
+    """
+    qc_agg_sql = f"""
+        SELECT
+            COUNT(DISTINCT qc_sessions.id) AS total_count,
+            COUNT(DISTINCT qc_sessions.technician_id) AS tech_count,
+            ROUND(AVG(qc_sessions.total_score), 1) AS avg_score,
+            1.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS approval_rate
+        FROM qc_sessions
+        WHERE qc_sessions.technician_id {{peer_ids_where}}
+        {qc_from}
+        {qc_to}
+    """
+    service_agg_sql = f"""
+        SELECT
+            COUNT(DISTINCT service_sessions.id) AS total_count,
+            COUNT(DISTINCT service_sessions.technician_id) AS tech_count,
+            ROUND(AVG(service_sessions.total_score), 1) AS avg_score
+        FROM service_sessions
+        WHERE service_sessions.technician_id {{peer_ids_where}}
+        {service_from}
+        {service_to}
+    """
+    tnps_agg_sql = f"""
+        SELECT
+            COUNT(*) AS total_count,
+            ROUND(AVG(tnps_responses.score), 1) AS avg_score
+        FROM tnps_responses
+        WHERE tnps_responses.technician_id {{peer_ids_where}}
+        {tnps_from}
+        {tnps_to}
+    """
+
+    a_bm = _avg_over_peers(audit_agg_sql, peer_ids, audit_rp) or {}
+    q_bm = _avg_over_peers(qc_agg_sql, peer_ids, qc_rp) or {}
+    s_bm = _avg_over_peers(service_agg_sql, peer_ids, service_rp) or {}
+    t_bm = _avg_over_peers(tnps_agg_sql, peer_ids, tnps_rp) or {}
+
+    return {
+        "scope_hint": scope_hint,
+        "scope_value": supervisor or center or region or company or "-",
+        "peers_count": peers_count,
+        "audit_avg_score": _fmt_num(a_bm.get("avg_score"), 1),
+        "audit_approval_rate": _fmt_num(100.0 * float(a_bm.get("approval_rate") or 0), 1),
+        "qc_avg_score": _fmt_num(q_bm.get("avg_score"), 1),
+        "qc_approval_rate": _fmt_num(100.0 * float(q_bm.get("approval_rate") or 0), 1),
+        "service_avg_score": _fmt_num(s_bm.get("avg_score"), 1),
+        "avg_nps": _fmt_num(t_bm.get("avg_score"), 1),
+    }
+
+
+def fetch_technician_recent_audits(technician_id, filters=None, limit=8):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return []
+    (audit_from, audit_to, _, _, _, _, _, _), range_params = _build_range_params(filters)
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    n_params = 0
+    if from_date:
+        n_params += 1
+    if to_date:
+        n_params += 1
+    audit_rp = range_params[:n_params]
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            audits.id,
+            audits.audit_date,
+            audits.result_status,
+            audits.total_score,
+            audits.technician_display_name,
+            audits.auditor_name,
+            audits.sa_number,
+            audits.location,
+            audits.installation_type
+        FROM audits
+        WHERE audits.technician_id = ?
+        {audit_from}
+        {audit_to}
+        ORDER BY audits.audit_date DESC, audits.id DESC
+        LIMIT ?
+        """,
+        tuple([tid] + list(audit_rp) + [int(limit)]),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def fetch_technician_recent_qc(technician_id, filters=None, limit=8):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return []
+    (_, _, qc_from, qc_to, _, _, _, _), range_params = _build_range_params(filters)
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    n_params = 0
+    if from_date:
+        n_params += 1
+    if to_date:
+        n_params += 1
+    qc_rp = range_params[n_params:2 * n_params]
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            qc_sessions.id,
+            qc_sessions.qc_date,
+            qc_sessions.result_status,
+            qc_sessions.total_score,
+            qc_sessions.installation_type,
+            qc_sessions.technician_display_name,
+            qc_sessions.auditor_name,
+            qc_sessions.sa_number,
+            qc_sessions.location
+        FROM qc_sessions
+        WHERE qc_sessions.technician_id = ?
+        {qc_from}
+        {qc_to}
+        ORDER BY qc_sessions.qc_date DESC, qc_sessions.id DESC
+        LIMIT ?
+        """,
+        tuple([tid] + list(qc_rp) + [int(limit)]),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def fetch_technician_recent_service(technician_id, filters=None, limit=8):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return []
+    (_, _, _, _, service_from, service_to, _, _), range_params = _build_range_params(filters)
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    n_params = 0
+    if from_date:
+        n_params += 1
+    if to_date:
+        n_params += 1
+    service_rp = range_params[2 * n_params:3 * n_params]
+
+    rows = get_db().execute(
+        f"""
+        SELECT
+            service_sessions.id,
+            service_sessions.service_date,
+            service_sessions.result_status,
+            service_sessions.total_score,
+            service_sessions.technician_display_name,
+            service_sessions.auditor_name,
+            service_sessions.sa_number,
+            service_sessions.location,
+            service_sessions.optical_delta_dbm,
+            service_sessions.record_scope
+        FROM service_sessions
+        WHERE service_sessions.technician_id = ?
+        {service_from}
+        {service_to}
+        ORDER BY service_sessions.service_date DESC, service_sessions.id DESC
+        LIMIT ?
+        """,
+        tuple([tid] + list(service_rp) + [int(limit)]),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _period_key_expr(date_col, granularity="month"):
+    normalized = (granularity or "month").strip().lower()
+    if normalized == "week":
+        if is_postgres():
+            return "to_char(date_trunc('week', " + date_col + "::date), 'IYYY-\"W\"IW')"
+        return "strftime('%Y-W%W', " + date_col + ")"
+    if is_postgres():
+        return "to_char(date_trunc('month', " + date_col + "::date), 'YYYY-MM')"
+    return "strftime('%Y-%m', " + date_col + ")"
+
+
+def fetch_technician_monthly_series(technician_id, filters=None, granularity="month", limit=18):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return []
+    (audit_from, audit_to, qc_from, qc_to, service_from, service_to, tnps_from, tnps_to), range_params = _build_range_params(filters)
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    n_params = 0
+    if from_date:
+        n_params += 1
+    if to_date:
+        n_params += 1
+    audit_rp = range_params[:n_params]
+    qc_rp = range_params[n_params:2 * n_params]
+    service_rp = range_params[2 * n_params:3 * n_params]
+    tnps_rp = range_params[3 * n_params:4 * n_params]
+
+    audit_period = _period_key_expr("audits.audit_date", granularity)
+    qc_period = _period_key_expr("qc_sessions.qc_date", granularity)
+    service_period = _period_key_expr("service_sessions.service_date", granularity)
+    tnps_period = _period_key_expr("tnps_responses.response_date", granularity)
+
+    audit_sql = f"""
+        SELECT
+            {audit_period} AS period_key,
+            COUNT(*) AS audits_count,
+            ROUND(AVG(audits.total_score), 1) AS audit_avg_score,
+            1.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS audit_approval_rate,
+            SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS audit_critical_count
+        FROM audits
+        WHERE audits.technician_id = ?
+        {audit_from}
+        {audit_to}
+        GROUP BY period_key
+    """
+    qc_sql = f"""
+        SELECT
+            {qc_period} AS period_key,
+            COUNT(*) AS qc_count,
+            ROUND(AVG(qc_sessions.total_score), 1) AS qc_avg_score,
+            1.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS qc_approval_rate
+        FROM qc_sessions
+        WHERE qc_sessions.technician_id = ?
+        {qc_from}
+        {qc_to}
+        GROUP BY period_key
+    """
+    service_sql = f"""
+        SELECT
+            {service_period} AS period_key,
+            COUNT(*) AS service_count,
+            ROUND(AVG(service_sessions.total_score), 1) AS service_avg_score
+        FROM service_sessions
+        WHERE service_sessions.technician_id = ?
+        {service_from}
+        {service_to}
+        GROUP BY period_key
+    """
+    tnps_sql = f"""
+        SELECT
+            {tnps_period} AS period_key,
+            COUNT(*) AS nps_count,
+            ROUND(AVG(tnps_responses.score), 1) AS avg_nps
+        FROM tnps_responses
+        WHERE tnps_responses.technician_id = ?
+        {tnps_from}
+        {tnps_to}
+        GROUP BY period_key
+    """
+
+    db = get_db()
+    a_rows = db.execute(audit_sql, tuple([tid] + list(audit_rp))).fetchall()
+    q_rows = db.execute(qc_sql, tuple([tid] + list(qc_rp))).fetchall()
+    s_rows = db.execute(service_sql, tuple([tid] + list(service_rp))).fetchall()
+    t_rows = db.execute(tnps_sql, tuple([tid] + list(tnps_rp))).fetchall()
+
+    merged = {}
+    def _merge_rows(rows, source):
+        for r in rows:
+            d = dict(r)
+            pk = d.pop("period_key")
+            if pk not in merged:
+                merged[pk] = {
+                    "period_key": pk,
+                    "audits_count": 0, "audit_avg_score": None, "audit_approval_rate": None, "audit_critical_count": 0,
+                    "qc_count": 0, "qc_avg_score": None, "qc_approval_rate": None,
+                    "service_count": 0, "service_avg_score": None,
+                    "nps_count": 0, "avg_nps": None,
+                }
+            for k, v in d.items():
+                if v is None or v == "":
+                    continue
+                merged[pk][k] = _fmt_num(v, 1) if k in (
+                    "audit_avg_score", "qc_avg_score", "service_avg_score", "avg_nps"
+                ) else (
+                    _fmt_num(100.0 * float(v), 1) if k in ("audit_approval_rate", "qc_approval_rate") else int(v)
+                )
+
+    _merge_rows(a_rows, "audit")
+    _merge_rows(q_rows, "qc")
+    _merge_rows(s_rows, "service")
+    _merge_rows(t_rows, "tnps")
+
+    series = sorted(merged.values(), key=lambda x: x["period_key"])
+    if limit and len(series) > limit:
+        series = series[-limit:]
+    return series
+
+
+def _shift_dates(from_date, to_date, days):
+    try:
+        from datetime import datetime, timedelta
+        fmt = "%Y-%m-%d"
+        if not from_date or not to_date:
+            return "", ""
+        start = datetime.strptime(str(from_date), fmt)
+        end = datetime.strptime(str(to_date), fmt)
+        shift = timedelta(days=days)
+        return (start - shift).strftime(fmt), (end - shift).strftime(fmt)
+    except Exception:
+        return "", ""
+
+
+def fetch_technician_period_over_period(technician_id, filters=None):
+    from_date = (filters or {}).get("from_date") or ""
+    to_date = (filters or {}).get("to_date") or ""
+    all_time = bool((filters or {}).get("all_time"))
+
+    current_filters = dict(filters or {})
+    if all_time or not from_date or not to_date:
+        prev_filters = {"from_date": "", "to_date": "", "all_time": 0}
+        current_summary = fetch_technician_profile_summary(technician_id, filters={"from_date": "", "to_date": ""})
+        previous_summary = None
+    else:
+        try:
+            from datetime import datetime
+            fmt = "%Y-%m-%d"
+            start = datetime.strptime(str(from_date), fmt)
+            end = datetime.strptime(str(to_date), fmt)
+            span_days = max(1, (end - start).days + 1)
+            prev_from, prev_to = _shift_dates(from_date, to_date, span_days)
+            prev_filters = {"from_date": prev_from, "to_date": prev_to}
+            current_summary = fetch_technician_profile_summary(technician_id, filters=current_filters)
+            previous_summary = fetch_technician_profile_summary(technician_id, filters=prev_filters)
+        except Exception:
+            current_summary = fetch_technician_profile_summary(technician_id, filters=current_filters)
+            previous_summary = None
+
+    if not current_summary:
+        current_summary = {}
+    if not previous_summary:
+        previous_summary = {}
+
+    kpis = [
+        ("audits_count", "Auditorías", "cnt", None),
+        ("audit_avg_score", "Score Audit prom.", "score", None),
+        ("audit_approval_rate", "% Aprob. Audit", "pct", None),
+        ("audit_critical_count", "Críticas Audit", "cnt_down_better"),
+        ("qc_count", "QC", "cnt", None),
+        ("qc_avg_score", "Score QC prom.", "score", None),
+        ("qc_approval_rate", "% Aprob. QC", "pct", None),
+        ("service_count", "Service", "cnt", None),
+        ("service_avg_score", "Score Service prom.", "score", None),
+        ("nps_count", "Respuestas NPS", "cnt", None),
+        ("avg_nps", "NPS prom.", "nps", None),
+    ]
+
+    rows = []
+    for key, label, kind, *_rest in kpis:
+        cur_raw = current_summary.get(key)
+        prev_raw = previous_summary.get(key)
+        try:
+            cur = float(cur_raw) if cur_raw not in (None, "", []) else None
+        except (TypeError, ValueError):
+            cur = None
+        try:
+            prev = float(prev_raw) if prev_raw not in (None, "", []) else None
+        except (TypeError, ValueError):
+            prev = None
+        delta_val = None
+        delta_pct = None
+        if cur is not None and prev is not None and prev != 0:
+            delta_val = cur - prev
+            delta_pct = (delta_val / prev) * 100.0
+        rows.append({
+            "key": key,
+            "label": label,
+            "kind": kind,
+            "current": _fmt_num(cur, 1) if cur is not None else "-",
+            "previous": _fmt_num(prev, 1) if prev is not None else "-",
+            "delta_val": ("{0:+.1f}".format(delta_val) if delta_val is not None else "-"),
+            "delta_pct": ("{0:+.1f}%".format(delta_pct) if delta_pct is not None else "-"),
+            "status": _delta_status(cur, prev, kind),
+        })
+    return {
+        "current_filters": current_filters,
+        "previous_filters": prev_filters if not (all_time or not from_date or not to_date) else {"label": "Sin comparar (Todo histórico)"},
+        "rows": rows,
+    }
+
+
+def _delta_status(cur, prev, kind):
+    if cur is None or prev is None:
+        return "neutral"
+    if kind == "cnt_down_better":
+        if cur < prev:
+            return "ok"
+        if cur > prev:
+            return "danger"
+        return "neutral"
+    if cur > prev:
+        return "ok"
+    if cur < prev:
+        return "danger"
+    return "neutral"
+
+
+def _human_age_es(date_from_str, date_to_str):
+    try:
+        from datetime import datetime
+        fmt = "%Y-%m-%d"
+        if not date_from_str or not date_to_str:
+            return ""
+        d1 = datetime.strptime(str(date_from_str)[:10], fmt)
+        d2 = datetime.strptime(str(date_to_str)[:10], fmt)
+        if d2 < d1:
+            d1, d2 = d2, d1
+        years = d2.year - d1.year
+        months = d2.month - d1.month
+        days = (d2 - d2.replace(day=1)).days + 1 - ((d1 - d1.replace(day=1)).days + 1 - 1)
+        if d2.day < d1.day:
+            months -= 1
+        if months < 0:
+            years -= 1
+            months += 12
+        total_days = max(0, (d2 - d1).days)
+        total_months = max(0, years * 12 + months)
+        if total_days < 45:
+            label = "{0} días".format(total_days)
+        elif total_months < 24:
+            label = "{0} mes{1}".format(total_months, "es" if total_months != 1 else "")
+        else:
+            if months == 0:
+                label = "{0} año{1}".format(years, "s" if years != 1 else "")
+            else:
+                label = "{0} año{1} {2} mes{3}".format(
+                    years, "s" if years != 1 else "",
+                    months, "es" if months != 1 else "",
+                )
+        return {
+            "label": label,
+            "total_days": total_days,
+            "total_months": total_months,
+            "years": years,
+            "months": months,
+        }
+    except Exception:
+        return ""
+
+
+def _days_between(from_str, to_str):
+    try:
+        from datetime import datetime
+        fmt = "%Y-%m-%d"
+        if not from_str or not to_str:
+            return None
+        d1 = datetime.strptime(str(from_str)[:10], fmt)
+        d2 = datetime.strptime(str(to_str)[:10], fmt)
+        return (d2 - d1).days
+    except Exception:
+        return None
+
+
+def fetch_technician_historical_profile(technician_id, filters=None):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return {}
+    lifetime_summary = fetch_technician_profile_summary(tid, filters={"from_date": "", "to_date": ""}) or {}
+    monthly = fetch_technician_monthly_series(tid, filters={"from_date": "", "to_date": ""}, granularity="month", limit=36) or []
+
+    today_str = _fmt_today_iso()
+    first_activity = lifetime_summary.get("first_activity") or ""
+    last_activity = lifetime_summary.get("last_activity") or ""
+    last_audit = lifetime_summary.get("last_audit_date") or ""
+    last_qc = lifetime_summary.get("last_qc_date") or ""
+    last_service = lifetime_summary.get("last_service_date") or ""
+
+    age = _human_age_es(first_activity, today_str) if first_activity else ""
+    age_label = age["label"] if isinstance(age, dict) else (age or "")
+    total_months = (age["total_months"] if isinstance(age, dict) else 0) or 1
+
+    a_cum = 0
+    qc_cum = 0
+    sv_cum = 0
+    peak_audit = None
+    peak_qc = None
+    peak_service = None
+    worst_approval_audit = None
+    worst_approval_qc = None
+
+    audits_total = int(lifetime_summary.get("audits_count") or 0)
+    qc_total = int(lifetime_summary.get("qc_count") or 0)
+    service_total = int(lifetime_summary.get("service_count") or 0)
+    nps_total = int(lifetime_summary.get("nps_count") or 0)
+
+    for m in monthly:
+        a = int(m.get("audits_count") or 0)
+        q = int(m.get("qc_count") or 0)
+        s = int(m.get("service_count") or 0)
+        a_cum += a
+        qc_cum += q
+        sv_cum += s
+        if peak_audit is None or a > peak_audit.get("value", 0):
+            peak_audit = {"period": m.get("period_key"), "value": a}
+        if peak_qc is None or q > peak_qc.get("value", 0):
+            peak_qc = {"period": m.get("period_key"), "value": q}
+        if peak_service is None or s > peak_service.get("value", 0):
+            peak_service = {"period": m.get("period_key"), "value": s}
+        a_appr = m.get("audit_approval_rate")
+        q_appr = m.get("qc_approval_rate")
+        if a_appr is not None and a_appr != "" and a > 0:
+            try:
+                v = float(a_appr)
+                if worst_approval_audit is None or v < worst_approval_audit.get("value", 999):
+                    worst_approval_audit = {"period": m.get("period_key"), "value": v, "formatted": _fmt_num(v, 1)}
+            except (TypeError, ValueError):
+                pass
+        if q_appr is not None and q_appr != "" and q > 0:
+            try:
+                v = float(q_appr)
+                if worst_approval_qc is None or v < worst_approval_qc.get("value", 999):
+                    worst_approval_qc = {"period": m.get("period_key"), "value": v, "formatted": _fmt_num(v, 1)}
+            except (TypeError, ValueError):
+                pass
+
+    avg_per_month = {
+        "audits": _fmt_num((1.0 * audits_total / total_months) if total_months else 0, 1),
+        "qc": _fmt_num((1.0 * qc_total / total_months) if total_months else 0, 1),
+        "service": _fmt_num((1.0 * service_total / total_months) if total_months else 0, 1),
+        "nps": _fmt_num((1.0 * nps_total / total_months) if total_months else 0, 1),
+    }
+
+    days_since_last_activity = _days_between(last_activity, today_str) if last_activity else None
+    days_since_last_audit = _days_between(last_audit, today_str) if last_audit else None
+    days_since_last_qc = _days_between(last_qc, today_str) if last_qc else None
+    days_since_last_service = _days_between(last_service, today_str) if last_service else None
+
+    critical_total = int(lifetime_summary.get("audit_critical_count") or 0)
+    audit_critical_rate = (
+        _fmt_num(100.0 * critical_total / audits_total, 1) if audits_total else "0"
+    )
+
+    return {
+        "lifetime_summary": lifetime_summary,
+        "monthly_series": monthly,
+        "age": {
+            "first": first_activity,
+            "last": last_activity,
+            "label": age_label,
+            "total_days": age["total_days"] if isinstance(age, dict) else 0,
+            "total_months": total_months,
+        },
+        "volumes": {
+            "audits_total": audits_total,
+            "qc_total": qc_total,
+            "service_total": service_total,
+            "nps_total": nps_total,
+            "avg_per_month": avg_per_month,
+        },
+        "quality": {
+            "audit_avg_score": lifetime_summary.get("audit_avg_score"),
+            "qc_avg_score": lifetime_summary.get("qc_avg_score"),
+            "service_avg_score": lifetime_summary.get("service_avg_score"),
+            "avg_nps": lifetime_summary.get("avg_nps"),
+            "audit_approval_rate": lifetime_summary.get("audit_approval_rate"),
+            "qc_approval_rate": lifetime_summary.get("qc_approval_rate"),
+            "audit_critical_count": critical_total,
+            "audit_critical_rate": audit_critical_rate,
+            "audit_rejected_count": int(lifetime_summary.get("audit_rejected_count") or 0),
+        },
+        "peaks": {
+            "audit": peak_audit,
+            "qc": peak_qc,
+            "service": peak_service,
+            "worst_audit_approval": worst_approval_audit,
+            "worst_qc_approval": worst_approval_qc,
+        },
+        "streaks": {
+            "days_since_last_activity": days_since_last_activity,
+            "days_since_last_audit": days_since_last_audit,
+            "days_since_last_qc": days_since_last_qc,
+            "days_since_last_service": days_since_last_service,
+            "last_audit_date": last_audit,
+            "last_qc_date": last_qc,
+            "last_service_date": last_service,
+        },
+        "today": today_str,
+    }
+
+
+def _fmt_today_iso():
+    try:
+        from datetime import datetime
+        return datetime.today().strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
 

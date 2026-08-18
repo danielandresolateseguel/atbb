@@ -1,0 +1,1044 @@
+{% extends "base.html" %}
+
+{% block title %}Perfil · {{ technician.name }}{% endblock %}
+
+{% macro profile_url(overrides) %}
+  {%- set d = {
+    'from_date': filters.from_date if filters.from_date else '',
+    'to_date': filters.to_date if filters.to_date else '',
+    'all_time': '1' if filters.all_time else '',
+  } -%}
+  {%- set overrides = overrides or {} -%}
+  {%- set merged = {} -%}
+  {%- for k, v in d.items() -%}
+    {%- set _t = merged.update({k: v}) -%}
+  {%- endfor -%}
+  {%- for k, v in overrides.items() -%}
+    {%- set _t = merged.update({k: v}) -%}
+  {%- endfor -%}
+  {{ url_for('main.technician_profile',
+    technician_id=technician.id,
+    from_date=merged.from_date if merged.from_date else none,
+    to_date=merged.to_date if merged.to_date else none,
+    all_time='1' if merged.all_time == '1' else none)
+  }}
+{%- endmacro %}
+
+{% macro score_class(v, type_kpi) %}
+  {%- if type_kpi == 'nps' -%}
+    {%- if v >= 9 %}score-good{% elif v >= 7 %}score-warn{% else %}score-bad{% endif -%}
+  {%- else -%}
+    {%- if v >= 85 %}score-good{% elif v >= 70 %}score-warn{% else %}score-bad{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro pill_score(v, type_kpi) %}
+  {%- if v -%}
+    <strong class="score {{ score_class(v, type_kpi) }}">{{ v }}</strong>
+  {%- else -%}
+    -
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro kpi_compare(val, peer, type_kpi) %}
+  {%- if val and peer -%}
+    {%- set diff = val - peer -%}
+    {%- if diff > 0.05 -%}
+      <span class="metric-pill metric-ok">▲ {{ diff|round(1) }}</span>
+    {%- elif diff < -0.05 -%}
+      <span class="metric-pill metric-danger">▼ {{ (diff|abs)|round(1) }}</span>
+    {%- else -%}
+      <span class="metric-pill metric-neutral">= {{ peer }}</span>
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro status_badge(status) %}
+  {%- set s = (status or '')|string|lower -%}
+  {%- if s in ('aprobada', 'aprobada con observaciones') -%}
+    <span class="pill pill-ok">{{ status }}</span>
+  {%- elif s in ('critica', 'rechazada', 'nc_mayor') -%}
+    <span class="pill pill-danger">{{ status }}</span>
+  {%- elif s in ('pendiente', 'en ejecución', 'nc_menor') -%}
+    <span class="pill pill-warn">{{ status }}</span>
+  {%- elif status -%}
+    <span class="pill pill-muted">{{ status }}</span>
+  {%- else -%}
+    -
+  {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Perfil técnico</p>
+        <h2>{{ technician.name }}</h2>
+        <p class="hero-copy">
+            Legajo <strong>{{ technician.employee_code or '-' }}</strong>
+            {% if technician.supervisor_name %} · Supervisor <strong>{{ technician.supervisor_name }}</strong>{% endif %}
+            {% if technician.center_name %} · Centro <strong>{{ technician.center_name }}</strong>{% endif %}
+            · {% if technician.is_active %}<span class="pill pill-ok">Activo</span>{% else %}<span class="pill pill-muted">Inactivo</span>{% endif %}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.technician_list') }}">Volver al listado</a>
+        <a class="button button-secondary" href="{{ url_for('main.technician_reports', technician_id=technician.id, from_date=show_from, to_date=show_to) }}">Fallas QC</a>
+        <button type="button" id="btn-copy-summary" class="button button-secondary" data-technician='{"name":{{ technician.name|tojson }},"employee_code":{{ (technician.employee_code or '-')|tojson }},"region":{{ (technician.region or '-')|tojson }},"supervisor_name":{{ (technician.supervisor_name or '-')|tojson }},"center_name":{{ (technician.center_name or '-')|tojson }},"company_name":{{ (technician.company_name or '-')|tojson }},"union_name":{{ (technician.union_name or '-')|tojson }},"is_active":{{ 1 if technician.is_active else 0 }}}'>Copiar resumen</button>
+        <a class="button button-primary" href="{{ url_for('main.technician_list_export_csv', from_date='', to_date='') }}">Descargar CSV</a>
+    </div></section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.technician_profile', technician_id=technician.id) }}">
+        <label>
+            <span>Desde</span>
+            <input type="date" name="from_date" value="{{ show_from }}">
+        </label>
+        <label>
+            <span>Hasta</span>
+            <input type="date" name="to_date" value="{{ show_to }}">
+        </label>
+        <label class="checkbox-field">
+            <span>Todo el histórico</span>
+            <input type="checkbox" name="all_time" value="1" {% if filters.all_time %}checked{% endif %}>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Aplicar</button>
+            <a class="button button-secondary" href="{{ url_for('main.technician_profile', technician_id=technician.id) }}">Reset</a>
+            <div class="quick-range-inline">
+                <a class="chip {% if filters.all_time %}chip-active{% endif %}" data-range="all">Todo</a>
+                <a class="chip" data-range="30">30 d</a>
+                <a class="chip chip-active-default" data-range="90">90 d</a>
+                <a class="chip" data-range="180">180 d</a>
+                <a class="chip" data-range="365">365 d</a>
+            </div>
+        </div>
+    </form>
+</section>
+
+<section class="card info-card executive-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Resumen ejecutivo</p>
+            <h3>Trayectoria consolidada</h3>
+        </div>
+        <div class="meta">
+            {% if filters.all_time %}Todo histórico{% else %}Rango {{ show_from }} → {{ show_to }}{% endif %} · Fecha emisión <span id="h-today">{{ historic.today or '-' }}</span>
+        </div>
+    </div>
+    <div class="exec-grid">
+        <div class="exec-col exec-trayectoria">
+            <p class="exec-line">
+                <span class="exec-icon">🗓</span>
+                <strong>Trayectoria registrada:</strong>
+                Primer registro <span id="h-age-first">{{ historic.age.first or '-' }}</span>
+                · Última actividad <span id="h-age-last">{{ historic.age.last or '-' }}</span>
+                {% if historic.age.label %}· Antigüedad <strong id="h-age-label">{{ historic.age.label }}</strong>{% endif %}
+            </p>
+            <p class="exec-line">
+                <span class="exec-icon">📦</span>
+                <strong>Histórico total:</strong>
+                <span id="h-v-aud">{{ historic.volumes.audits_total or 0 }}</span> auditorías ·
+                <span id="h-v-qc">{{ historic.volumes.qc_total or 0 }}</span> QC ·
+                <span id="h-v-svc">{{ historic.volumes.service_total or 0 }}</span> service ·
+                <span id="h-v-nps">{{ historic.volumes.nps_total or 0 }}</span> respuestas NPS
+                {% if historic.volumes.avg_per_month %}
+                    · (<span id="h-v-avg">prom. mensual {{ historic.volumes.avg_per_month.audits or 0 }} Aud / {{ historic.volumes.avg_per_month.qc or 0 }} QC / {{ historic.volumes.avg_per_month.service or 0 }} Srv</span>)
+                {% endif %}
+            </p>
+            <p class="exec-line">
+                <span class="exec-icon">🏆</span>
+                <strong>Calidad consolidada:</strong>
+                Score Audit prom. <span id="h-q-aud-score">{{ pill_score(historic.quality.audit_avg_score, 'score')|striptags|trim }}</span>
+                (Peer {{ benchmarks.audit_avg_score or '-' }}{{ kpi_compare(historic.quality.audit_avg_score, benchmarks.audit_avg_score, '')|safe }})
+                · % Aprob. Audit <span id="h-q-aud-app">{{ historic.quality.audit_approval_rate or 0 }}%</span>
+                · Críticas totales <strong><span id="h-q-crit">{{ historic.quality.audit_critical_count or 0 }}</span></strong>
+                (tasa {{ historic.quality.audit_critical_rate or 0 }}%)
+                · Score QC prom. <span id="h-q-qc-score">{{ pill_score(historic.quality.qc_avg_score, 'score')|striptags|trim }}</span>
+                · <span id="h-q-qc-app">{{ historic.quality.qc_approval_rate or 0 }}% apro</span>
+                · Score Service <span id="h-q-svc-score">{{ pill_score(historic.quality.service_avg_score, 'score')|striptags|trim }}</span>
+                · NPS <span id="h-q-nps">{{ pill_score(historic.quality.avg_nps, 'nps')|striptags|trim }}</span>
+            </p>
+            <p class="exec-line">
+                <span class="exec-icon">⚠️</span>
+                <strong>Top fallas (histórico):</strong>
+                {% if summary.top_audit_no_cumple_items %}
+                    No cumple Audit:
+                    {% for it in summary.top_audit_no_cumple_items[:3] %}
+                        <span class="pill pill-warn" style="font-size:0.78rem;">{{ it.label }} ({{ it.count }})</span>{% if not loop.last %} · {% endif %}
+                    {% endfor %}
+                {% else %}
+                    No cumple Audit: <em>sin datos</em>
+                {% endif %}
+                ·
+                {% if summary.top_qc_nc_mayor_items %}
+                    NC mayor QC:
+                    {% for it in summary.top_qc_nc_mayor_items[:3] %}
+                        <span class="pill pill-danger" style="font-size:0.78rem;">{{ it.label }} ({{ it.count }})</span>{% if not loop.last %} · {% endif %}
+                    {% endfor %}
+                {% else %}
+                    NC mayor QC: <em>sin datos</em>
+                {% endif %}
+            </p>
+            <p class="exec-line">
+                <span class="exec-icon">🔁</span>
+                <strong>vs. período anterior equivalente:</strong>
+                {% set audit_pvp = namespace(v=None) %}
+                {% set audit_score_pvp = namespace(v=None) %}
+                {% set qc_score_pvp = namespace(v=None) %}
+                {% set nps_pvp = namespace(v=None) %}
+                {% for r in pvp.rows %}
+                    {% if r.key == 'audits_count' %}{% set audit_pvp.v = r %}{% endif %}
+                    {% if r.key == 'audit_avg_score' %}{% set audit_score_pvp.v = r %}{% endif %}
+                    {% if r.key == 'qc_avg_score' %}{% set qc_score_pvp.v = r %}{% endif %}
+                    {% if r.key == 'avg_nps' %}{% set nps_pvp.v = r %}{% endif %}
+                {% endfor %}
+                Score Audit
+                {% if audit_score_pvp.v %}
+                    <span class="metric-pill metric-{{ audit_score_pvp.v.status }}">
+                        {{ '▲ ' if audit_score_pvp.v.status=='ok' else ('▼ ' if audit_score_pvp.v.status=='danger' else '= ') }}{{ audit_score_pvp.v.delta_val }}
+                    </span>
+                {% else %}<span class="metric-pill metric-neutral">sin datos</span>{% endif %}
+                · Score QC
+                {% if qc_score_pvp.v %}
+                    <span class="metric-pill metric-{{ qc_score_pvp.v.status }}">
+                        {{ '▲ ' if qc_score_pvp.v.status=='ok' else ('▼ ' if qc_score_pvp.v.status=='danger' else '= ') }}{{ qc_score_pvp.v.delta_val }}
+                    </span>
+                {% else %}<span class="metric-pill metric-neutral">sin datos</span>{% endif %}
+                · NPS
+                {% if nps_pvp.v and nps_pvp.v.current != '-' %}
+                    <span class="metric-pill metric-{{ nps_pvp.v.status }}">
+                        {{ '▲ ' if nps_pvp.v.status=='ok' else ('▼ ' if nps_pvp.v.status=='danger' else '= ') }}{{ nps_pvp.v.delta_val }}
+                    </span>
+                {% else %}<span class="metric-pill metric-neutral">sin datos</span>{% endif %}
+                · Auditorías
+                {% if audit_pvp.v %}
+                    {{ audit_pvp.v.previous or '-' }} → {{ audit_pvp.v.current or '-' }}
+                    <span class="metric-pill metric-{{ audit_pvp.v.status }}">{{ audit_pvp.v.delta_pct }}</span>
+                {% else %}<span class="metric-pill metric-neutral">sin comparar</span>{% endif %}
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Auditorías</span>
+        <strong class="stat-value">{{ summary.audits_count or 0 }}</strong>
+        <div class="meta">{{ summary.last_audit_date or 'Sin fecha' }}</div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">% Aprob. Audit</span>
+        <strong class="stat-value">{{ summary.audit_approval_rate or 0 }}%</strong>
+        {{ kpi_compare(summary.audit_approval_rate, benchmarks.audit_approval_rate, '') }}
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Score Audit prom.</span>
+        {{ pill_score(summary.audit_avg_score, 'score')|safe }}
+        <div class="meta">
+            Peer {{ benchmarks.audit_avg_score or '-' }}
+            {{ kpi_compare(summary.audit_avg_score, benchmarks.audit_avg_score, '')|safe }}
+        </div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Críticas / Rechazadas</span>
+        <strong class="stat-value {% if summary.audit_critical_count %}stat-value-dim{% endif %}">{{ summary.audit_critical_count or 0 }} / {{ summary.audit_rejected_count or 0 }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">QC</span>
+        <strong class="stat-value">{{ summary.qc_count or 0 }}</strong>
+        <div class="meta">{{ summary.last_qc_date or 'Sin fecha' }}</div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">% Aprob. QC</span>
+        <strong class="stat-value">{{ summary.qc_approval_rate or 0 }}%</strong>
+        {{ kpi_compare(summary.qc_approval_rate, benchmarks.qc_approval_rate, '') }}
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Score QC prom.</span>
+        {{ pill_score(summary.qc_avg_score, 'score')|safe }}
+        <div class="meta">
+            Peer {{ benchmarks.qc_avg_score or '-' }}
+            {{ kpi_compare(summary.qc_avg_score, benchmarks.qc_avg_score, '')|safe }}
+        </div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Service</span>
+        <strong class="stat-value">{{ summary.service_count or 0 }}</strong>
+        <div class="meta">{{ summary.last_service_date or 'Sin fecha' }}</div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Score Service prom.</span>
+        {{ pill_score(summary.service_avg_score, 'score')|safe }}
+        <div class="meta">
+            Peer {{ benchmarks.service_avg_score or '-' }}
+            {{ kpi_compare(summary.service_avg_score, benchmarks.service_avg_score, '')|safe }}
+        </div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">NPS prom. ({{ summary.nps_count or 0 }} resp.)</span>
+        {{ pill_score(summary.avg_nps, 'nps')|safe }}
+        <div class="meta">
+            Peer {{ benchmarks.avg_nps or '-' }}
+            {{ kpi_compare(summary.avg_nps, benchmarks.avg_nps, 'nps')|safe }}
+        </div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Última actividad</span>
+        <strong class="stat-value">{{ last_activity or '-' }}</strong>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Grupo peers</span>
+        <strong class="stat-value">{{ benchmarks.peers_count or 1 }}</strong>
+        <div class="meta">{{ benchmarks.scope_hint }}: {{ benchmarks.scope_value or '-' }}</div>
+    </article>
+</section>
+
+<section class="detail-grid">
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Datos maestros</p>
+                <h3>Técnico</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Nombre:</strong> {{ technician.name }}</p>
+            <p><strong>Legajo:</strong> {{ technician.employee_code or '-' }}</p>
+            <p><strong>Región:</strong> {{ technician.region or '-' }}</p>
+            <p><strong>Comuna:</strong> {{ technician.commune or '-' }}</p>
+            <p><strong>Teléfono:</strong> {{ technician.phone or '-' }}</p>
+            <p><strong>Equipo / Zona:</strong> {{ technician.team or '-' }}</p>
+            <p><strong>Primera actividad (registrada):</strong> {{ summary.first_activity or '-' }}</p>
+        </div>
+    </article>
+
+    <article class="card info-card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Organización</p>
+                <h3>Estructura</h3>
+            </div>
+        </div>
+        <div class="info-list">
+            <p><strong>Supervisor:</strong> {{ technician.supervisor_name or '-' }}</p>
+            <p><strong>Centro:</strong> {{ technician.center_name or '-' }}</p>
+            <p><strong>Empresa:</strong> {{ technician.company_name or '-' }}</p>
+            <p><strong>Sindicato:</strong> {{ technician.union_name or '-' }}</p>
+            <p><strong>Estado:</strong> {% if technician.is_active %}<span class="pill pill-ok">Activo</span>{% else %}<span class="pill pill-muted">Inactivo</span>{% endif %}</p>
+        </div>
+    </article>
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Hallazgos</p>
+            <h3>Top ítems con más fallas</h3>
+        </div>
+    </div>
+    <div class="detail-grid two-cols">
+        <article class="card info-card flat">
+            <div class="section-heading flat">
+                <div>
+                    <p class="eyebrow">Auditorías</p>
+                    <h3>No cumple (más frecuentes)</h3>
+                </div>
+                <span class="metric-pill metric-neutral">Top 5</span>
+            </div>
+            {% if summary.top_audit_no_cumple_items %}
+                <div class="finding-list">
+                    {% for item in summary.top_audit_no_cumple_items %}
+                        <div class="finding-row">
+                            <span class="finding-label">{{ item.label }}</span>
+                            <span class="metric-pill metric-danger">{{ item.count }} fallas</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="empty-state">Sin fallas "No cumple" en este período.</p>
+            {% endif %}
+        </article>
+
+        <article class="card info-card flat">
+            <div class="section-heading flat">
+                <div>
+                    <p class="eyebrow">QC Instalaciones</p>
+                    <h3>NC mayor (más frecuentes)</h3>
+                </div>
+                <span class="metric-pill metric-neutral">Top 5</span>
+            </div>
+            {% if summary.top_qc_nc_mayor_items %}
+                <div class="finding-list">
+                    {% for item in summary.top_qc_nc_mayor_items %}
+                        <div class="finding-row">
+                            <span class="finding-label">{{ item.label }}</span>
+                            <span class="metric-pill metric-danger">{{ item.count }} NC</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="empty-state">Sin NC mayor en este período.</p>
+            {% endif %}
+        </article>
+    </div>
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Últimos</p>
+            <h3>Auditorías recientes</h3>
+        </div>
+        {% if recent_audits %}
+            <a class="button button-secondary" href="{{ url_for('main.reports', from_date=show_from, to_date=show_to) }}">Ver todas</a>
+        {% endif %}
+    </div>
+    {% if recent_audits %}
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>SA</th>
+                        <th>Auditor</th>
+                        <th>Tipo</th>
+                        <th>Resultado</th>
+                        <th class="num">Score</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in recent_audits %}
+                        <tr>
+                            <td>{{ r.audit_date }}</td>
+                            <td>{{ r.sa_number or '-' }}</td>
+                            <td>{{ r.auditor_name or '-' }}</td>
+                            <td>{{ r.installation_type or '-' }}</td>
+                            <td>{{ status_badge(r.result_status)|safe }}</td>
+                            <td class="num">{{ pill_score(r.total_score, 'score')|safe }}</td>
+                            <td>
+                                <a class="table-link" href="{{ url_for('main.audit_detail', audit_id=r.id) }}">Ver</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin auditorías registradas en este período.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Últimos</p>
+            <h3>QC Instalaciones recientes</h3>
+        </div>
+        {% if recent_qc %}
+            <a class="button button-secondary" href="{{ url_for('main.qc_reports', from_date=show_from, to_date=show_to) }}">Ver todas</a>
+        {% endif %}
+    </div>
+    {% if recent_qc %}
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>SA</th>
+                        <th>Auditor</th>
+                        <th>Tipo</th>
+                        <th>Resultado</th>
+                        <th class="num">Score</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in recent_qc %}
+                        <tr>
+                            <td>{{ r.qc_date }}</td>
+                            <td>{{ r.sa_number or '-' }}</td>
+                            <td>{{ r.auditor_name or '-' }}</td>
+                            <td>{{ r.installation_type or '-' }}</td>
+                            <td>{{ status_badge(r.result_status)|safe }}</td>
+                            <td class="num">{{ pill_score(r.total_score, 'score')|safe }}</td>
+                            <td>
+                                <a class="table-link" href="{{ url_for('main.qc_detail', qc_session_id=r.id) }}">Ver</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin QC registrados en este período.</p>
+    {% endif %}
+</section>
+
+<section class="card table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Últimos</p>
+            <h3>Service recientes</h3>
+        </div>
+        {% if recent_service %}
+            <a class="button button-secondary" href="{{ url_for('main.service_sessions', from_date=show_from, to_date=show_to) }}">Ver todas</a>
+        {% endif %}
+    </div>
+    {% if recent_service %}
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>SA</th>
+                        <th>Auditor</th>
+                        <th>Δ Óptico (dBm)</th>
+                        <th>Scope</th>
+                        <th>Resultado</th>
+                        <th class="num">Score</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in recent_service %}
+                        <tr>
+                            <td>{{ r.service_date }}</td>
+                            <td>{{ r.sa_number or '-' }}</td>
+                            <td>{{ r.auditor_name or '-' }}</td>
+                            <td>{% if r.optical_delta_dbm is not none and r.optical_delta_dbm != '' %}{{ r.optical_delta_dbm }}{% else %}-{% endif %}</td>
+                            <td>{{ r.record_scope or '-' }}</td>
+                            <td>{{ status_badge(r.result_status)|safe }}</td>
+                            <td class="num">{{ pill_score(r.total_score, 'score')|safe }}</td>
+                            <td>
+                                <a class="table-link" href="{{ url_for('main.service_detail', service_session_id=r.id) }}">Ver</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin service registrado en este período.</p>
+    {% endif %}
+</section>
+
+<section class="card info-card historic-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Rendimiento histórico</p>
+            <h3>Consolidado (todo el registro del técnico)</h3>
+        </div>
+        <span class="meta">
+            {% if historic.age.first %}Desde {{ historic.age.first }} · {% endif %}
+            al {{ historic.today or '-' }} · {{ historic.age.label or '' }}
+        </span>
+    </div>
+    <div class="historic-grid">
+        <div class="historic-box">
+            <p class="box-title">📆 Trayectoria</p>
+            <p class="box-row"><span>Primer registro</span><strong>{{ historic.age.first or '-' }}</strong></p>
+            <p class="box-row"><span>Última actividad</span><strong>{{ historic.age.last or '-' }}</strong></p>
+            <p class="box-row"><span>Antigüedad</span><strong>{{ historic.age.label or '-' }}</strong></p>
+            <p class="box-row"><span>Días desde última actividad</span><strong>{{ historic.streaks.days_since_last_activity if historic.streaks.days_since_last_activity is not none else '-' }}</strong></p>
+            <p class="box-row"><span>  ·  Hace Audit</span><strong>{{ historic.streaks.days_since_last_audit if historic.streaks.days_since_last_audit is not none else '-' }} d</strong></p>
+            <p class="box-row"><span>  ·  Hace QC</span><strong>{{ historic.streaks.days_since_last_qc if historic.streaks.days_since_last_qc is not none else '-' }} d</strong></p>
+            <p class="box-row"><span>  ·  Hace Service</span><strong>{{ historic.streaks.days_since_last_service if historic.streaks.days_since_last_service is not none else '-' }} d</strong></p>
+        </div>
+        <div class="historic-box">
+            <p class="box-title">📦 Volúmenes</p>
+            <p class="box-row"><span>Auditorías</span><strong>{{ historic.volumes.audits_total or 0 }}</strong></p>
+            <p class="box-row"><span>  ·  Promedio / mes</span><strong>{{ historic.volumes.avg_per_month.audits or 0 }}</strong></p>
+            <p class="box-row"><span>QC Instalaciones</span><strong>{{ historic.volumes.qc_total or 0 }}</strong></p>
+            <p class="box-row"><span>  ·  Promedio / mes</span><strong>{{ historic.volumes.avg_per_month.qc or 0 }}</strong></p>
+            <p class="box-row"><span>Service</span><strong>{{ historic.volumes.service_total or 0 }}</strong></p>
+            <p class="box-row"><span>  ·  Promedio / mes</span><strong>{{ historic.volumes.avg_per_month.service or 0 }}</strong></p>
+            <p class="box-row"><span>Respuestas NPS</span><strong>{{ historic.volumes.nps_total or 0 }} (prom/mes {{ historic.volumes.avg_per_month.nps or 0 }})</strong></p>
+        </div>
+        <div class="historic-box">
+            <p class="box-title">🎯 Calidad</p>
+            <p class="box-row"><span>Score Audit prom.</span><strong>{{ pill_score(historic.quality.audit_avg_score, 'score')|safe }}</strong></p>
+            <p class="box-row"><span>% Aprob. Audit</span><strong>{{ historic.quality.audit_approval_rate or 0 }}%</strong></p>
+            <p class="box-row"><span>Score QC prom.</span><strong>{{ pill_score(historic.quality.qc_avg_score, 'score')|safe }}</strong></p>
+            <p class="box-row"><span>% Aprob. QC</span><strong>{{ historic.quality.qc_approval_rate or 0 }}%</strong></p>
+            <p class="box-row"><span>Score Service prom.</span><strong>{{ pill_score(historic.quality.service_avg_score, 'score')|safe }}</strong></p>
+            <p class="box-row"><span>NPS promedio</span><strong>{{ pill_score(historic.quality.avg_nps, 'nps')|safe }}</strong></p>
+            <p class="box-row danger-row">
+                <span>Críticas Audit (tasa)</span>
+                <strong>{{ historic.quality.audit_critical_count or 0 }} ({{ historic.quality.audit_critical_rate or 0 }}%)</strong>
+            </p>
+            <p class="box-row"><span>Audit rechazadas</span><strong>{{ historic.quality.audit_rejected_count or 0 }}</strong></p>
+        </div>
+        <div class="historic-box">
+            <p class="box-title">👥 Vs. Peers (período seleccionado)</p>
+            <p class="box-row"><span>Score Audit</span>
+                <strong>{{ historic.quality.audit_avg_score or '-' }} vs {{ benchmarks.audit_avg_score or '-' }}
+                {{ kpi_compare(historic.quality.audit_avg_score, benchmarks.audit_avg_score, '')|safe }}</strong>
+            </p>
+            <p class="box-row"><span>% Aprob. Audit</span>
+                <strong>{{ historic.quality.audit_approval_rate or 0 }}% vs {{ benchmarks.audit_approval_rate or '-' }}%
+                {{ kpi_compare(historic.quality.audit_approval_rate, benchmarks.audit_approval_rate, '')|safe }}</strong>
+            </p>
+            <p class="box-row"><span>Score QC</span>
+                <strong>{{ historic.quality.qc_avg_score or '-' }} vs {{ benchmarks.qc_avg_score or '-' }}
+                {{ kpi_compare(historic.quality.qc_avg_score, benchmarks.qc_avg_score, '')|safe }}</strong>
+            </p>
+            <p class="box-row"><span>% Aprob. QC</span>
+                <strong>{{ historic.quality.qc_approval_rate or 0 }}% vs {{ benchmarks.qc_approval_rate or '-' }}%
+                {{ kpi_compare(historic.quality.qc_approval_rate, benchmarks.qc_approval_rate, '')|safe }}</strong>
+            </p>
+            <p class="box-row"><span>NPS promedio</span>
+                <strong>{{ historic.quality.avg_nps or '-' }} vs {{ benchmarks.avg_nps or '-' }}
+                {{ kpi_compare(historic.quality.avg_nps, benchmarks.avg_nps, 'nps')|safe }}</strong>
+            </p>
+            <p class="box-row"><span>Grupo peers</span><strong>{{ benchmarks.peer_group_label or '—' }} (N={{ benchmarks.peer_count or 0 }})</strong></p>
+        </div>
+        <div class="historic-box">
+            <p class="box-title">📈 Picos</p>
+            <p class="box-row"><span>Mes pico Auditorías</span>
+                <strong>{% if historic.peaks.audit %}{{ historic.peaks.audit.period }} · {{ historic.peaks.audit.value }} unidad(es){% else %}-{% endif %}</strong>
+            </p>
+            <p class="box-row"><span>Mes pico QC</span>
+                <strong>{% if historic.peaks.qc %}{{ historic.peaks.qc.period }} · {{ historic.peaks.qc.value }} unidad(es){% else %}-{% endif %}</strong>
+            </p>
+            <p class="box-row"><span>Mes pico Service</span>
+                <strong>{% if historic.peaks.service %}{{ historic.peaks.service.period }} · {{ historic.peaks.service.value }} unidad(es){% else %}-{% endif %}</strong>
+            </p>
+            <p class="box-row danger-row"><span>Peor % Aprob. Audit</span>
+                <strong>{% if historic.peaks.worst_audit_approval %}{{ historic.peaks.worst_audit_approval.period }} · {{ historic.peaks.worst_audit_approval.formatted }}%{% else %}-{% endif %}</strong>
+            </p>
+            <p class="box-row danger-row"><span>Peor % Aprob. QC</span>
+                <strong>{% if historic.peaks.worst_qc_approval %}{{ historic.peaks.worst_qc_approval.period }} · {{ historic.peaks.worst_qc_approval.formatted }}%{% else %}-{% endif %}</strong>
+            </p>
+        </div>
+        <div class="historic-box">
+            <p class="box-title">🔥 Rachas / Inactividad</p>
+            <p class="box-row"><span>Última auditoría</span><strong>{{ historic.streaks.last_audit_date or '-' }} (hace {{ historic.streaks.days_since_last_audit if historic.streaks.days_since_last_audit is not none else '-' }} d)</strong></p>
+            <p class="box-row"><span>Último QC</span><strong>{{ historic.streaks.last_qc_date or '-' }} (hace {{ historic.streaks.days_since_last_qc if historic.streaks.days_since_last_qc is not none else '-' }} d)</strong></p>
+            <p class="box-row"><span>Último Service</span><strong>{{ historic.streaks.last_service_date or '-' }} (hace {{ historic.streaks.days_since_last_service if historic.streaks.days_since_last_service is not none else '-' }} d)</strong></p>
+            <p class="box-row">
+                <span>Alerta sin actividad</span>
+                {% if historic.streaks.days_since_last_activity is not none and historic.streaks.days_since_last_activity > 60 %}
+                    <strong class="danger-row pill-danger-inline">⚠ {{ historic.streaks.days_since_last_activity }} días</strong>
+                {% elif historic.streaks.days_since_last_activity is not none and historic.streaks.days_since_last_activity > 30 %}
+                    <strong class="pill-warn-inline">⚡ {{ historic.streaks.days_since_last_activity }} días</strong>
+                {% elif historic.streaks.days_since_last_activity is not none %}
+                    <strong class="pill-ok-inline">✅ {{ historic.streaks.days_since_last_activity }} días</strong>
+                {% else %}
+                    <strong>-</strong>
+                {% endif %}
+            </p>
+            <p class="box-row">
+                <span>Última falla crítica Audit</span>
+                <strong>(vista detalle auditorías)</strong>
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="card info-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Tendencia</p>
+            <h3>Serie mensual (últimos 18 meses)</h3>
+        </div>
+        {% if monthly_series %}
+        <span class="meta">{{ monthly_series|length }} período(s)</span>
+        {% endif %}
+    </div>
+    {% if monthly_series %}
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Mes</th>
+                        <th class="num">Auditorías</th>
+                        <th>Aud. barra</th>
+                        <th class="num">Score Audit</th>
+                        <th class="num">% Aprob. Aud</th>
+                        <th class="num">QC</th>
+                        <th class="num">Score QC</th>
+                        <th class="num">% Aprob. QC</th>
+                        <th class="num">Service</th>
+                        <th class="num">NPS prom.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set max_audits = namespace(v=1) %}
+                    {% for r in monthly_series %}
+                        {% if (r.audits_count or 0) > max_audits.v %}{% set max_audits.v = r.audits_count %}{% endif %}
+                    {% endfor %}
+                    {% set max_qc = namespace(v=1) %}
+                    {% for r in monthly_series %}
+                        {% if (r.qc_count or 0) > max_qc.v %}{% set max_qc.v = r.qc_count %}{% endif %}
+                    {% endfor %}
+                    {% for r in monthly_series %}
+                        {% set a_bar_w = (r.audits_count or 0) / max_audits.v * 100 %}
+                        <tr>
+                            <td>{{ r.period_key }}</td>
+                            <td class="num">{{ r.audits_count }}</td>
+                            <td>
+                                <div style="display:flex;align-items:center;gap:6px;min-width:140px;">
+                                    <div style="height:8px;flex:1;background:#F3F4F6;border-radius:4px;overflow:hidden;">
+                                        <div style="height:100%;width:{{ '%0.0f'|format(a_bar_w) }}%;background:#1D4ED8;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="num">{{ pill_score(r.audit_avg_score, 'score')|safe }}</td>
+                            <td class="num">{{ r.audit_approval_rate if r.audit_approval_rate is not none else '-' }}{% if r.audit_approval_rate is not none %}%{% endif %}</td>
+                            <td class="num">{{ r.qc_count }}</td>
+                            <td class="num">{{ pill_score(r.qc_avg_score, 'score')|safe }}</td>
+                            <td class="num">{{ r.qc_approval_rate if r.qc_approval_rate is not none else '-' }}{% if r.qc_approval_rate is not none %}%{% endif %}</td>
+                            <td class="num">{{ r.service_count }}</td>
+                            <td class="num">{{ pill_score(r.avg_nps, 'nps')|safe }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Sin datos históricos suficientes para mostrar tendencia mensual.</p>
+    {% endif %}
+</section>
+
+<section class="card info-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Comparativa</p>
+            <h3>Período actual vs. período anterior equivalente</h3>
+        </div>
+        <div class="meta" id="pvp-prev-label">
+            {% if pvp.previous_filters and pvp.previous_filters.label %}
+                {{ pvp.previous_filters.label }}
+            {% elif pvp.previous_filters and pvp.previous_filters.from_date %}
+                {{ pvp.previous_filters.from_date }} → {{ pvp.previous_filters.to_date }}
+            {% else %}
+                Sin comparar
+            {% endif %}
+        </div>
+    </div>
+    {% if pvp.rows %}
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>KPI</th>
+                        <th class="num">Actual</th>
+                        <th class="num">Anterior</th>
+                        <th class="num">Δ absoluto</th>
+                        <th class="num">Δ %</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in pvp.rows %}
+                        <tr data-pvp-row-key="{{ r.key }}"
+                            data-pvp-label="{{ r.label }}"
+                            data-pvp-prev="{{ r.previous }}"
+                            data-pvp-cur="{{ r.current }}"
+                            data-pvp-dpct="{{ r.delta_pct }}"
+                            data-pvp-sym="{% if r.status=='ok' %}▲{% elif r.status=='danger' %}▼{% else %}={% endif %}">
+                            <td>{{ r.label }}</td>
+                            <td class="num">{{ r.current }}{% if r.kind in ('pct','score','nps') and r.current != '-' and r.kind == 'pct' %}%{% endif %}</td>
+                            <td class="num">{{ r.previous }}{% if r.kind == 'pct' and r.previous != '-' %}%{% endif %}</td>
+                            <td class="num">{{ r.delta_val }}</td>
+                            <td class="num">{{ r.delta_pct }}</td>
+                            <td>
+                                {% if r.status == 'ok' %}
+                                    <span class="metric-pill metric-ok">▲</span>
+                                {% elif r.status == 'danger' %}
+                                    <span class="metric-pill metric-danger">▼</span>
+                                {% else %}
+                                    <span class="metric-pill metric-neutral">=</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">No se pudo calcular comparativa. Intenta cambiando el rango de fechas.</p>
+    {% endif %}
+</section>
+
+<section class="card info-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Próximamente</p>
+            <h3>Módulos en desarrollo (Etapa 4+)</h3>
+        </div>
+    </div>
+    <div class="tabs-preview">
+        <span class="tab-preview-chip tab-preview-active">Resumen</span>
+        <span class="tab-preview-chip">Distribución centro/supervisor</span>
+        <span class="tab-preview-chip">Hallazgos trackeados</span>
+        <span class="tab-preview-chip">Adjuntos / vehículo asignado</span>
+    </div>
+    <p class="meta" style="margin-top: 10px;">Secciones "Tendencias" y "Comparativa" habilitadas. Quedan pendientes las 3 últimas solapas.</p>
+</section>
+
+<style>
+    .two-cols { grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .two-cols { grid-template-columns: 1fr; } }
+    .detail-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(2, 1fr);
+    }
+    @media (max-width: 900px) {
+        .detail-grid { grid-template-columns: 1fr; }
+    }
+    .info-card.flat, .card.flat { padding: 0; box-shadow: none; border: 1px solid #E5E7EB; }
+    .section-heading.flat { padding: 12px 16px; border-bottom: 1px solid #E5E7EB; }
+    .finding-list { padding: 8px 16px 16px; }
+    .finding-row {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 8px 0; border-bottom: 1px dashed #E5E7EB; gap: 12px;
+    }
+    .finding-row:last-child { border-bottom: none; }
+    .finding-label { font-size: 0.88rem; color: #111827; flex: 1; }
+    .quick-range-inline {
+        display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: 8px;
+    }
+    .chip {
+        padding: 4px 10px; border-radius: 999px; background: #F3F4F6;
+        color: #111827; border: 1px solid #E5E7EB; text-decoration: none;
+        font-size: 0.8rem; cursor: pointer; user-select: none;
+    }
+    .chip:hover { background: #E5E7EB; }
+    .chip-active, .chip-active-default {
+        background: #1D4ED8; color: #fff; border-color: #1D4ED8;
+    }
+    .chip-active:hover, .chip-active-default:hover { background: #1E40AF; }
+    .pill-warn { background: #FEF3C7; color: #92400E; }
+    .stat-value-dim { color: #B91C1C; }
+    .tabs-preview {
+        display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
+    }
+    .tab-preview-chip {
+        padding: 6px 12px; border-radius: 999px;
+        background: #F9FAFB; border: 1px dashed #D1D5DB;
+        color: #6B7280; font-size: 0.82rem;
+    }
+    .tab-preview-active {
+        background: #EFF6FF; border-color: #BFDBFE; color: #1D4ED8;
+        border-style: solid;
+    }
+    .metric-pill.metric-ok { background: #D1FAE5; color: #065F46; border: none; }
+    .metric-pill.metric-warning { background: #FEF3C7; color: #92400E; border: none; }
+    .metric-pill.metric-danger { background: #FEE2E2; color: #991B1B; border: none; }
+    .metric-pill.metric-neutral { background: #F3F4F6; color: #374151; border: none; }
+    .executive-card .exec-grid { display: grid; gap: 10px; }
+    .exec-line {
+        margin: 0;
+        padding: 8px 0;
+        border-bottom: 1px dashed #E5E7EB;
+        line-height: 1.55;
+        font-size: 0.92rem;
+        color: #1F2937;
+    }
+    .exec-line:last-child { border-bottom: none; }
+    .exec-icon { display: inline-block; width: 20px; text-align: center; margin-right: 2px; }
+    .historic-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+    }
+    @media (max-width: 1100px) { .historic-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 700px) { .historic-grid { grid-template-columns: 1fr; } }
+    .historic-box {
+        border: 1px solid #E5E7EB;
+        border-radius: 10px;
+        padding: 14px 16px;
+        background: #FAFBFC;
+    }
+    .historic-box .box-title {
+        margin: 0 0 10px 0;
+        font-weight: 600;
+        color: #1E3A8A;
+        font-size: 0.95rem;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    .historic-box .box-row {
+        margin: 0;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 4px 0;
+        font-size: 0.86rem;
+    }
+    .historic-box .box-row span {
+        color: #6B7280;
+        min-width: 110px;
+    }
+    .historic-box .box-row strong {
+        color: #111827;
+        text-align: right;
+        font-weight: 600;
+    }
+    .historic-box .box-row.danger-row strong { color: #B91C1C; }
+    .pill-danger-inline {
+        display: inline-block;
+        background: #FEE2E2; color: #991B1B;
+        border-radius: 999px; padding: 2px 10px; font-size: 0.82rem;
+    }
+    .pill-warn-inline {
+        display: inline-block;
+        background: #FEF3C7; color: #92400E;
+        border-radius: 999px; padding: 2px 10px; font-size: 0.82rem;
+    }
+    .pill-ok-inline {
+        display: inline-block;
+        background: #D1FAE5; color: #065F46;
+        border-radius: 999px; padding: 2px 10px; font-size: 0.82rem;
+    }
+</style>
+
+<script>
+(function () {
+    function buildPreserveParams(extra) {
+        var params = new URLSearchParams(window.location.search);
+        Object.keys(extra).forEach(function (k) {
+            if (extra[k] === null || extra[k] === undefined || extra[k] === "") {
+                params.delete(k);
+            } else {
+                params.set(k, extra[k]);
+            }
+        });
+        return params.toString();
+    }
+    function fmt(d) {
+        var y = d.getFullYear();
+        var m = String(d.getMonth() + 1).padStart(2, "0");
+        var day = String(d.getDate()).padStart(2, "0");
+        return y + "-" + m + "-" + day;
+    }
+    function txtEl(id) { var e = document.getElementById(id); return e ? (e.innerText || e.textContent || "").replace(/\s+/g, " ").trim() : ""; }
+    function copySummary() {
+        var btn = document.getElementById("btn-copy-summary");
+        if (!btn) return;
+        var raw = btn.getAttribute("data-technician") || "{}";
+        var tech;
+        try { tech = JSON.parse(raw); } catch (e) { tech = {}; }
+        var name = tech.name || "-";
+        var legajo = tech.employee_code || "-";
+        var region = tech.region || "-";
+        var supervisor = tech.supervisor_name || "-";
+        var center = tech.center_name || "-";
+        var company = tech.company_name || "-";
+        var union = tech.union_name || "-";
+        var is_active = Number(tech.is_active || 0) ? "Activo" : "Inactivo";
+
+        var h_age_first = txtEl("h-age-first") || "-";
+        var h_age_last = txtEl("h-age-last") || "-";
+        var h_age_label = txtEl("h-age-label") || "-";
+        var h_date = txtEl("h-today") || "-";
+        var v_aud = txtEl("h-v-aud") || "0";
+        var v_qc = txtEl("h-v-qc") || "0";
+        var v_svc = txtEl("h-v-svc") || "0";
+        var v_nps = txtEl("h-v-nps") || "0";
+        var v_avg = txtEl("h-v-avg") || "";
+        var q_score_aud = txtEl("h-q-aud-score") || "-";
+        var q_app_aud = txtEl("h-q-aud-app") || "0%";
+        var q_score_qc = txtEl("h-q-qc-score") || "-";
+        var q_app_qc = txtEl("h-q-qc-app") || "0%";
+        var q_score_svc = txtEl("h-q-svc-score") || "-";
+        var q_nps = txtEl("h-q-nps") || "-";
+        var q_crit = txtEl("h-q-crit") || "0";
+
+        var out = "";
+        out += "================================================================\n";
+        out += "PERFIL TÉCNICO — " + name + " (Leg. " + legajo + ")\n";
+        out += "================================================================\n";
+        out += "Región: " + region + " · Supervisor: " + supervisor + " · Centro: " + center + "\n";
+        out += "Empresa: " + company + " · Sindicato: " + union + "\n";
+        out += "Estado: " + is_active + "\n";
+        out += "Primera actividad registrada: " + h_age_first + " · Última: " + h_age_last;
+        if (h_age_label && h_age_label !== "-") out += " (" + h_age_label + ")";
+        out += "\n";
+        out += "Fecha emisión resumen: " + h_date + "\n";
+        out += "\n";
+        out += "HISTÓRICO (Todo)\n";
+        out += "  Auditorías : " + v_aud + " · Score prom. " + q_score_aud + " · % Aprob. " + q_app_aud + " · Críticas: " + q_crit + "\n";
+        out += "  QC         : " + v_qc + " · Score prom. " + q_score_qc + " · % Aprob. " + q_app_qc + "\n";
+        out += "  Service    : " + v_svc + " · Score prom. " + q_score_svc + "\n";
+        out += "  NPS        : " + v_nps + " respuestas · prom. " + q_nps + (v_avg ? " · " + v_avg : "") + "\n";
+        out += "\n";
+        var prevLabel = txtEl("pvp-prev-label") || "Sin comparar";
+        out += "VS. PERÍODO ANTERIOR (" + prevLabel + ")\n";
+        var rows = document.querySelectorAll("[data-pvp-row-key]");
+        var anyPvp = false;
+        rows.forEach(function (r) {
+            var key = r.getAttribute("data-pvp-row-key") || "";
+            if (!key) return;
+            anyPvp = true;
+            var label = r.getAttribute("data-pvp-label") || key;
+            var prev = r.getAttribute("data-pvp-prev") || "-";
+            var cur = r.getAttribute("data-pvp-cur") || "-";
+            var dPct = r.getAttribute("data-pvp-dpct") || "-";
+            var sym = r.getAttribute("data-pvp-sym") || "=";
+            out += "  " + label.padEnd(15, " ") + " " + sym + " " + dPct + "  (" + prev + " → " + cur + ")\n";
+        });
+        if (!anyPvp) out += "  (sin datos para comparar)\n";
+        out += "\n";
+        out += "================================================================\n";
+
+        try {
+            navigator.clipboard.writeText(out).then(function () {
+                var original = btn.innerText;
+                btn.innerText = "Copiado ✓";
+                btn.style.background = "#D1FAE5";
+                btn.style.color = "#065F46";
+                setTimeout(function () {
+                    btn.innerText = original;
+                    btn.style.background = "";
+                    btn.style.color = "";
+                }, 1800);
+            }, function () {
+                fallbackCopy(out, btn);
+            });
+        } catch (e) {
+            fallbackCopy(out, btn);
+        }
+    }
+    function fallbackCopy(text, btn) {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "absolute";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        document.body.removeChild(ta);
+        var original = btn.innerText;
+        btn.innerText = "Copiado ✓";
+        setTimeout(function () { btn.innerText = original; }, 1800);
+    }
+    var copyBtn = document.getElementById("btn-copy-summary");
+    if (copyBtn) copyBtn.addEventListener("click", copySummary);
+
+    var chips = document.querySelectorAll(".quick-range-inline .chip[data-range]");
+    Array.prototype.forEach.call(chips, function (chip) {
+        chip.addEventListener("click", function (e) {
+            e.preventDefault();
+            var range = chip.getAttribute("data-range");
+            var extra = {};
+            if (range === "all") {
+                extra.all_time = "1"; extra.from_date = ""; extra.to_date = "";
+            } else {
+                var days = parseInt(range || "90", 10);
+                var to = new Date();
+                var from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+                extra.all_time = ""; extra.from_date = fmt(from); extra.to_date = fmt(to);
+            }
+            var qs = buildPreserveParams(extra);
+            window.location.href = window.location.pathname + (qs ? "?" + qs : "");
+        });
+    });
+})();
+</script>
+{% endblock %}

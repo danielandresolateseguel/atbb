@@ -106,6 +106,15 @@ from app.models import (
     fetch_technicians,
     fetch_technician_list_summary,
     count_technicians_list,
+    fetch_technician_by_id,
+    fetch_technician_profile_summary,
+    fetch_technician_profile_benchmarks,
+    fetch_technician_recent_audits,
+    fetch_technician_recent_qc,
+    fetch_technician_recent_service,
+    fetch_technician_monthly_series,
+    fetch_technician_period_over_period,
+    fetch_technician_historical_profile,
     fetch_distinct_supervisors,
     fetch_distinct_centers,
     fetch_distinct_regions,
@@ -4494,7 +4503,7 @@ def technician_list():
     supervisor_scope_names = current_supervisor_scope_names()
 
     has_any_filter_arg = any(k in request.args for k in (
-        "from_date", "to_date", "q", "region", "supervisor", "center", "company", "is_active", "all_time"
+        "from_date", "to_date", "q", "region", "supervisor", "center", "company", "is_active", "all_time", "sort_by", "sort_dir"
     ))
     all_time_flag = request.args.get("all_time", "").strip() == "1"
 
@@ -4520,6 +4529,8 @@ def technician_list():
     is_active = request.args.get("is_active", "").strip()
     page_raw = request.args.get("page", "").strip()
     page_size_raw = request.args.get("page_size", "").strip()
+    sort_by = request.args.get("sort_by", "").strip()
+    sort_dir = request.args.get("sort_dir", "").strip()
 
     try:
         page = max(1, int(page_raw)) if page_raw else 1
@@ -4559,6 +4570,8 @@ def technician_list():
         filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=page_size,
         offset=offset,
     )
@@ -4625,6 +4638,8 @@ def technician_list():
         filters=filters,
         show_from=show_date_filter_values_from,
         show_to=show_date_filter_values_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         page=page,
         page_count=page_count,
         page_size=page_size,
@@ -4649,6 +4664,187 @@ def technician_list():
             "avg_nps_global": avg_nps_global,
             "nps_total_weight": nps_total_weight,
         },
+        page_class="page-wide",
+    )
+
+
+def _build_technician_csv_rows(rows):
+    csv_rows = []
+    for t in rows or []:
+        last_any = t.get("last_activity_expr") or (t.get("last_audit_date") or t.get("last_qc_date") or t.get("last_service_date"))
+        csv_rows.append({
+            "Tecnico": t.get("name") or "",
+            "Legajo": t.get("employee_code") or "",
+            "Region": t.get("region") or "",
+            "Equipo": t.get("team") or "",
+            "Supervisor": t.get("supervisor_name") or "",
+            "Centro": t.get("center_name") or "",
+            "Empresa": t.get("company_name") or "",
+            "Sindicato": t.get("union_name") or "",
+            "Estado": "Activo" if t.get("is_active") else "Inactivo",
+            "Auditorias": int(t.get("audits_count") or 0),
+            "Audit_Aprob_Pct": t.get("audit_approval_rate") or "",
+            "Audit_Score_Prom": t.get("audit_avg_score") or "",
+            "Audit_Criticas": int(t.get("audit_critical_count") or 0),
+            "QC_Sesiones": int(t.get("qc_count") or 0),
+            "QC_Aprob_Pct": t.get("qc_approval_rate") or "",
+            "QC_Score_Prom": t.get("qc_avg_score") or "",
+            "Service": int(t.get("service_count") or 0),
+            "Service_Score_Prom": t.get("service_avg_score") or "",
+            "NPS_Prom": t.get("avg_nps") or "",
+            "NPS_Respuestas": int(t.get("nps_count") or 0),
+            "Ultima_Actividad": last_any or "",
+            "Ultima_Auditoria": t.get("last_audit_date") or "",
+            "Ultimo_QC": t.get("last_qc_date") or "",
+            "Ultimo_Service": t.get("last_service_date") or "",
+        })
+    return csv_rows
+
+
+@main.route("/technicians/export_csv")
+def technician_list_export_csv():
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    supervisor_scope_names = current_supervisor_scope_names()
+
+    all_time_flag = request.args.get("all_time", "").strip() == "1"
+    if all_time_flag:
+        from_date = ""
+        to_date = ""
+    else:
+        from_date = request.args.get("from_date", "").strip()
+        to_date = request.args.get("to_date", "").strip()
+
+    q = request.args.get("q", "").strip()
+    region = request.args.get("region", "").strip()
+    supervisor = request.args.get("supervisor", "").strip()
+    center = request.args.get("center", "").strip()
+    company = request.args.get("company", "").strip()
+    is_active = request.args.get("is_active", "").strip()
+    sort_by = request.args.get("sort_by", "").strip()
+    sort_dir = request.args.get("sort_dir", "").strip()
+
+    filters = {
+        "from_date": from_date,
+        "to_date": to_date,
+        "q": q,
+        "region": region,
+        "supervisor": supervisor,
+        "center": center,
+        "company": company,
+        "is_active": is_active if is_active != "" else None,
+        "all_time": all_time_flag,
+    }
+
+    rows = fetch_technician_list_summary(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        limit=20000,
+        offset=0,
+    )
+
+    csv_rows = _build_technician_csv_rows(rows)
+    range_label_from = from_date or "inicio"
+    range_label_to = to_date or "hoy"
+    safe_from = "".join(c if c.isalnum() else "_" for c in range_label_from)
+    safe_to = "".join(c if c.isalnum() else "_" for c in range_label_to)
+    filename = f"perfiles_tecnicos_{safe_from}_a_{safe_to}.csv"
+
+    fieldnames = [
+        "Tecnico", "Legajo", "Region", "Equipo", "Supervisor", "Centro", "Empresa", "Sindicato", "Estado",
+        "Auditorias", "Audit_Aprob_Pct", "Audit_Score_Prom", "Audit_Criticas",
+        "QC_Sesiones", "QC_Aprob_Pct", "QC_Score_Prom",
+        "Service", "Service_Score_Prom",
+        "NPS_Prom", "NPS_Respuestas",
+        "Ultima_Actividad", "Ultima_Auditoria", "Ultimo_QC", "Ultimo_Service",
+    ]
+    return build_csv_response(csv_rows, filename, fieldnames=fieldnames)
+
+
+@main.route("/technicians/<int:technician_id>")
+def technician_profile(technician_id):
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    supervisor_scope_names = current_supervisor_scope_names()
+
+    technician = fetch_technician_by_id(technician_id)
+    if not technician:
+        abort(404)
+
+    if supervisor_scope_names:
+        allowed_names = {s.upper().strip() for s in supervisor_scope_names if s}
+        tech_supervisor = (technician.get("supervisor_name") or "").upper().strip()
+        if allowed_names and tech_supervisor not in allowed_names:
+            abort(403)
+
+    has_any_filter_arg = any(k in request.args for k in ("from_date", "to_date", "all_time"))
+    all_time_flag = request.args.get("all_time", "").strip() == "1"
+    default_from, default_to = _default_technician_profile_range()
+    if all_time_flag:
+        from_date = ""
+        to_date = ""
+    else:
+        from_date_raw = request.args.get("from_date", "").strip()
+        to_date_raw = request.args.get("to_date", "").strip()
+        if not has_any_filter_arg:
+            from_date = default_from
+            to_date = default_to
+        else:
+            from_date = from_date_raw
+            to_date = to_date_raw
+
+    filters = {
+        "from_date": from_date,
+        "to_date": to_date,
+        "all_time": all_time_flag,
+    }
+
+    summary = fetch_technician_profile_summary(
+        technician_id, filters=filters, auditor_user_id=auditor_user_id
+    )
+    benchmarks = fetch_technician_profile_benchmarks(
+        technician_id, filters=filters, auditor_user_id=auditor_user_id
+    )
+    recent_audits = fetch_technician_recent_audits(technician_id, filters=filters, limit=8)
+    recent_qc = fetch_technician_recent_qc(technician_id, filters=filters, limit=8)
+    recent_service = fetch_technician_recent_service(technician_id, filters=filters, limit=8)
+    monthly_series = fetch_technician_monthly_series(technician_id, filters=filters, granularity="month", limit=18)
+    pvp = fetch_technician_period_over_period(technician_id, filters=filters)
+    historic = fetch_technician_historical_profile(technician_id, filters=filters)
+
+    show_from = from_date if from_date else default_from
+    show_to = to_date if to_date else default_to
+
+    last_any = (
+        summary.get("last_audit_date")
+        or summary.get("last_qc_date")
+        or summary.get("last_service_date")
+    )
+
+    return render_template(
+        "technician_profile.html",
+        technician=technician,
+        filters=filters,
+        show_from=show_from,
+        show_to=show_to,
+        summary=summary or {},
+        benchmarks=benchmarks or {},
+        recent_audits=recent_audits,
+        recent_qc=recent_qc,
+        recent_service=recent_service,
+        monthly_series=monthly_series,
+        pvp=pvp or {},
+        historic=historic or {},
+        last_activity=last_any or "",
         page_class="page-wide",
     )
 

@@ -13,6 +13,8 @@
     'company': filters.company,
     'is_active': filters.is_active if filters.is_active is not none else '',
     'all_time': '1' if filters.all_time else '',
+    'sort_by': sort_by if sort_by else '',
+    'sort_dir': sort_dir if sort_dir else '',
     'page': page,
     'page_size': page_size,
   } -%}
@@ -34,9 +36,52 @@
     company=merged.company if merged.company else none,
     is_active=merged.is_active if merged.is_active != '' else none,
     all_time=merged.all_time if merged.all_time == '1' else none,
+    sort_by=merged.sort_by if merged.sort_by else none,
+    sort_dir=merged.sort_dir if merged.sort_dir else none,
     page=merged.page if merged.page and merged.page != 1 else none,
     page_size=merged.page_size if merged.page_size and merged.page_size != 20 else none)
   }}
+{%- endmacro %}
+
+{% macro technician_csv_url() %}
+  {{ url_for('main.technician_list_export_csv',
+    from_date=filters.from_date if filters.from_date else none,
+    to_date=filters.to_date if filters.to_date else none,
+    q=filters.q if filters.q else none,
+    region=filters.region if filters.region else none,
+    supervisor=filters.supervisor if filters.supervisor else none,
+    center=filters.center if filters.center else none,
+    company=filters.company if filters.company else none,
+    is_active=filters.is_active if filters.is_active is not none else none,
+    all_time='1' if filters.all_time else none,
+    sort_by=sort_by if sort_by else none,
+    sort_dir=sort_dir if sort_dir else none)
+  }}
+{%- endmacro %}
+
+{% macro sort_th(key, label, numeric=false) %}
+  {%- set current_by = sort_by if sort_by else 'name' -%}
+  {%- set current_dir = 'desc' if sort_dir == 'desc' else 'asc' -%}
+  {%- set active = current_by == key -%}
+  {%- if active and current_dir == 'asc' -%}
+    {%- set next_dir = 'desc' -%}
+  {%- else -%}
+    {%- set next_dir = 'asc' -%}
+  {%- endif -%}
+  <th class="sortable-th {% if numeric %}num{% endif %} {% if active %}sort-active-{{ current_dir }}{% endif %}">
+    <a href="{{ technician_list_url({'sort_by': key, 'sort_dir': next_dir, 'page': 1}) }}">
+      <span class="sort-label">{{ label }}</span>
+      <span class="sort-indicator">
+        {% if active %}
+          <span class="sort-arrow {% if current_dir == 'desc' %}sort-arrow-desc{% endif %}">
+            {% if current_dir == 'asc' %}▲{% else %}▼{% endif %}
+          </span>
+        {% else %}
+          <span class="sort-arrow dim">↕</span>
+        {% endif %}
+      </span>
+    </a>
+  </th>
 {%- endmacro %}
 
 {% block content %}
@@ -94,8 +139,8 @@
 <section class="card filter-card">
     <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.technician_list') }}">
         <label>
-            <span>Buscar (nombre / legajo)</span>
-            <input type="text" name="q" value="{{ filters.q }}" placeholder="Ej: Perez, 1234">
+            <span>Buscar (nombre / legajo / teléfono / comuna / equipo)</span>
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="Ej: Perez, 1234, +54..., Maipu, Zona Norte">
         </label>
         <label>
             <span>Desde</span>
@@ -178,6 +223,7 @@
             <h3>Técnicos ({{ technicians_total }})</h3>
         </div>
         <div class="filter-actions">
+            <a class="button button-secondary" href="{{ technician_csv_url() }}">CSV</a>
             <span class="metric-pill metric-neutral">Total {{ technicians_total }}</span>
             <span class="metric-pill metric-neutral">Página {{ page }} de {{ page_count }}</span>
             <span class="metric-pill metric-neutral">Mostrando {{ technicians|length }} de {{ technicians_total }}</span>
@@ -185,30 +231,30 @@
     </div>
     {% if technicians %}
         <div class="table-wrap findings-table-wrap" data-table-scroll-target>
-            <table class="data-table clickable-rows">
+            <table class="data-table clickable-rows sortable-table">
                 <thead>
                     <tr>
-                        <th>Técnico</th>
-                        <th>Legajo</th>
-                        <th>Región</th>
-                        <th>Supervisor</th>
-                        <th>Centro</th>
-                        <th>Empresa</th>
-                        <th>Auditorías</th>
-                        <th>% Aprob. Audit</th>
-                        <th>Score Audit</th>
-                        <th>QC</th>
-                        <th>% Aprob. QC</th>
-                        <th>Score QC</th>
-                        <th>Service</th>
-                        <th>NPS</th>
-                        <th>Última activ.</th>
-                        <th>Estado</th>
+                        {{ sort_th('name', 'Técnico') }}
+                        {{ sort_th('employee_code', 'Legajo') }}
+                        {{ sort_th('region', 'Región') }}
+                        {{ sort_th('supervisor_name', 'Supervisor') }}
+                        {{ sort_th('center_name', 'Centro') }}
+                        {{ sort_th('company_name', 'Empresa') }}
+                        {{ sort_th('audits_count', 'Auditorías', numeric=true) }}
+                        {{ sort_th('audit_approval_rate', '% Aprob. Audit', numeric=true) }}
+                        {{ sort_th('audit_avg_score', 'Score Audit', numeric=true) }}
+                        {{ sort_th('qc_count', 'QC', numeric=true) }}
+                        {{ sort_th('qc_approval_rate', '% Aprob. QC', numeric=true) }}
+                        {{ sort_th('qc_avg_score', 'Score QC', numeric=true) }}
+                        {{ sort_th('service_count', 'Service', numeric=true) }}
+                        {{ sort_th('avg_nps', 'NPS', numeric=true) }}
+                        {{ sort_th('last_activity', 'Última activ.', numeric=true) }}
+                        {{ sort_th('is_active', 'Estado') }}
                     </tr>
                 </thead>
                 <tbody>
                     {% for t in technicians %}
-                        {% set last_any = t.last_audit_date or t.last_qc_date or t.last_service_date %}
+                        {% set last_any = t.last_activity_expr or (t.last_audit_date or t.last_qc_date or t.last_service_date) %}
                         <tr data-technician-id="{{ t.id }}" title="Abrir perfil de {{ t.name }}">
                             <td>
                                 <strong>{{ t.name }}</strong>
@@ -426,6 +472,32 @@
         color: #4B5563;
         margin-left: 4px;
     }
+    .sortable-th a {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: inherit;
+        text-decoration: none;
+        width: 100%;
+        justify-content: inherit;
+    }
+    .sortable-th.num a { justify-content: flex-end; }
+    .sortable-th a:hover { color: #1D4ED8; }
+    .sort-label { font-weight: 600; }
+    .sort-indicator {
+        display: inline-flex;
+        align-items: center;
+        font-size: 0.7rem;
+        line-height: 1;
+    }
+    .sort-arrow.dim { color: #9CA3AF; }
+    .sort-arrow { color: #1D4ED8; }
+    .sortable-th { user-select: none; }
+    .sortable-table thead tr {
+        position: sticky;
+        top: 0;
+        background: #fff;
+    }
 </style>
 
 <script>
@@ -433,10 +505,22 @@
         var rows = document.querySelectorAll(".clickable-rows tbody tr");
         Array.prototype.forEach.call(rows, function (row) {
             row.addEventListener("click", function (e) {
-                if (e.target.closest("a, button, input, select")) return;
+                if (e.target.closest("a, button, input, select, th.sortable-th")) return;
                 var id = row.getAttribute("data-technician-id");
                 if (id) {
-                    flashComingSoon(id, row.querySelector("strong").textContent.trim());
+                    var params = new URLSearchParams(window.location.search);
+                    params.delete("q");
+                    params.delete("region");
+                    params.delete("supervisor");
+                    params.delete("center");
+                    params.delete("company");
+                    params.delete("is_active");
+                    params.delete("page");
+                    params.delete("page_size");
+                    params.delete("sort_by");
+                    params.delete("sort_dir");
+                    var qs = params.toString();
+                    window.location.href = "{{ url_for('main.technician_profile', technician_id=0) }}".replace("/0", "/" + id) + (qs ? "?" + qs : "");
                 }
             });
         });
@@ -482,19 +566,6 @@
                 window.location.href = window.location.pathname + (qs ? "?" + qs : "");
             });
         });
-
-        function flashComingSoon(id, name) {
-            var div = document.createElement("div");
-            div.className = "flash flash-info";
-            div.textContent = "Perfil individual de " + name + " — Paso 2 en desarrollo.";
-            div.style.position = "fixed";
-            div.style.top = "20px";
-            div.style.right = "20px";
-            div.style.zIndex = "9999";
-            div.style.boxShadow = "0 10px 25px rgba(0,0,0,0.12)";
-            document.body.appendChild(div);
-            setTimeout(function () { div.remove(); }, 2600);
-        }
     })();
 </script>
 
