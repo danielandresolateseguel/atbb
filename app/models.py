@@ -10221,11 +10221,15 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
     qc_rp = range_params[n_params:2 * n_params]
     service_rp = range_params[2 * n_params:3 * n_params]
     tnps_rp = range_params[3 * n_params:4 * n_params]
+    round_expr_avg_audit = _round_sql_expr("AVG(audits.total_score)", 1)
+    round_expr_avg_qc = _round_sql_expr("AVG(qc_sessions.total_score)", 1)
+    round_expr_avg_service = _round_sql_expr("AVG(service_sessions.total_score)", 1)
+    round_expr_avg_tnps = _round_sql_expr("AVG(tnps_responses.score)", 1)
 
     audit_sql = """
         SELECT
             COUNT(*) AS audits_count,
-            """ + _round_sql_expr("AVG(audits.total_score)", 1) + """ AS audit_avg_score,
+            {round_expr_avg_audit} AS audit_avg_score,
             SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS audit_approved,
             SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS audit_critical,
             MAX(audits.audit_date) AS last_audit_date,
@@ -10234,11 +10238,15 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
         WHERE audits.technician_id = ?
         {audit_from}
         {audit_to}
-    """.format(audit_from=audit_from, audit_to=audit_to)
+    """.format(
+        round_expr_avg_audit=round_expr_avg_audit,
+        audit_from=audit_from,
+        audit_to=audit_to,
+    )
     qc_sql = """
         SELECT
             COUNT(*) AS qc_count,
-            """ + _round_sql_expr("AVG(qc_sessions.total_score)", 1) + """ AS qc_avg_score,
+            {round_expr_avg_qc} AS qc_avg_score,
             SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) AS qc_approved,
             MAX(qc_sessions.qc_date) AS last_qc_date,
             MIN(qc_sessions.qc_date) AS first_qc_date
@@ -10246,29 +10254,41 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
         WHERE qc_sessions.technician_id = ?
         {qc_from}
         {qc_to}
-    """.format(qc_from=qc_from, qc_to=qc_to)
+    """.format(
+        round_expr_avg_qc=round_expr_avg_qc,
+        qc_from=qc_from,
+        qc_to=qc_to,
+    )
     service_sql = """
         SELECT
             COUNT(*) AS service_count,
-            """ + _round_sql_expr("AVG(service_sessions.total_score)", 1) + """ AS service_avg_score,
+            {round_expr_avg_service} AS service_avg_score,
             MAX(service_sessions.service_date) AS last_service_date,
             MIN(service_sessions.service_date) AS first_service_date
         FROM service_sessions
         WHERE service_sessions.technician_id = ?
         {service_from}
         {service_to}
-    """.format(service_from=service_from, service_to=service_to)
+    """.format(
+        round_expr_avg_service=round_expr_avg_service,
+        service_from=service_from,
+        service_to=service_to,
+    )
     tnps_sql = """
         SELECT
             COUNT(*) AS nps_count,
-            """ + _round_sql_expr("AVG(tnps_responses.score)", 1) + """ AS avg_nps,
+            {round_expr_avg_tnps} AS avg_nps,
             MIN(tnps_responses.response_date) AS first_tnps_date
         FROM tnps_responses
         WHERE tnps_responses.technician_id = ?
         {tnps_from}
         {tnps_to}
-    """.format(tnps_from=tnps_from, tnps_to=tnps_to)
-    audit_critical_items_sql = f"""
+    """.format(
+        round_expr_avg_tnps=round_expr_avg_tnps,
+        tnps_from=tnps_from,
+        tnps_to=tnps_to,
+    )
+    audit_critical_items_sql = """
         SELECT
             audit_items.item_label AS label,
             COUNT(*) AS cnt
@@ -10281,8 +10301,8 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
         GROUP BY audit_items.item_label
         ORDER BY cnt DESC, audit_items.item_label ASC
         LIMIT 5
-    """
-    qc_nc_major_items_sql = f"""
+    """.format(audit_from=audit_from, audit_to=audit_to)
+    qc_nc_major_items_sql = """
         SELECT
             qc_items.item_label AS label,
             COUNT(*) AS cnt
@@ -10295,7 +10315,7 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
         GROUP BY qc_items.item_label
         ORDER BY cnt DESC, qc_items.item_label ASC
         LIMIT 5
-    """
+    """.format(qc_from=qc_from, qc_to=qc_to)
 
     db = get_db()
     audit_row = db.execute(audit_sql, tuple([tid] + list(audit_rp))).fetchone()
@@ -10430,47 +10450,72 @@ def fetch_technician_profile_benchmarks(technician_id, filters=None, auditor_use
         row = db.execute(sql, tuple(params)).fetchone()
         return dict(row or {}) if row else {}
 
+    round_expr_bm_audit_avg = _round_sql_expr("AVG(audits.total_score)", 1)
+    round_expr_bm_qc_avg = _round_sql_expr("AVG(qc_sessions.total_score)", 1)
+    round_expr_bm_service_avg = _round_sql_expr("AVG(service_sessions.total_score)", 1)
+    round_expr_bm_tnps_avg = _round_sql_expr("AVG(tnps_responses.score)", 1)
+
     audit_agg_sql = """
         SELECT
             COUNT(DISTINCT audits.id) AS total_count,
             COUNT(DISTINCT audits.technician_id) AS tech_count,
-            """ + _round_sql_expr("AVG(audits.total_score)", 1) + """ AS avg_score,
+            {round_expr_bm_audit_avg} AS avg_score,
             1.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS approval_rate
         FROM audits
         WHERE audits.technician_id {peer_ids_where}
         {audit_from}
         {audit_to}
-    """.format(audit_from=audit_from, audit_to=audit_to, peer_ids_where="{peer_ids_where}")
+    """.format(
+        round_expr_bm_audit_avg=round_expr_bm_audit_avg,
+        audit_from=audit_from,
+        audit_to=audit_to,
+        peer_ids_where="{peer_ids_where}",
+    )
     qc_agg_sql = """
         SELECT
             COUNT(DISTINCT qc_sessions.id) AS total_count,
             COUNT(DISTINCT qc_sessions.technician_id) AS tech_count,
-            """ + _round_sql_expr("AVG(qc_sessions.total_score)", 1) + """ AS avg_score,
+            {round_expr_bm_qc_avg} AS avg_score,
             1.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS approval_rate
         FROM qc_sessions
         WHERE qc_sessions.technician_id {peer_ids_where}
         {qc_from}
         {qc_to}
-    """.format(qc_from=qc_from, qc_to=qc_to, peer_ids_where="{peer_ids_where}")
+    """.format(
+        round_expr_bm_qc_avg=round_expr_bm_qc_avg,
+        qc_from=qc_from,
+        qc_to=qc_to,
+        peer_ids_where="{peer_ids_where}",
+    )
     service_agg_sql = """
         SELECT
             COUNT(DISTINCT service_sessions.id) AS total_count,
             COUNT(DISTINCT service_sessions.technician_id) AS tech_count,
-            """ + _round_sql_expr("AVG(service_sessions.total_score)", 1) + """ AS avg_score
+            {round_expr_bm_service_avg} AS avg_score
         FROM service_sessions
         WHERE service_sessions.technician_id {peer_ids_where}
         {service_from}
         {service_to}
-    """.format(service_from=service_from, service_to=service_to, peer_ids_where="{peer_ids_where}")
+    """.format(
+        round_expr_bm_service_avg=round_expr_bm_service_avg,
+        service_from=service_from,
+        service_to=service_to,
+        peer_ids_where="{peer_ids_where}",
+    )
     tnps_agg_sql = """
         SELECT
             COUNT(*) AS total_count,
-            """ + _round_sql_expr("AVG(tnps_responses.score)", 1) + """ AS avg_score
+            {round_expr_bm_tnps_avg} AS avg_score
         FROM tnps_responses
         WHERE tnps_responses.technician_id {peer_ids_where}
         {tnps_from}
         {tnps_to}
-    """.format(tnps_from=tnps_from, tnps_to=tnps_to, peer_ids_where="{peer_ids_where}")
+    """.format(
+        round_expr_bm_tnps_avg=round_expr_bm_tnps_avg,
+        tnps_from=tnps_from,
+        tnps_to=tnps_to,
+        peer_ids_where="{peer_ids_where}",
+    )
 
     a_bm = _avg_over_peers(audit_agg_sql, peer_ids, audit_rp) or {}
     q_bm = _avg_over_peers(qc_agg_sql, peer_ids, qc_rp) or {}
@@ -10656,12 +10701,16 @@ def fetch_technician_monthly_series(technician_id, filters=None, granularity="mo
     qc_period = _period_key_expr("qc_sessions.qc_date", granularity)
     service_period = _period_key_expr("service_sessions.service_date", granularity)
     tnps_period = _period_key_expr("tnps_responses.response_date", granularity)
+    round_expr_audit_avg = _round_sql_expr("AVG(audits.total_score)", 1)
+    round_expr_qc_avg = _round_sql_expr("AVG(qc_sessions.total_score)", 1)
+    round_expr_service_avg = _round_sql_expr("AVG(service_sessions.total_score)", 1)
+    round_expr_tnps_avg = _round_sql_expr("AVG(tnps_responses.score)", 1)
 
     audit_sql = """
         SELECT
             {audit_period} AS period_key,
             COUNT(*) AS audits_count,
-            """ + _round_sql_expr("AVG(audits.total_score)", 1) + """ AS audit_avg_score,
+            {round_expr_audit_avg} AS audit_avg_score,
             1.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS audit_approval_rate,
             SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS audit_critical_count
         FROM audits
@@ -10669,41 +10718,61 @@ def fetch_technician_monthly_series(technician_id, filters=None, granularity="mo
         {audit_from}
         {audit_to}
         GROUP BY period_key
-    """.format(audit_period=audit_period, audit_from=audit_from, audit_to=audit_to)
+    """.format(
+        audit_period=audit_period,
+        audit_from=audit_from,
+        audit_to=audit_to,
+        round_expr_audit_avg=round_expr_audit_avg,
+    )
     qc_sql = """
         SELECT
             {qc_period} AS period_key,
             COUNT(*) AS qc_count,
-            """ + _round_sql_expr("AVG(qc_sessions.total_score)", 1) + """ AS qc_avg_score,
+            {round_expr_qc_avg} AS qc_avg_score,
             1.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS qc_approval_rate
         FROM qc_sessions
         WHERE qc_sessions.technician_id = ?
         {qc_from}
         {qc_to}
         GROUP BY period_key
-    """.format(qc_period=qc_period, qc_from=qc_from, qc_to=qc_to)
+    """.format(
+        qc_period=qc_period,
+        qc_from=qc_from,
+        qc_to=qc_to,
+        round_expr_qc_avg=round_expr_qc_avg,
+    )
     service_sql = """
         SELECT
             {service_period} AS period_key,
             COUNT(*) AS service_count,
-            """ + _round_sql_expr("AVG(service_sessions.total_score)", 1) + """ AS service_avg_score
+            {round_expr_service_avg} AS service_avg_score
         FROM service_sessions
         WHERE service_sessions.technician_id = ?
         {service_from}
         {service_to}
         GROUP BY period_key
-    """.format(service_period=service_period, service_from=service_from, service_to=service_to)
+    """.format(
+        service_period=service_period,
+        service_from=service_from,
+        service_to=service_to,
+        round_expr_service_avg=round_expr_service_avg,
+    )
     tnps_sql = """
         SELECT
             {tnps_period} AS period_key,
             COUNT(*) AS nps_count,
-            """ + _round_sql_expr("AVG(tnps_responses.score)", 1) + """ AS avg_nps
+            {round_expr_tnps_avg} AS avg_nps
         FROM tnps_responses
         WHERE tnps_responses.technician_id = ?
         {tnps_from}
         {tnps_to}
         GROUP BY period_key
-    """.format(tnps_period=tnps_period, tnps_from=tnps_from, tnps_to=tnps_to)
+    """.format(
+        tnps_period=tnps_period,
+        tnps_from=tnps_from,
+        tnps_to=tnps_to,
+        round_expr_tnps_avg=round_expr_tnps_avg,
+    )
 
     db = get_db()
     a_rows = db.execute(audit_sql, tuple([tid] + list(audit_rp))).fetchall()
