@@ -9984,6 +9984,14 @@ def fetch_technician_list_summary(
         params.extend([to_date, to_date, to_date, to_date])
 
     order_sql = _build_technician_sort_order(sort_by, sort_dir)
+    round_expr_audit_approval = _round_sql_expr(
+        "100.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / COUNT(*)",
+        1,
+    )
+    round_expr_qc_approval = _round_sql_expr(
+        "100.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / COUNT(*)",
+        1,
+    )
 
     rows = get_db().execute(
         f"""
@@ -10024,7 +10032,7 @@ def fetch_technician_list_summary(
                 COUNT(*) AS audits_count,
                 AVG(audits.total_score) AS average_score,
                 CASE WHEN COUNT(*) = 0 THEN 0 ELSE
-                    """ + _round_sql_expr("100.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / COUNT(*)", 1) + """
+                    {round_expr_audit_approval}
                 END AS approval_rate,
                 SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS critical_count,
                 MAX(audits.audit_date) AS last_audit_date
@@ -10040,7 +10048,7 @@ def fetch_technician_list_summary(
                 COUNT(*) AS qc_count,
                 AVG(qc_sessions.total_score) AS average_score,
                 CASE WHEN COUNT(*) = 0 THEN 0 ELSE
-                    """ + _round_sql_expr("100.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / COUNT(*)", 1) + """
+                    {round_expr_qc_approval}
                 END AS approval_rate,
                 MAX(qc_sessions.qc_date) AS last_qc_date
             FROM qc_sessions
