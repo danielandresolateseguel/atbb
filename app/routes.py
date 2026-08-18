@@ -4810,16 +4810,99 @@ def technician_profile(technician_id):
 
     summary = fetch_technician_profile_summary(
         technician_id, filters=filters, auditor_user_id=auditor_user_id
-    )
+    ) or {}
     benchmarks = fetch_technician_profile_benchmarks(
         technician_id, filters=filters, auditor_user_id=auditor_user_id
-    )
-    recent_audits = fetch_technician_recent_audits(technician_id, filters=filters, limit=8)
-    recent_qc = fetch_technician_recent_qc(technician_id, filters=filters, limit=8)
-    recent_service = fetch_technician_recent_service(technician_id, filters=filters, limit=8)
-    monthly_series = fetch_technician_monthly_series(technician_id, filters=filters, granularity="month", limit=18)
-    pvp = fetch_technician_period_over_period(technician_id, filters=filters)
-    historic = fetch_technician_historical_profile(technician_id, filters=filters)
+    ) or {}
+    try:
+        recent_audits = fetch_technician_recent_audits(technician_id, filters=filters, limit=8) or []
+    except Exception:
+        recent_audits = []
+    try:
+        recent_qc = fetch_technician_recent_qc(technician_id, filters=filters, limit=8) or []
+    except Exception:
+        recent_qc = []
+    try:
+        recent_service = fetch_technician_recent_service(technician_id, filters=filters, limit=8) or []
+    except Exception:
+        recent_service = []
+    try:
+        monthly_series = fetch_technician_monthly_series(technician_id, filters=filters, granularity="month", limit=18) or []
+    except Exception:
+        monthly_series = []
+    try:
+        pvp = fetch_technician_period_over_period(technician_id, filters=filters) or {}
+    except Exception:
+        pvp = {}
+    try:
+        historic = fetch_technician_historical_profile(technician_id, filters=filters) or {}
+    except Exception:
+        historic = {}
+
+    if not isinstance(summary, dict):
+        summary = {}
+    if not isinstance(benchmarks, dict):
+        benchmarks = {}
+    if not isinstance(pvp, dict):
+        pvp = {}
+    if not isinstance(historic, dict):
+        historic = {}
+    historic.setdefault("today", "")
+    historic.setdefault("age", {})
+    historic["age"].setdefault("first", "")
+    historic["age"].setdefault("last", "")
+    historic["age"].setdefault("label", "")
+    historic["age"].setdefault("total_days", None)
+    historic["age"].setdefault("total_months", None)
+    historic["age"].setdefault("years", None)
+    historic["age"].setdefault("months", None)
+    historic.setdefault("volumes", {})
+    historic["volumes"].setdefault("audits_total", 0)
+    historic["volumes"].setdefault("qc_total", 0)
+    historic["volumes"].setdefault("service_total", 0)
+    historic["volumes"].setdefault("nps_total", 0)
+    historic["volumes"].setdefault("avg_per_month", {})
+    historic["volumes"]["avg_per_month"].setdefault("audits", 0)
+    historic["volumes"]["avg_per_month"].setdefault("qc", 0)
+    historic["volumes"]["avg_per_month"].setdefault("service", 0)
+    historic["volumes"]["avg_per_month"].setdefault("nps", 0)
+    historic.setdefault("quality", {})
+    historic["quality"].setdefault("audit_avg_score", None)
+    historic["quality"].setdefault("qc_avg_score", None)
+    historic["quality"].setdefault("service_avg_score", None)
+    historic["quality"].setdefault("avg_nps", None)
+    historic["quality"].setdefault("audit_approval_rate", 0)
+    historic["quality"].setdefault("qc_approval_rate", 0)
+    historic["quality"].setdefault("audit_critical_count", 0)
+    historic["quality"].setdefault("audit_critical_rate", 0)
+    historic["quality"].setdefault("audit_rejected_count", 0)
+    historic.setdefault("peaks", {})
+    historic["peaks"].setdefault("audit", None)
+    historic["peaks"].setdefault("qc", None)
+    historic["peaks"].setdefault("service", None)
+    historic["peaks"].setdefault("worst_audit_approval", None)
+    historic["peaks"].setdefault("worst_qc_approval", None)
+    historic.setdefault("streaks", {})
+    historic["streaks"].setdefault("days_since_last_activity", None)
+    historic["streaks"].setdefault("days_since_last_audit", None)
+    historic["streaks"].setdefault("days_since_last_qc", None)
+    historic["streaks"].setdefault("days_since_last_service", None)
+    historic["streaks"].setdefault("last_audit_date", "")
+    historic["streaks"].setdefault("last_qc_date", "")
+    historic["streaks"].setdefault("last_service_date", "")
+    historic.setdefault("monthly_series", [])
+    historic.setdefault("lifetime_summary", {})
+
+    if not isinstance(pvp, dict):
+        pvp = {}
+    pvp.setdefault("rows", [])
+    pvp.setdefault("previous_range_label", "")
+    pvp.setdefault("current_range_label", "")
+
+    if not isinstance(summary, dict):
+        summary = {}
+    summary.setdefault("top_audit_no_cumple_items", [])
+    summary.setdefault("top_qc_nc_mayor_items", [])
 
     show_from = from_date if from_date else default_from
     show_to = to_date if to_date else default_to

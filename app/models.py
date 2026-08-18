@@ -10604,11 +10604,15 @@ def _period_key_expr(date_col, granularity="month"):
     normalized = (granularity or "month").strip().lower()
     if normalized == "week":
         if is_postgres():
-            return "to_char(date_trunc('week', " + date_col + "::date), 'IYYY-\"W\"IW')"
-        return "strftime('%Y-W%W', " + date_col + ")"
+            return (
+                "to_char(date_trunc('week', CASE WHEN " + date_col + " IS NULL OR TRIM(" + date_col + ") = '' THEN NULL ELSE " + date_col + "::date END), 'IYYY-\"W\"IW')"
+            )
+        return "strftime('%Y-W%W', CASE WHEN COALESCE(" + date_col + ", '') = '' THEN NULL ELSE " + date_col + " END)"
     if is_postgres():
-        return "to_char(date_trunc('month', " + date_col + "::date), 'YYYY-MM')"
-    return "strftime('%Y-%m', " + date_col + ")"
+        return (
+            "to_char(date_trunc('month', CASE WHEN " + date_col + " IS NULL OR TRIM(" + date_col + ") = '' THEN NULL ELSE " + date_col + "::date END), 'YYYY-MM')"
+        )
+    return "strftime('%Y-%m', CASE WHEN COALESCE(" + date_col + ", '') = '' THEN NULL ELSE " + date_col + " END)"
 
 
 def fetch_technician_monthly_series(technician_id, filters=None, granularity="month", limit=18):
