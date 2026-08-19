@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Técnicos · Administrar Datos{% endblock %}
+
+{% macro tc_url(overrides) %}
+  {%- set d = {
+    'q': q if q else '',
+    'region': region if region else '',
+    'supervisor': supervisor if supervisor else '',
+    'center': center if center else '',
+    'company': company if company else '',
+    'is_active': is_active if is_active else '',
+    'sort_by': sort_by if sort_by else '',
+    'sort_dir': sort_dir if sort_dir else '',
+    'page': page,
+    'page_size': page_size,
+  } -%}
+  {%- set overrides = overrides or {} -%}
+  {%- set merged = {} -%}
+  {%- for k, v in d.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {%- for k, v in overrides.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {{ url_for('main.master_technician_list',
+    q=merged.q if merged.q else none,
+    region=merged.region if merged.region else none,
+    supervisor=merged.supervisor if merged.supervisor else none,
+    center=merged.center if merged.center else none,
+    company=merged.company if merged.company else none,
+    is_active=merged.is_active if merged.is_active != '' else none,
+    sort_by=merged.sort_by if merged.sort_by else none,
+    sort_dir=merged.sort_dir if merged.sort_dir else none,
+    page=merged.page if merged.page and merged.page != 1 else none,
+    page_size=merged.page_size if merged.page_size and merged.page_size != 20 else none)
+  }}
+{%- endmacro %}
+
+{% macro sort_th(key, label, numeric=false) %}
+  {%- set current_by = sort_by if sort_by else 'employee_code' -%}
+  {%- set current_dir = 'desc' if sort_dir == 'desc' else 'asc' -%}
+  {%- set active = current_by == key -%}
+  {%- if active and current_dir == 'asc' -%}{%- set next_dir = 'desc' -%}{%- else -%}{%- set next_dir = 'asc' -%}{%- endif -%}
+  <th class="sortable-th {% if numeric %}num{% endif %} {% if active %}sort-active-{{ current_dir }}{% endif %}">
+    <a href="{{ tc_url({'sort_by': key, 'sort_dir': next_dir, 'page': 1}) }}">
+      <span class="sort-label">{{ label }}</span>
+      <span class="sort-indicator">
+        {% if active %}<span class="sort-arrow {% if current_dir == 'desc' %}sort-arrow-desc{% endif %}">{% if current_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="sort-arrow dim">↕</span>{% endif %}
+      </span>
+    </a>
+  </th>
+{%- endmacro %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administrar Datos</p>
+        <h2>Técnicos (Datos Maestros)</h2>
+        <p class="hero-copy">
+            Alta, edición y activación de técnicos (ej: legajo 606).
+            Técnicos inactivos no aparecen en asignaciones pero se conservan en históricos.
+        </p>
+    </div>
+    <nav class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.master_index') }}">Dashboard</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_supervisor_list') }}">Supervisores</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_vehicle_list') }}">Vehículos</a>
+        <a class="button button-primary" href="{{ url_for('main.master_technician_new') }}">+ Nuevo técnico</a>
+    </nav>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.master_technician_list') }}">
+        <label>
+            <span>Buscar (legajo / nombre / teléfono / comuna / equipo)</span>
+            <input type="text" name="q" value="{{ q }}" placeholder="Ej: 606, Pérez, Maipú">
+        </label>
+        <label>
+            <span>Región</span>
+            <select name="region">
+                <option value="" {% if not region %}selected{% endif %}>Todas</option>
+                {% for r in filter_options.regions %}
+                    <option value="{{ r }}" {% if region == r %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Supervisor</span>
+            <select name="supervisor">
+                <option value="" {% if not supervisor %}selected{% endif %}>Todos</option>
+                {% for s in filter_options.supervisors %}
+                    <option value="{{ s }}" {% if supervisor == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Centro</span>
+            <select name="center">
+                <option value="" {% if not center %}selected{% endif %}>Todos</option>
+                {% for c in filter_options.centers %}
+                    <option value="{{ c }}" {% if center == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Empresa</span>
+            <select name="company">
+                <option value="" {% if not company %}selected{% endif %}>Todas</option>
+                {% for c in filter_options.companies %}
+                    <option value="{{ c }}" {% if company == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="is_active">
+                <option value="" {% if is_active == '' %}selected{% endif %}>Todos</option>
+                <option value="1" {% if is_active == '1' %}selected{% endif %}>Activo</option>
+                <option value="0" {% if is_active == '0' %}selected{% endif %}>Inactivo</option>
+            </select>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.master_technician_list') }}">Limpiar</a>
+        </div>
+    </form>
+    <div class="quick-range">
+        <span style="font-size: 0.8rem; color: #6B7280;">Filas por pág:</span>
+        <select class="page-size-select" onchange="window.location.href=this.value">
+            {% for ps in (10, 20, 50, 100) %}
+                <option value="{{ tc_url({'page_size': ps, 'page': 1}) }}" {% if page_size == ps %}selected{% endif %}>{{ ps }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</section>
+
+<section class="card table-card findings-table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Listado</p>
+            <h3>Técnicos ({{ total }})</h3>
+        </div>
+        <div class="filter-actions">
+            <span class="metric-pill metric-neutral">Página {{ page }} de {{ page_count }}</span>
+            <span class="metric-pill metric-neutral">Mostrando {{ rows|length }} de {{ total }}</span>
+        </div>
+    </div>
+    {% if rows %}
+        <div class="table-wrap findings-table-wrap" data-table-scroll-target>
+            <table class="data-table sortable-table">
+                <thead>
+                    <tr>
+                        {{ sort_th('employee_code', 'Legajo', numeric=true) }}
+                        {{ sort_th('name', 'Técnico') }}
+                        {{ sort_th('region', 'Región') }}
+                        {{ sort_th('center_name', 'Centro') }}
+                        {{ sort_th('company_name', 'Empresa') }}
+                        <th>Supervisor</th>
+                        {{ sort_th('team', 'Equipo') }}
+                        <th>Vehículo</th>
+                        <th>Estado</th>
+                        <th class="actions-col">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td class="num"><strong>{{ row.employee_code }}</strong></td>
+                            <td>{{ row.name }}</td>
+                            <td>{{ row.region or '—' }}</td>
+                            <td>{{ row.center_name or '—' }}</td>
+                            <td>{{ row.company_name or '—' }}</td>
+                            <td>
+                                {% if row.supervisor_name %}
+                                    {{ row.supervisor_name }}{% if row.supervisor_id and not row.supervisor_is_active %}<span class="metric-pill metric-bad" style="margin-left:6px; font-size: 0.7rem;">supervisor inactivo</span>{% endif %}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>{{ row.team or '—' }}</td>
+                            <td>
+                                {% if row.vehicle_plate %}
+                                    <div><strong>{{ row.vehicle_plate }}</strong>{% if row.vehicle_unit_number %} <small>#{{ row.vehicle_unit_number }}</small>{% endif %}</div>
+                                {% else %}
+                                    <span style="color:#9CA3AF;">Sin vehículo</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row.is_active %}
+                                    <span class="metric-pill metric-good">Activo</span>
+                                {% else %}
+                                    <span class="metric-pill metric-bad">Inactivo</span>
+                                {% endif %}
+                            </td>
+                            <td class="actions-col">
+                                <a class="button button-secondary button-small" href="{{ url_for('main.master_technician_edit', technician_id=row.id) }}">Editar</a>
+                                <form method="post" action="{{ url_for('main.master_technician_toggle', technician_id=row.id) }}" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button class="button button-small {{ 'button-warn' if row.is_active else 'button-primary' }}" type="submit">
+                                        {{ 'Desactivar' if row.is_active else 'Activar' }}
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="button-row pagination-row">
+            {% if has_prev_page %}
+                <a class="button button-secondary" href="{{ tc_url({'page': page - 1}) }}">Anterior</a>
+            {% endif %}
+            <div class="page-chips">
+                {% for p in pages_window %}
+                    {% if p is none %}
+                        <span class="page-chip page-chip-ellipsis">&hellip;</span>
+                    {% else %}
+                        <a class="page-chip {% if p == page %}page-chip-active{% endif %}" href="{{ tc_url({'page': p}) }}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% if has_next_page %}
+                <a class="button button-secondary" href="{{ tc_url({'page': page + 1}) }}">Siguiente</a>
+            {% endif %}
+            <span>Página {{ page }} de {{ page_count }}.</span>
+        </div>
+    {% else %}
+        <p class="empty-state">No se encontraron técnicos con los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<style>
+    .actions-col { white-space: nowrap; text-align: right; }
+    .actions-col form { display: inline; margin-left: 6px; }
+    .button-small { padding: 4px 10px; font-size: 0.85rem; }
+    .button-warn { background: #F59E0B; color: #fff; }
+    .button-warn:hover { background: #D97706; }
+    .quick-range { margin-top: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .page-size-select { padding: 4px 8px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.8rem; background: #fff; color: #111827; width: auto; max-width: 90px; }
+    .sort-arrow.dim { color: #9CA3AF; }
+    .sort-arrow { color: #1D4ED8; }
+    .sortable-th { user-select: none; }
+    .sortable-table thead tr { position: sticky; top: 0; background: #fff; }
+</style>
+{% endblock %}

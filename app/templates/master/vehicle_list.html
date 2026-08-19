@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}Vehículos · Administrar Datos{% endblock %}
+
+{% macro vh_url(overrides) %}
+  {%- set d = {
+    'q': q if q else '',
+    'status': status if status else '',
+    'assigned': assigned if assigned else '',
+    'sort_by': sort_by if sort_by else '',
+    'sort_dir': sort_dir if sort_dir else '',
+    'page': page,
+    'page_size': page_size,
+  } -%}
+  {%- set overrides = overrides or {} -%}
+  {%- set merged = {} -%}
+  {%- for k, v in d.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {%- for k, v in overrides.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {{ url_for('main.master_vehicle_list',
+    q=merged.q if merged.q else none,
+    status=merged.status if merged.status != '' else none,
+    assigned=merged.assigned if merged.assigned != '' else none,
+    sort_by=merged.sort_by if merged.sort_by else none,
+    sort_dir=merged.sort_dir if merged.sort_dir else none,
+    page=merged.page if merged.page and merged.page != 1 else none,
+    page_size=merged.page_size if merged.page_size and merged.page_size != 20 else none)
+  }}
+{%- endmacro %}
+
+{% macro sort_th(key, label, numeric=false) %}
+  {%- set current_by = sort_by if sort_by else 'unit_number' -%}
+  {%- set current_dir = 'desc' if sort_dir == 'desc' else 'asc' -%}
+  {%- set active = current_by == key -%}
+  {%- if active and current_dir == 'asc' -%}{%- set next_dir = 'desc' -%}{%- else -%}{%- set next_dir = 'asc' -%}{%- endif -%}
+  <th class="sortable-th {% if numeric %}num{% endif %} {% if active %}sort-active-{{ current_dir }}{% endif %}">
+    <a href="{{ vh_url({'sort_by': key, 'sort_dir': next_dir, 'page': 1}) }}">
+      <span class="sort-label">{{ label }}</span>
+      <span class="sort-indicator">
+        {% if active %}<span class="sort-arrow {% if current_dir == 'desc' %}sort-arrow-desc{% endif %}">{% if current_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="sort-arrow dim">↕</span>{% endif %}
+      </span>
+    </a>
+  </th>
+{%- endmacro %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administrar Datos</p>
+        <h2>Vehículos (Camionetas)</h2>
+        <p class="hero-copy">
+            Gestiona camionetas: N° unidad, patente, vencimientos y asignación a técnico.
+            Formato rápido: <code>124 - AI130XC</code> (N° unidad + patente en un solo campo).
+        </p>
+    </div>
+    <nav class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.master_index') }}">Dashboard</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_supervisor_list') }}">Supervisores</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_technician_list') }}">Técnicos</a>
+        <a class="button button-primary" href="{{ url_for('main.master_vehicle_new') }}">+ Nuevo vehículo</a>
+    </nav>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.master_vehicle_list') }}">
+        <label>
+            <span>Buscar (patente / marca / modelo / técnico / unidad)</span>
+            <input type="text" name="q" value="{{ q }}" placeholder="Ej: AI130XC, 124, Volkswagen, 606">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="status">
+                <option value="" {% if status == '' %}selected{% endif %}>Todos</option>
+                <option value="activo" {% if status == 'activo' %}selected{% endif %}>Activo</option>
+                <option value="inactivo" {% if status == 'inactivo' %}selected{% endif %}>Inactivo</option>
+                <option value="mantenimiento" {% if status == 'mantenimiento' %}selected{% endif %}>Mantenimiento</option>
+            </select>
+        </label>
+        <label>
+            <span>Asignación</span>
+            <select name="assigned">
+                <option value="" {% if assigned == '' %}selected{% endif %}>Todos</option>
+                <option value="yes" {% if assigned == 'yes' %}selected{% endif %}>Asignados</option>
+                <option value="no" {% if assigned == 'no' %}selected{% endif %}>Sin asignar</option>
+            </select>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.master_vehicle_list') }}">Limpiar</a>
+        </div>
+    </form>
+    <div class="quick-range">
+        <span style="font-size: 0.8rem; color: #6B7280;">Filas por pág:</span>
+        <select class="page-size-select" onchange="window.location.href=this.value">
+            {% for ps in (10, 20, 50, 100) %}
+                <option value="{{ vh_url({'page_size': ps, 'page': 1}) }}" {% if page_size == ps %}selected{% endif %}>{{ ps }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</section>
+
+<section class="card table-card findings-table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Listado</p>
+            <h3>Vehículos ({{ total }})</h3>
+        </div>
+        <div class="filter-actions">
+            <span class="metric-pill metric-neutral">Página {{ page }} de {{ page_count }}</span>
+            <span class="metric-pill metric-neutral">Mostrando {{ rows|length }} de {{ total }}</span>
+        </div>
+    </div>
+    {% if rows %}
+        <div class="table-wrap findings-table-wrap" data-table-scroll-target>
+            <table class="data-table sortable-table">
+                <thead>
+                    <tr>
+                        {{ sort_th('unit_number', 'N°', numeric=true) }}
+                        {{ sort_th('plate', 'Patente') }}
+                        {{ sort_th('brand', 'Marca') }}
+                        {{ sort_th('model', 'Modelo') }}
+                        {{ sort_th('year', 'Año', numeric=true) }}
+                        {{ sort_th('odometer_km', 'Km', numeric=true) }}
+                        <th>Técnico asignado</th>
+                        {{ sort_th('review_date', 'VTV') }}
+                        {{ sort_th('insurance_expiry', 'Seguro') }}
+                        {{ sort_th('extinguisher_expiry', 'Matafuego') }}
+                        {{ sort_th('gnc_expiry', 'GNC') }}
+                        {{ sort_th('rto_expiry', 'RTO') }}
+                        {{ sort_th('botiquin_expiry', 'Botiquín') }}
+                        <th>Estado</th>
+                        <th class="actions-col">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td class="num">{% if row.unit_number %}{{ row.unit_number }}{% else %}—{% endif %}</td>
+                            <td><strong>{{ row.plate or '—' }}</strong></td>
+                            <td>{{ row.brand or '—' }}</td>
+                            <td>{{ row.model or '—' }}</td>
+                            <td class="num">{{ row.year or '—' }}</td>
+                            <td class="num">{{ row.odometer_km or '—' }}</td>
+                            <td>
+                                {% if row.assigned_employee_code %}
+                                    <div><strong>{{ row.assigned_employee_code }}</strong></div>
+                                    {% if row.assigned_technician_name %}<small style="color:#6B7280;">{{ row.assigned_technician_name }}</small>{% endif %}
+                                {% else %}
+                                    <span style="color:#9CA3AF;">Sin asignar</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.review_date or '—' }}</td>
+                            <td>{{ row.insurance_expiry or '—' }}</td>
+                            <td>{{ row.extinguisher_expiry or '—' }}</td>
+                            <td>{{ row.gnc_expiry or '—' }}</td>
+                            <td>{{ row.rto_expiry or '—' }}</td>
+                            <td>{{ row.botiquin_expiry or '—' }}</td>
+                            <td>
+                                {% if (row.status or '') == 'activo' %}
+                                    <span class="metric-pill metric-good">Activo</span>
+                                {% elif (row.status or '') == 'inactivo' %}
+                                    <span class="metric-pill metric-bad">Inactivo</span>
+                                {% elif (row.status or '') == 'mantenimiento' %}
+                                    <span class="metric-pill metric-neutral">Mantenimiento</span>
+                                {% else %}
+                                    <span class="metric-pill metric-neutral">{{ row.status or '—' }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="actions-col">
+                                <a class="button button-secondary button-small" href="{{ url_for('main.master_vehicle_edit', vehicle_id=row.id) }}">Editar</a>
+                                <form method="post" action="{{ url_for('main.master_vehicle_toggle', vehicle_id=row.id) }}" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button class="button button-small {{ 'button-warn' if (row.status or '') == 'activo' else 'button-primary' }}" type="submit">
+                                        {{ 'Desactivar' if (row.status or '') == 'activo' else 'Activar' }}
+                                    </button>
+                                </form>
+                                <details class="inline-assign" style="display:inline-block; margin-left:6px;">
+                                    <summary class="button button-small button-secondary" role="button">Asignar</summary>
+                                    <form method="post" action="{{ url_for('main.master_vehicle_assign', vehicle_id=row.id) }}" class="card assign-card">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <label>
+                                            <span>Técnico (dejar vacío para des-asignar)</span>
+                                            <select name="assigned_employee_code">
+                                                <option value="">— Sin asignar —</option>
+                                                {% for t in technicians_options %}
+                                                    <option value="{{ t.employee_code }}" {% if row.assigned_employee_code == t.employee_code %}selected{% endif %}>
+                                                        {{ t.employee_code }} — {{ t.name }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                        </label>
+                                        <div class="filter-actions">
+                                            <button class="button button-primary button-small" type="submit">Guardar</button>
+                                        </div>
+                                    </form>
+                                </details>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="button-row pagination-row">
+            {% if has_prev_page %}
+                <a class="button button-secondary" href="{{ vh_url({'page': page - 1}) }}">Anterior</a>
+            {% endif %}
+            <div class="page-chips">
+                {% for p in pages_window %}
+                    {% if p is none %}
+                        <span class="page-chip page-chip-ellipsis">&hellip;</span>
+                    {% else %}
+                        <a class="page-chip {% if p == page %}page-chip-active{% endif %}" href="{{ vh_url({'page': p}) }}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% if has_next_page %}
+                <a class="button button-secondary" href="{{ vh_url({'page': page + 1}) }}">Siguiente</a>
+            {% endif %}
+            <span>Página {{ page }} de {{ page_count }}.</span>
+        </div>
+    {% else %}
+        <p class="empty-state">No se encontraron vehículos con los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<style>
+    .actions-col { white-space: nowrap; text-align: right; }
+    .actions-col form { display: inline; margin-left: 6px; }
+    .button-small { padding: 4px 10px; font-size: 0.85rem; }
+    .button-warn { background: #F59E0B; color: #fff; }
+    .button-warn:hover { background: #D97706; }
+    .inline-assign summary { list-style: none; cursor: pointer; }
+    .inline-assign summary::-webkit-details-marker { display: none; }
+    .assign-card { position: absolute; z-index: 20; min-width: 320px; margin-top: 6px; right: 0; padding: 14px; box-shadow: 0 10px 30px rgba(15,23,42,.14); }
+    .actions-col { position: relative; }
+    .quick-range { margin-top: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .page-size-select { padding: 4px 8px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.8rem; background: #fff; color: #111827; width: auto; max-width: 90px; }
+    .sort-arrow.dim { color: #9CA3AF; }
+    .sort-arrow { color: #1D4ED8; }
+    .sortable-th { user-select: none; }
+    .sortable-table thead tr { position: sticky; top: 0; background: #fff; }
+    code { background: #F3F4F6; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
+</style>
+{% endblock %}

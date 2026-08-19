@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}Supervisores · Administrar Datos{% endblock %}
+
+{% macro sv_url(overrides) %}
+  {%- set d = {
+    'q': q if q else '',
+    'is_active': is_active if is_active else '',
+    'sort_by': sort_by if sort_by else '',
+    'sort_dir': sort_dir if sort_dir else '',
+    'page': page,
+    'page_size': page_size,
+  } -%}
+  {%- set overrides = overrides or {} -%}
+  {%- set merged = {} -%}
+  {%- for k, v in d.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {%- for k, v in overrides.items() -%}{%- set _t = merged.update({k: v}) -%}{%- endfor -%}
+  {{ url_for('main.master_supervisor_list',
+    q=merged.q if merged.q else none,
+    is_active=merged.is_active if merged.is_active != '' else none,
+    sort_by=merged.sort_by if merged.sort_by else none,
+    sort_dir=merged.sort_dir if merged.sort_dir else none,
+    page=merged.page if merged.page and merged.page != 1 else none,
+    page_size=merged.page_size if merged.page_size and merged.page_size != 20 else none)
+  }}
+{%- endmacro %}
+
+{% macro sort_th(key, label, numeric=false) %}
+  {%- set current_by = sort_by if sort_by else 'name' -%}
+  {%- set current_dir = 'desc' if sort_dir == 'desc' else 'asc' -%}
+  {%- set active = current_by == key -%}
+  {%- if active and current_dir == 'asc' -%}{%- set next_dir = 'desc' -%}{%- else -%}{%- set next_dir = 'asc' -%}{%- endif -%}
+  <th class="sortable-th {% if numeric %}num{% endif %} {% if active %}sort-active-{{ current_dir }}{% endif %}">
+    <a href="{{ sv_url({'sort_by': key, 'sort_dir': next_dir, 'page': 1}) }}">
+      <span class="sort-label">{{ label }}</span>
+      <span class="sort-indicator">
+        {% if active %}<span class="sort-arrow {% if current_dir == 'desc' %}sort-arrow-desc{% endif %}">{% if current_dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% else %}<span class="sort-arrow dim">↕</span>{% endif %}
+      </span>
+    </a>
+  </th>
+{%- endmacro %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administrar Datos</p>
+        <h2>Supervisores</h2>
+        <p class="hero-copy">
+            Los supervisores inactivos no aparecerán en asignaciones nuevas,
+            pero se mantienen en filtros históricos y auditorías.
+        </p>
+    </div>
+    <nav class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.master_index') }}">Dashboard</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_vehicle_list') }}">Vehículos</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_technician_list') }}">Técnicos</a>
+        <a class="button button-primary" href="{{ url_for('main.master_supervisor_new') }}">+ Nuevo supervisor</a>
+    </nav>
+</section>
+
+<section class="card filter-card">
+    <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.master_supervisor_list') }}">
+        <label>
+            <span>Buscar (nombre / región / teléfono / email)</span>
+            <input type="text" name="q" value="{{ q }}" placeholder="Ej: Zona Norte, Alfredo Leiva">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="is_active">
+                <option value="" {% if is_active == '' %}selected{% endif %}>Todos</option>
+                <option value="1" {% if is_active == '1' %}selected{% endif %}>Activo</option>
+                <option value="0" {% if is_active == '0' %}selected{% endif %}>Inactivo</option>
+            </select>
+        </label>
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">Filtrar</button>
+            <a class="button button-secondary" href="{{ url_for('main.master_supervisor_list') }}">Limpiar</a>
+        </div>
+    </form>
+    <div class="quick-range">
+        <span style="font-size: 0.8rem; color: #6B7280;">Filas por pág:</span>
+        <select class="page-size-select" onchange="window.location.href=this.value">
+            {% for ps in (10, 20, 50, 100) %}
+                <option value="{{ sv_url({'page_size': ps, 'page': 1}) }}" {% if page_size == ps %}selected{% endif %}>{{ ps }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</section>
+
+<section class="card table-card findings-table-card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Listado</p>
+            <h3>Supervisores ({{ total }})</h3>
+        </div>
+        <div class="filter-actions">
+            <span class="metric-pill metric-neutral">Página {{ page }} de {{ page_count }}</span>
+            <span class="metric-pill metric-neutral">Mostrando {{ rows|length }} de {{ total }}</span>
+        </div>
+    </div>
+    {% if rows %}
+        <div class="table-wrap findings-table-wrap" data-table-scroll-target>
+            <table class="data-table sortable-table">
+                <thead>
+                    <tr>
+                        {{ sort_th('name', 'Nombre') }}
+                        {{ sort_th('region', 'Región') }}
+                        {{ sort_th('phone', 'Teléfono') }}
+                        {{ sort_th('email', 'Email') }}
+                        {{ sort_th('active_technicians_count', 'Técnicos activos', numeric=true) }}
+                        <th>Estado</th>
+                        <th class="actions-col">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td><strong>{{ row.name }}</strong></td>
+                            <td>{{ row.region or '—' }}</td>
+                            <td>{{ row.phone or '—' }}</td>
+                            <td>{{ row.email or '—' }}</td>
+                            <td class="num">{{ row.active_technicians_count or 0 }}</td>
+                            <td>
+                                {% if row.is_active %}
+                                    <span class="metric-pill metric-good">Activo</span>
+                                {% else %}
+                                    <span class="metric-pill metric-bad">Inactivo</span>
+                                {% endif %}
+                            </td>
+                            <td class="actions-col">
+                                <a class="button button-secondary button-small" href="{{ url_for('main.master_supervisor_edit', supervisor_id=row.id) }}">Editar</a>
+                                <form method="post" action="{{ url_for('main.master_supervisor_toggle', supervisor_id=row.id) }}" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button class="button button-small {{ 'button-warn' if row.is_active else 'button-primary' }}" type="submit">
+                                        {{ 'Desactivar' if row.is_active else 'Reactivar' }}
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="button-row pagination-row">
+            {% if has_prev_page %}
+                <a class="button button-secondary" href="{{ sv_url({'page': page - 1}) }}">Anterior</a>
+            {% endif %}
+            <div class="page-chips">
+                {% for p in pages_window %}
+                    {% if p is none %}
+                        <span class="page-chip page-chip-ellipsis">&hellip;</span>
+                    {% else %}
+                        <a class="page-chip {% if p == page %}page-chip-active{% endif %}" href="{{ sv_url({'page': p}) }}">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% if has_next_page %}
+                <a class="button button-secondary" href="{{ sv_url({'page': page + 1}) }}">Siguiente</a>
+            {% endif %}
+            <span>Página {{ page }} de {{ page_count }}.</span>
+        </div>
+    {% else %}
+        <p class="empty-state">No se encontraron supervisores con los filtros seleccionados.</p>
+    {% endif %}
+</section>
+
+<style>
+    .actions-col { white-space: nowrap; text-align: right; }
+    .actions-col form { display: inline; margin-left: 6px; }
+    .button-small { padding: 4px 10px; font-size: 0.85rem; }
+    .button-warn { background: #F59E0B; color: #fff; }
+    .button-warn:hover { background: #D97706; }
+    .quick-range { margin-top: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .page-size-select { padding: 4px 8px; border-radius: 6px; border: 1px solid #D1D5DB; font-size: 0.8rem; background: #fff; color: #111827; width: auto; max-width: 90px; }
+    .sort-arrow.dim { color: #9CA3AF; }
+    .sort-arrow { color: #1D4ED8; }
+    .sortable-th { user-select: none; }
+    .sortable-table thead tr { position: sticky; top: 0; background: #fff; }
+</style>
+{% endblock %}

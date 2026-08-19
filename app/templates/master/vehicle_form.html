@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Nuevo vehículo" if mode == "new" else "Editar vehículo" }} · Administrar Datos{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administrar Datos / Vehículos</p>
+        <h2>{{ "Nuevo vehículo" if mode == "new" else "Editar vehículo" }}</h2>
+        <p class="hero-copy">
+            {% if mode == "new" %}
+                Da de alta una camioneta. Podrá ser asignada a un técnico y usarse en auditorías.
+            {% else %}
+                Actualiza datos y vencimientos. Modificaciones no rompen auditorías históricas.
+            {% endif %}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.master_vehicle_list') }}">Volver</a>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label style="grid-column: 1 / -1;">
+            <span>Unidad + Patente (formato rápido, opcional)</span>
+            <input type="text" name="combined_unit_plate" placeholder="Ej: 124 - AI130XC"
+                {% if mode == 'edit' and row.unit_number and row.plate %}value="{{ row.unit_number }} - {{ row.plate }}"{% endif %}>
+            <small style="color:#6B7280; display:block; margin-top:4px;">
+                Si completás este campo, se extrae automáticamente el número y la patente.
+                Podés sobrescribirlos en los campos individuales de abajo.
+            </small>
+        </label>
+
+        <label>
+            <span>N° unidad</span>
+            <input type="text" name="unit_number" value="{{ row.unit_number if row else '' }}" placeholder="Ej: 124">
+        </label>
+        <label>
+            <span>Patente *</span>
+            <input type="text" name="plate" value="{{ row.plate if row else '' }}" required placeholder="Ej: AI130XC">
+        </label>
+        <label>
+            <span>Marca</span>
+            <input type="text" name="brand" value="{{ row.brand if row else '' }}" placeholder="Ej: Volkswagen, Toyota">
+        </label>
+        <label>
+            <span>Modelo</span>
+            <input type="text" name="model" value="{{ row.model if row else '' }}" placeholder="Ej: Amarok, Hilux">
+        </label>
+        <label>
+            <span>Año</span>
+            <input type="number" name="year" min="1990" max="2100" value="{{ row.year if row and row.year else '' }}" placeholder="Ej: 2023">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="status" required>
+                {% set sel = (row.status if row else 'activo') %}
+                <option value="activo" {{ "selected" if sel == 'activo' else "" }}>Activo</option>
+                <option value="inactivo" {{ "selected" if sel == 'inactivo' else "" }}>Inactivo</option>
+                <option value="mantenimiento" {{ "selected" if sel == 'mantenimiento' else "" }}>Mantenimiento</option>
+            </select>
+        </label>
+        <label>
+            <span>Kilometraje</span>
+            <input type="number" name="odometer_km" min="0" value="{{ row.odometer_km if row and row.odometer_km else '' }}" placeholder="Ej: 85000">
+        </label>
+        <label>
+            <span>Técnico asignado</span>
+            <select name="assigned_employee_code">
+                <option value="">— Sin asignar —</option>
+                {% for t in technicians_options %}
+                    <option value="{{ t.employee_code }}" {% if row and row.assigned_employee_code == t.employee_code %}selected{% endif %}>
+                        {{ t.employee_code }} — {{ t.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <fieldset style="grid-column: 1 / -1; border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px 18px; margin: 0;">
+            <legend style="padding: 0 8px; font-weight: 600;">Vencimientos (YYYY-MM-DD)</legend>
+            <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px;">
+                <label>
+                    <span>VTV / Revisión técnica</span>
+                    <input type="date" name="review_date" value="{{ row.review_date if row and row.review_date else '' }}">
+                </label>
+                <label>
+                    <span>Seguro</span>
+                    <input type="date" name="insurance_expiry" value="{{ row.insurance_expiry if row and row.insurance_expiry else '' }}">
+                </label>
+                <label>
+                    <span>Matafuego</span>
+                    <input type="date" name="extinguisher_expiry" value="{{ row.extinguisher_expiry if row and row.extinguisher_expiry else '' }}">
+                </label>
+                <label>
+                    <span>Oblea GNC</span>
+                    <input type="date" name="gnc_expiry" value="{{ row.gnc_expiry if row and row.gnc_expiry else '' }}">
+                </label>
+                <label>
+                    <span>RTO</span>
+                    <input type="date" name="rto_expiry" value="{{ row.rto_expiry if row and row.rto_expiry else '' }}">
+                </label>
+                <label>
+                    <span>Botiquín</span>
+                    <input type="date" name="botiquin_expiry" value="{{ row.botiquin_expiry if row and row.botiquin_expiry else '' }}">
+                </label>
+            </div>
+        </fieldset>
+
+        <div class="filter-actions" style="grid-column: 1 / -1">
+            <button class="button button-primary" type="submit">{{ "Crear" if mode == "new" else "Guardar cambios" }}</button>
+            <a class="button button-secondary" href="{{ url_for('main.master_vehicle_list') }}">Cancelar</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

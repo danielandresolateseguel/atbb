@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Administrar Datos{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administración</p>
+        <h2>Administrar Datos Maestros</h2>
+        <p class="hero-copy">
+            Gestiona supervisores, vehículos (camionetas) y técnicos.
+            Los registros desactivados se conservan para auditorías históricas pero no aparecen en asignaciones nuevas.
+        </p>
+    </div>
+    <nav class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.master_supervisor_list') }}">Supervisores</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_vehicle_list') }}">Vehículos</a>
+        <a class="button button-primary" href="{{ url_for('main.master_technician_list') }}">Técnicos</a>
+    </nav>
+</section>
+
+<section class="stats-grid">
+    <article class="card stat-card">
+        <span class="stat-label">Supervisores activos</span>
+        <strong class="stat-value">{{ stats.supervisors_active }}</strong>
+        <div class="meta">Total {{ stats.supervisors_total }} (inactivos {{ stats.supervisors_inactive }})</div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Vehículos activos</span>
+        <strong class="stat-value">{{ stats.vehicles_active }}</strong>
+        <div class="meta">Total {{ stats.vehicles_total }} · Asignados {{ stats.vehicles_assigned }}</div>
+    </article>
+    <article class="card stat-card">
+        <span class="stat-label">Técnicos activos</span>
+        <strong class="stat-value">{{ stats.technicians_active }}</strong>
+        <div class="meta">Total {{ stats.technicians_total }} (inactivos {{ stats.technicians_inactive }})</div>
+    </article>
+</section>
+
+<section class="card">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">Accesos directos</p>
+            <h3>Operaciones frecuentes</h3>
+        </div>
+    </div>
+    <div class="stats-grid">
+        <a class="card stat-card quick-card" href="{{ url_for('main.master_supervisor_list') }}">
+            <span class="stat-label">ABM Supervisores</span>
+            <strong class="stat-value">→</strong>
+            <div class="meta">Alta, edición, activar / desactivar (incluye inactivos históricos sin romper auditorías)</div>
+        </a>
+        <a class="card stat-card quick-card" href="{{ url_for('main.master_vehicle_list') }}">
+            <span class="stat-label">ABM Vehículos</span>
+            <strong class="stat-value">→</strong>
+            <div class="meta">Camionetas, N° unidad / patente, vencimientos, asignar a técnico</div>
+        </a>
+        <a class="card stat-card quick-card" href="{{ url_for('main.master_technician_list') }}">
+            <span class="stat-label">ABM Técnicos</span>
+            <strong class="stat-value">→</strong>
+            <div class="meta">Ej: legajo 606 con todos sus datos y vinculación a supervisor / camioneta</div>
+        </a>
+    </div>
+</section>
+
+<style>
+    .quick-card { text-decoration: none; color: inherit; cursor: pointer; transition: transform .08s ease, box-shadow .08s ease; }
+    .quick-card:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, .08); }
+</style>
+{% endblock %}

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Nuevo técnico" if mode == "new" else "Editar técnico" }} · Administrar Datos{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administrar Datos / Técnicos</p>
+        <h2>{{ "Nuevo técnico" if mode == "new" else "Editar técnico" }}</h2>
+        <p class="hero-copy">
+            {% if mode == "new" %}
+                Da de alta un técnico (ej: legajo 606) con todos sus datos y vinculación a supervisor y vehículo.
+            {% else %}
+                Actualiza datos, supervisor asignado y vehículo. No afecta históricos.
+            {% endif %}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.master_technician_list') }}">Volver</a>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label>
+            <span>Legajo (employee_code) *</span>
+            <input type="text" name="employee_code" value="{{ row.employee_code if row else '' }}" required placeholder="Ej: 606"
+                {% if mode == 'edit' %}readonly style="background:#F9FAFB;"{% endif %}>
+            {% if mode == 'edit' %}<small style="color:#6B7280;">El legajo no se modifica.</small>{% endif %}
+        </label>
+        <label>
+            <span>Nombre completo *</span>
+            <input type="text" name="name" value="{{ row.name if row else '' }}" required placeholder="Ej: Juan Pérez">
+        </label>
+        <label>
+            <span>Región</span>
+            <select name="region">
+                <option value="">— Seleccionar / vaciar —</option>
+                {% for r in filter_options.regions %}
+                    <option value="{{ r }}" {% if row and row.region == r %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Centro</span>
+            <select name="center_name">
+                <option value="">— Seleccionar / vaciar —</option>
+                {% for c in filter_options.centers %}
+                    <option value="{{ c }}" {% if row and row.center_name == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Empresa</span>
+            <select name="company_name">
+                <option value="">— Seleccionar / vaciar —</option>
+                {% for c in filter_options.companies %}
+                    <option value="{{ c }}" {% if row and row.company_name == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Sindicato (unión)</span>
+            <input type="text" name="union_name" value="{{ row.union_name if row else '' }}" placeholder="Ej: UOM, SOEME">
+        </label>
+        <label>
+            <span>Teléfono</span>
+            <input type="text" name="phone" value="{{ row.phone if row else '' }}" placeholder="Ej: +54 9 261 5...">
+        </label>
+        <label>
+            <span>Comuna</span>
+            <input type="text" name="commune" value="{{ row.commune if row else '' }}" placeholder="Ej: Maipú, Godoy Cruz">
+        </label>
+        <label>
+            <span>Equipo / Zona</span>
+            <input type="text" name="team" value="{{ row.team if row else '' }}" placeholder="Ej: Zona Norte, Turno Tarde">
+        </label>
+
+        <fieldset style="grid-column: 1 / -1; border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px 18px; margin: 0;">
+            <legend style="padding: 0 8px; font-weight: 600;">Supervisor asignado</legend>
+            <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px;">
+                <label>
+                    <span>Supervisor (solo activos)</span>
+                    <select name="supervisor_id">
+                        <option value="">— Sin asignar / usar valor manual —</option>
+                        {% for s in supervisors_options %}
+                            <option value="{{ s.id }}" {% if row and row.supervisor_id == s.id %}selected{% endif %}>
+                                {{ s.name }}{% if s.region %} · {{ s.region }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <small style="color:#6B7280; display:block; margin-top:4px;">
+                        Si seleccionás uno, se usa su nombre desde la tabla <code>supervisors</code>.
+                        Si quedara inactivo luego, seguiría mostrándose en históricos.
+                    </small>
+                </label>
+                <label>
+                    <span>Nombre de supervisor (manual / sobrescritura)</span>
+                    <input type="text" name="supervisor_name" value="{{ row.supervisor_name if row else '' }}" placeholder="Ej: Alfredo Leiva">
+                    <small style="color:#6B7280; display:block; margin-top:4px;">
+                        Si lo completás, prevalece este texto para la columna legacy <code>supervisor_name</code> del técnico.
+                    </small>
+                </label>
+            </div>
+        </fieldset>
+
+        <fieldset style="grid-column: 1 / -1; border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px 18px; margin: 0;">
+            <legend style="padding: 0 8px; font-weight: 600;">Vehículo asignado</legend>
+            <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px;">
+                <label>
+                    <span>Vehículo</span>
+                    <select name="vehicle_id">
+                        <option value="">— Sin asignar —</option>
+                        {% for v in vehicles_options %}
+                            <option value="{{ v.id }}" {% if row and row.vehicle_id == v.id %}selected{% endif %}>
+                                {% if v.unit_number %}#{{ v.unit_number }} · {% endif %}{{ v.plate }}{% if v.brand %} ({{ v.brand }} {{ v.model }}){% endif %}
+                                {% if v.assigned_employee_code %} — ASIGNADO A {{ v.assigned_employee_code }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+                {% if mode == 'edit' %}
+                <label>
+                    <span class="inline-checkbox-wrap">
+                        <input type="checkbox" name="clear_vehicle" value="1" class="inline-checkbox">
+                        <strong>Des-asignar vehículo actual</strong>
+                        <small style="display:block; color:#6B7280; font-weight:normal; margin-top:4px;">
+                            Tiene prioridad sobre el selector de arriba: si marcás esta opción, queda sin vehículo.
+                        </small>
+                    </span>
+                </label>
+                {% endif %}
+            </div>
+        </fieldset>
+
+        <label>
+            <span>Estado</span>
+            <select name="is_active" required>
+                {% set sel = (row.is_active if row else 1) %}
+                <option value="1" {{ "selected" if sel else "" }}>Activo (asignable a auditorías / vehículos)</option>
+                <option value="0" {{ "selected" if not sel else "" }}>Inactivo (sólo históricos)</option>
+            </select>
+        </label>
+
+        <div class="filter-actions" style="grid-column: 1 / -1">
+            <button class="button button-primary" type="submit">{{ "Crear técnico" if mode == "new" else "Guardar cambios" }}</button>
+            <a class="button button-secondary" href="{{ url_for('main.master_technician_list') }}">Cancelar</a>
+        </div>
+    </form>
+</section>
+
+<style>
+    .inline-checkbox-wrap { display: flex; align-items: flex-start; gap: 10px; }
+    .inline-checkbox { margin-top: 4px; transform: scale(1.1); }
+    code { background: #F3F4F6; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
+</style>
+{% endblock %}

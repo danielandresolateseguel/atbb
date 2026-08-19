@@ -267,6 +267,16 @@ def init_db():
             botiquin_expiry TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS supervisors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            name TEXT NOT NULL UNIQUE,
+            region TEXT,
+            phone TEXT,
+            email TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1
+        );
+
         CREATE TABLE IF NOT EXISTS mobile_units (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             mobile_code TEXT NOT NULL UNIQUE,
@@ -692,6 +702,20 @@ def init_db_postgres():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS supervisors (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            name TEXT NOT NULL UNIQUE,
+            region TEXT,
+            phone TEXT,
+            email TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS mobile_units (
             id SERIAL PRIMARY KEY,
             mobile_code TEXT NOT NULL UNIQUE,
@@ -1069,6 +1093,24 @@ def init_db_postgres():
     )
 
     ensure_technicians_columns_postgres(cursor)
+    cursor.execute(
+        """
+        INSERT INTO supervisors (name, is_active)
+        SELECT DISTINCT supervisor_name, 1
+        FROM technicians
+        WHERE supervisor_name IS NOT NULL AND TRIM(supervisor_name) != ''
+        ON CONFLICT (name) DO NOTHING
+        """
+    )
+    cursor.execute(
+        """
+        UPDATE technicians
+        SET supervisor_id = (
+            SELECT id FROM supervisors WHERE supervisors.name = technicians.supervisor_name
+        )
+        WHERE supervisor_id IS NULL AND supervisor_name IS NOT NULL AND TRIM(supervisor_name) != ''
+        """
+    )
     ensure_audits_columns_postgres(cursor)
     ensure_audit_findings_columns_postgres(cursor)
     ensure_tnps_columns_postgres(cursor)
@@ -1544,6 +1586,37 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "qc_sessions", "installation_duration_minutes", "INTEGER")
     add_column_if_missing(connection, "qc_sessions", "cable_type", "TEXT")
     add_column_if_missing(connection, "qc_sessions", "cable_meters", "INTEGER")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS supervisors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            name TEXT NOT NULL UNIQUE,
+            region TEXT,
+            phone TEXT,
+            email TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    add_column_if_missing(connection, "technicians", "supervisor_id", "INTEGER")
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO supervisors (name, is_active)
+        SELECT DISTINCT supervisor_name, 1
+        FROM technicians
+        WHERE supervisor_name IS NOT NULL AND TRIM(supervisor_name) != ''
+        """
+    )
+    connection.execute(
+        """
+        UPDATE technicians
+        SET supervisor_id = (
+            SELECT id FROM supervisors WHERE supervisors.name = technicians.supervisor_name
+        )
+        WHERE supervisor_id IS NULL AND supervisor_name IS NOT NULL AND TRIM(supervisor_name) != ''
+        """
+    )
     migrate_tnps_experience_scores_to_ten_scale(connection)
     ensure_audits_nullable_technician(connection)
 
@@ -1726,6 +1799,7 @@ def ensure_technicians_columns_postgres(cursor):
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS union_name TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS supervisor_name TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS center_name TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS supervisor_id INTEGER REFERENCES supervisors (id)")
 
 
 def ensure_audits_columns_postgres(cursor):
@@ -2103,14 +2177,43 @@ def fetch_technicians():
     return [dict(row) for row in rows]
 
 
-def fetch_vehicles():
-    rows = get_db().execute(
-        """
-        SELECT id, plate, brand, model, year, status, unit_number, odometer_km, assigned_employee_code, review_date, insurance_expiry, extinguisher_expiry, gnc_expiry, rto_expiry, botiquin_expiry
-        FROM vehicles
-        ORDER BY plate ASC
-        """
-    ).fetchall()
+def fetch_vehicles_all(only_active=None, include_assigned_technician_name=True, sort_for_audit_ui=True):
+    order_parts = []
+    if sort_for_audit_ui:
+        order_parts.append("CASE status WHEN 'activo' THEN 0 ELSE 1 END ASC")
+        order_parts.append("CAST(unit_number AS INTEGER) NULLS LAST, unit_number ASC")
+        order_parts.append("plate ASC")
+    else:
+        order_parts.append("plate ASC")
+    safe_order = []
+    if is_postgres():
+        safe_order = list(order_parts)
+    else:
+        for clause in order_parts:
+            if "NULLS LAST" in clause:
+                safe_order.append(clause.replace("NULLS LAST", ""))
+            else:
+                safe_order.append(clause)
+    where_clause = ""
+    params = []
+    if only_active:
+        where_clause = "WHERE status = ?"
+        params.append("activo")
+    if include_assigned_technician_name:
+        extra_column = """,
+            (SELECT t.name FROM technicians t WHERE t.employee_code = v.assigned_employee_code AND COALESCE(t.is_active, 1) = 1 LIMIT 1) AS assigned_technician_name"""
+    else:
+        extra_column = ""
+    sql = f"""
+        SELECT v.id, v.plate, v.brand, v.model, v.year, v.status, v.unit_number, v.odometer_km,
+               v.assigned_employee_code, v.review_date, v.insurance_expiry, v.extinguisher_expiry,
+               v.gnc_expiry, v.rto_expiry, v.botiquin_expiry
+               {extra_column}
+        FROM vehicles v
+        {where_clause}
+        ORDER BY {", ".join(safe_order)}
+    """
+    rows = get_db().execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -2162,38 +2265,76 @@ def update_vehicle_botiquin_expiry(vehicle_id, expiry_date):
 def fetch_mobile_units():
     rows = get_db().execute(
         """
-        SELECT
-            mobile_units.id,
-            mobile_units.mobile_code,
-            mobile_units.technician_id,
-            mobile_units.user_name,
-            mobile_units.warehouse_description,
-            mobile_units.warehouse_type,
-            mobile_units.is_enabled,
-            mobile_units.notes,
-            technicians.name AS technician_name,
-            technicians.center_name AS technician_center_name,
-            technicians.supervisor_name AS technician_supervisor_name,
-            technicians.company_name AS technician_company_name,
-            technicians.union_name AS technician_union_name,
-            technicians.region AS technician_region,
+        SELECT DISTINCT
+            mu.id,
+            mu.mobile_code,
+            mu.technician_id,
+            mu.user_name,
+            mu.warehouse_description,
+            mu.warehouse_type,
+            mu.is_enabled,
+            mu.notes,
+            t.name AS technician_name,
+            t.center_name AS technician_center_name,
+            t.supervisor_name AS technician_supervisor_name,
+            t.company_name AS technician_company_name,
+            t.union_name AS technician_union_name,
+            t.region AS technician_region,
             (
-                SELECT storage_locations.center_name
-                FROM storage_locations
+                SELECT sl.center_name
+                FROM storage_locations sl
                 WHERE (
-                    storage_locations.mobile_unit_id = mobile_units.id
-                    OR storage_locations.warehouse_code = mobile_units.mobile_code
+                    sl.mobile_unit_id = mu.id
+                    OR sl.warehouse_code = mu.mobile_code
                 )
-                    AND storage_locations.is_enabled = 1
+                    AND sl.is_enabled = 1
                 ORDER BY
-                    CASE WHEN LOWER(COALESCE(storage_locations.warehouse_type, '')) = 'movil' THEN 0 ELSE 1 END,
-                    storage_locations.id DESC
+                    CASE WHEN LOWER(COALESCE(sl.warehouse_type, '')) = 'movil' THEN 0 ELSE 1 END,
+                    sl.id DESC
                 LIMIT 1
             ) AS storage_center_name,
-            technicians.employee_code
-        FROM mobile_units
-        LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
-        ORDER BY mobile_units.mobile_code ASC
+            t.employee_code,
+            0 AS _is_virtual
+        FROM mobile_units mu
+        LEFT JOIN technicians t ON t.id = mu.technician_id
+        WHERE COALESCE(mu.is_enabled, 1) = 1
+        UNION ALL
+        SELECT
+            -t.id AS id,
+            t.employee_code AS mobile_code,
+            t.id AS technician_id,
+            t.name AS user_name,
+            NULL AS warehouse_description,
+            'movil' AS warehouse_type,
+            1 AS is_enabled,
+            'Tecnico sin movil asignado' AS notes,
+            t.name AS technician_name,
+            t.center_name AS technician_center_name,
+            t.supervisor_name AS technician_supervisor_name,
+            t.company_name AS technician_company_name,
+            t.union_name AS technician_union_name,
+            t.region AS technician_region,
+            (
+                SELECT sl.center_name
+                FROM storage_locations sl
+                WHERE sl.warehouse_code = t.employee_code
+                    AND sl.is_enabled = 1
+                ORDER BY
+                    CASE WHEN LOWER(COALESCE(sl.warehouse_type, '')) = 'movil' THEN 0 ELSE 1 END,
+                    sl.id DESC
+                LIMIT 1
+            ) AS storage_center_name,
+            t.employee_code,
+            1 AS _is_virtual
+        FROM technicians t
+        WHERE COALESCE(t.is_active, 1) = 1
+            AND NOT EXISTS (
+                SELECT 1
+                FROM mobile_units mu2
+                WHERE mu2.technician_id = t.id
+                    AND COALESCE(mu2.is_enabled, 1) = 1
+            )
+        ORDER BY mobile_code ASC
         """
     ).fetchall()
     return [dict(row) for row in rows]
@@ -2249,6 +2390,36 @@ def fetch_mobile_unit_by_id(mobile_unit_id):
         WHERE mobile_units.id = ?
         """,
         (mobile_unit_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_mobile_unit_by_any_id(mobile_unit_id):
+    try:
+        nid = int(mobile_unit_id)
+    except (TypeError, ValueError):
+        return None
+    if nid >= 0:
+        return fetch_mobile_unit_by_id(nid)
+    technician_id = -nid
+    row = get_db().execute(
+        """
+        SELECT
+            -t.id AS id,
+            t.employee_code AS mobile_code,
+            t.name AS user_name,
+            NULL AS warehouse_description,
+            'movil' AS warehouse_type,
+            1 AS is_enabled,
+            'Tecnico sin movil asignado' AS notes,
+            t.id AS technician_id,
+            t.name AS technician_name,
+            t.employee_code,
+            1 AS _is_virtual
+        FROM technicians t
+        WHERE t.id = ? AND COALESCE(t.is_active, 1) = 1
+        """,
+        (technician_id,),
     ).fetchone()
     return dict(row) if row else None
 
@@ -2430,9 +2601,12 @@ def fetch_mobile_related_audits(mobile_code, limit=20, auditor_user_id=None):
 
 
 def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit=None):
-    mobile = fetch_mobile_unit_by_id(mobile_unit_id)
+    mobile = fetch_mobile_unit_by_any_id(mobile_unit_id)
     if not mobile:
         return None
+    is_virtual = bool(mobile.get("_is_virtual")) or int(mobile.get("id") or 0) < 0
+    warehouse_code = mobile.get("mobile_code")
+    mu_id_arg = None if is_virtual else mobile_unit_id
 
     summary_row = get_db().execute(
         """
@@ -2440,20 +2614,26 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit
             (
                 SELECT COUNT(*)
                 FROM equipment_inventory
-                WHERE mobile_unit_id = ?
+                WHERE (mobile_unit_id = ? OR (warehouse_code IS NOT NULL AND warehouse_code = ?))
             ) AS equipment_count,
             (
                 SELECT COUNT(*)
                 FROM material_stock
-                WHERE mobile_unit_id = ?
+                WHERE (mobile_unit_id = ? OR EXISTS (
+                    SELECT 1 FROM mobile_units mu
+                    WHERE mu.id = material_stock.mobile_unit_id AND mu.mobile_code = ?
+                ))
             ) AS stock_item_count,
             (
                 SELECT COALESCE(SUM(quantity), 0)
                 FROM material_stock
-                WHERE mobile_unit_id = ?
+                WHERE (mobile_unit_id = ? OR EXISTS (
+                    SELECT 1 FROM mobile_units mu
+                    WHERE mu.id = material_stock.mobile_unit_id AND mu.mobile_code = ?
+                ))
             ) AS stock_units_count
         """,
-        (mobile_unit_id, mobile_unit_id, mobile_unit_id),
+        (mu_id_arg, warehouse_code, mu_id_arg, warehouse_code, mu_id_arg, warehouse_code),
     ).fetchone()
 
     if equipment_limit is None:
@@ -2466,10 +2646,10 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit
                 material_name,
                 serial_number
             FROM equipment_inventory
-            WHERE mobile_unit_id = ?
+            WHERE (mobile_unit_id = ? OR (warehouse_code IS NOT NULL AND warehouse_code = ?))
             ORDER BY material_name ASC, serial_number ASC
             """,
-            (mobile_unit_id,),
+            (mu_id_arg, warehouse_code),
         ).fetchall()
     else:
         equipment_rows = get_db().execute(
@@ -2481,11 +2661,11 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit
                 material_name,
                 serial_number
             FROM equipment_inventory
-            WHERE mobile_unit_id = ?
+            WHERE (mobile_unit_id = ? OR (warehouse_code IS NOT NULL AND warehouse_code = ?))
             ORDER BY material_name ASC, serial_number ASC
             LIMIT ?
             """,
-            (mobile_unit_id, equipment_limit),
+            (mu_id_arg, warehouse_code, equipment_limit),
         ).fetchall()
 
     if stock_limit is None:
@@ -2497,10 +2677,13 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit
                 material_stock.quantity
             FROM material_stock
             INNER JOIN materials ON materials.id = material_stock.material_id
-            WHERE material_stock.mobile_unit_id = ?
+            WHERE (material_stock.mobile_unit_id = ? OR EXISTS (
+                SELECT 1 FROM mobile_units mu
+                WHERE mu.id = material_stock.mobile_unit_id AND mu.mobile_code = ?
+            ))
             ORDER BY materials.material_name ASC
             """,
-            (mobile_unit_id,),
+            (mu_id_arg, warehouse_code),
         ).fetchall()
     else:
         stock_rows = get_db().execute(
@@ -2511,34 +2694,43 @@ def fetch_mobile_audit_context(mobile_unit_id, equipment_limit=None, stock_limit
                 material_stock.quantity
             FROM material_stock
             INNER JOIN materials ON materials.id = material_stock.material_id
-            WHERE material_stock.mobile_unit_id = ?
+            WHERE (material_stock.mobile_unit_id = ? OR EXISTS (
+                SELECT 1 FROM mobile_units mu
+                WHERE mu.id = material_stock.mobile_unit_id AND mu.mobile_code = ?
+            ))
             ORDER BY materials.material_name ASC
             LIMIT ?
             """,
-            (mobile_unit_id, stock_limit),
+            (mu_id_arg, warehouse_code, stock_limit),
         ).fetchall()
 
     search_rows = get_db().execute(
         """
         SELECT material_name AS name
         FROM equipment_inventory
-        WHERE mobile_unit_id = ?
+        WHERE (mobile_unit_id = ? OR (warehouse_code IS NOT NULL AND warehouse_code = ?))
         UNION ALL
         SELECT material_code AS name
         FROM equipment_inventory
-        WHERE mobile_unit_id = ?
+        WHERE (mobile_unit_id = ? OR (warehouse_code IS NOT NULL AND warehouse_code = ?))
         UNION ALL
         SELECT materials.material_name AS name
         FROM material_stock
         INNER JOIN materials ON materials.id = material_stock.material_id
-        WHERE material_stock.mobile_unit_id = ?
+        WHERE (material_stock.mobile_unit_id = ? OR EXISTS (
+            SELECT 1 FROM mobile_units mu
+            WHERE mu.id = material_stock.mobile_unit_id AND mu.mobile_code = ?
+        ))
         UNION ALL
         SELECT materials.material_code AS name
         FROM material_stock
         INNER JOIN materials ON materials.id = material_stock.material_id
-        WHERE material_stock.mobile_unit_id = ?
+        WHERE (material_stock.mobile_unit_id = ? OR EXISTS (
+            SELECT 1 FROM mobile_units mu
+            WHERE mu.id = material_stock.mobile_unit_id AND mu.mobile_code = ?
+        ))
         """,
-        (mobile_unit_id, mobile_unit_id, mobile_unit_id, mobile_unit_id),
+        (mu_id_arg, warehouse_code, mu_id_arg, warehouse_code, mu_id_arg, warehouse_code, mu_id_arg, warehouse_code),
     ).fetchall()
 
     summary = dict(summary_row)
@@ -7944,6 +8136,7 @@ def import_technician_information(rows):
         employee_code = pick_first(row, employee_code_keys)
         technician_name = pick_first(row, technician_name_keys)
         supervisor_name = pick_first(row, supervisor_keys)
+        supervisor_id = ensure_supervisor(supervisor_name) if supervisor_name else None
         center_name = pick_first(row, center_keys)
         company_name_raw = pick_first(row, company_keys)
         union_name_raw = pick_first(row, union_keys)
@@ -8013,9 +8206,10 @@ def import_technician_information(rows):
                     company_name,
                     union_name,
                     supervisor_name,
+                    supervisor_id,
                     center_name,
                     is_active
-                ) VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, 1)
+                ) VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, ?, 1)
                 """,
                 (
                     technician_name.strip(),
@@ -8024,6 +8218,7 @@ def import_technician_information(rows):
                     company_name or None,
                     union_name or None,
                     supervisor_name or None,
+                    supervisor_id,
                     center_name or None,
                 ),
             )
@@ -8042,6 +8237,7 @@ def import_technician_information(rows):
                     company_name = COALESCE(NULLIF(?, ''), company_name),
                     union_name = COALESCE(NULLIF(?, ''), union_name),
                     supervisor_name = COALESCE(NULLIF(?, ''), supervisor_name),
+                    supervisor_id = COALESCE(?, supervisor_id),
                     center_name = COALESCE(NULLIF(?, ''), center_name),
                     region = CASE
                         WHEN (region IS NULL OR region = '' OR region = '-')
@@ -8055,6 +8251,7 @@ def import_technician_information(rows):
                     company_name,
                     union_name,
                     supervisor_name,
+                    supervisor_id,
                     center_name,
                     center_name,
                     technician_id,
@@ -8532,6 +8729,7 @@ def import_novedades_diarias(rows):
         technician_name = (row.get(technician_name_column) or "").strip() if technician_name_column else ""
 
         supervisor_name = normalize_placeholder((row.get(supervisor_column) or "").strip() if supervisor_column else "")
+        supervisor_id = ensure_supervisor(supervisor_name) if supervisor_name else None
         center_name = normalize_placeholder((row.get(center_column) or "").strip() if center_column else "")
 
         parsed_code, parsed_name = parse_technician_cell(technician_name)
@@ -8583,12 +8781,15 @@ def import_novedades_diarias(rows):
             """
             UPDATE technicians
             SET supervisor_name = CASE WHEN ? != '' THEN ? ELSE supervisor_name END,
+                supervisor_id = CASE WHEN ? IS NOT NULL THEN ? ELSE supervisor_id END,
                 center_name = CASE WHEN ? != '' THEN ? ELSE center_name END
             WHERE id = ?
             """,
             (
                 supervisor_name,
                 supervisor_name,
+                supervisor_id if supervisor_id is not None else None,
+                supervisor_id,
                 center_name,
                 center_name,
                 technician_row["id"],
@@ -11111,5 +11312,755 @@ def _fmt_today_iso():
         return datetime.today().strftime("%Y-%m-%d")
     except Exception:
         return ""
+
+
+def ensure_supervisor(name):
+    cleaned = " ".join((name or "").strip().split())
+    if not cleaned:
+        return None
+    connection = get_db()
+    row = connection.execute(
+        "SELECT id, is_active FROM supervisors WHERE name = ?",
+        (cleaned,),
+    ).fetchone()
+    if row:
+        sid = row["id"] if isinstance(row, dict) else row[0]
+        is_active = row["is_active"] if isinstance(row, dict) else row[1]
+        if not is_active:
+            connection.execute("UPDATE supervisors SET is_active = 1 WHERE id = ?", (sid,))
+            connection.commit()
+        return sid
+    try:
+        if is_postgres():
+            cursor = connection.execute(
+                "INSERT INTO supervisors (name, is_active) VALUES (%s, %s) RETURNING id",
+                (cleaned, 1),
+            )
+            r = cursor.fetchone()
+            connection.commit()
+            return (r["id"] if isinstance(r, dict) else r[0]) if r else None
+        cursor = connection.execute(
+            "INSERT INTO supervisors (name, is_active) VALUES (?, ?)",
+            (cleaned, 1),
+        )
+        connection.commit()
+        return cursor.lastrowid
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            row2 = connection.execute(
+                "SELECT id FROM supervisors WHERE name = ?",
+                (cleaned,),
+            ).fetchone()
+            return (row2["id"] if isinstance(row2, dict) else row2[0]) if row2 else None
+        raise
+
+
+def parse_unit_plate(value):
+    import re
+    cleaned = " ".join((value or "").strip().upper().split())
+    if not cleaned:
+        return "", ""
+    match = re.search(r"(?P<unit>\d{1,4})\s*[-–—/]\s*(?P<plate>[A-Z0-9]{5,10})", cleaned)
+    if match:
+        return match.group("unit").strip(), match.group("plate").strip()
+    if cleaned.isdigit() and len(cleaned) <= 4:
+        return cleaned, ""
+    return "", cleaned
+
+
+def create_supervisor(name, region=None, phone=None, email=None, is_active=1):
+    cleaned_name = " ".join((name or "").strip().split())
+    if not cleaned_name:
+        raise ValueError("El nombre del supervisor es obligatorio.")
+    safe_region = (region or "").strip() or None
+    safe_phone = (phone or "").strip() or None
+    safe_email = (email or "").strip() or None
+    safe_active = 1 if _normalize_bool(is_active) else 0
+    connection = get_db()
+    try:
+        if is_postgres():
+            cursor = connection.execute(
+                """
+                INSERT INTO supervisors (name, region, phone, email, is_active)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+                """,
+                (cleaned_name, safe_region, safe_phone, safe_email, safe_active),
+            )
+            row = cursor.fetchone()
+            connection.commit()
+            return (row["id"] if isinstance(row, dict) else row[0]) if row else None
+        cursor = connection.execute(
+            """
+            INSERT INTO supervisors (name, region, phone, email, is_active)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (cleaned_name, safe_region, safe_phone, safe_email, safe_active),
+        )
+        connection.commit()
+        return cursor.lastrowid
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise ValueError("Ya existe un supervisor con ese nombre.") from exc
+        raise
+
+
+def update_supervisor(supervisor_id, name=None, region=None, phone=None, email=None, is_active=None, rename_technicians=True, only_active_technicians=True):
+    existing = fetch_supervisor_by_id(supervisor_id)
+    if not existing:
+        raise ValueError("Supervisor no encontrado.")
+    old_name = existing.get("name")
+    cleaned_name = " ".join((name or existing.get("name") or "").strip().split()) or None
+    if not cleaned_name:
+        raise ValueError("El nombre del supervisor no puede estar vacío.")
+    safe_region = (region if region is not None else existing.get("region"))
+    safe_phone = (phone if phone is not None else existing.get("phone"))
+    safe_email = (email if email is not None else existing.get("email"))
+    if is_active is None:
+        safe_active = existing.get("is_active")
+    else:
+        safe_active = 1 if _normalize_bool(is_active) else 0
+    connection = get_db()
+    try:
+        connection.execute(
+            """
+            UPDATE supervisors
+            SET name = ?, region = ?, phone = ?, email = ?, is_active = ?
+            WHERE id = ?
+            """,
+            (cleaned_name, safe_region, safe_phone, safe_email, safe_active, supervisor_id),
+        )
+        if cleaned_name and old_name and cleaned_name != old_name and rename_technicians:
+            if only_active_technicians:
+                connection.execute(
+                    """
+                    UPDATE technicians
+                    SET supervisor_name = ?, supervisor_id = ?
+                    WHERE COALESCE(supervisor_name, '') = ? AND COALESCE(is_active, 1) = 1
+                    """,
+                    (cleaned_name, supervisor_id, old_name),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE technicians
+                    SET supervisor_name = ?, supervisor_id = ?
+                    WHERE COALESCE(supervisor_name, '') = ?
+                    """,
+                    (cleaned_name, supervisor_id, old_name),
+                )
+        elif cleaned_name and old_name and cleaned_name != old_name:
+            connection.execute(
+                """
+                UPDATE technicians
+                SET supervisor_id = ?
+                WHERE COALESCE(supervisor_name, '') = ?
+                """,
+                (supervisor_id, old_name),
+            )
+        connection.commit()
+        return True
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise ValueError("Ya existe un supervisor con ese nombre.") from exc
+        raise
+
+
+def fetch_supervisor_by_id(supervisor_id):
+    row = get_db().execute(
+        "SELECT * FROM supervisors WHERE id = ?",
+        (int(supervisor_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_supervisors(q=None, is_active=None, limit=100, offset=0):
+    params = []
+    clauses = []
+    if q and q.strip():
+        clauses.append("name LIKE ?")
+        params.append("%" + q.strip() + "%")
+    if is_active is not None:
+        clauses.append("is_active = ?")
+        params.append(1 if _normalize_bool(is_active) else 0)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"""
+        SELECT
+            s.*,
+            (
+                SELECT COUNT(*) FROM technicians t
+                WHERE t.supervisor_id = s.id AND COALESCE(t.is_active, 1) = 1
+            ) AS active_technicians_count
+        FROM supervisors s
+        {where}
+        ORDER BY s.is_active DESC, s.name ASC
+        LIMIT ? OFFSET ?
+    """
+    params.extend([int(limit or 100), int(offset or 0)])
+    rows = get_db().execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_supervisors(q=None, is_active=None):
+    params = []
+    clauses = []
+    if q and q.strip():
+        clauses.append("name LIKE ?")
+        params.append("%" + q.strip() + "%")
+    if is_active is not None:
+        clauses.append("is_active = ?")
+        params.append(1 if _normalize_bool(is_active) else 0)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    row = get_db().execute(f"SELECT COUNT(*) AS c FROM supervisors {where}", params).fetchone()
+    return int((row["c"] if isinstance(row, dict) else row[0]) or 0)
+
+
+def fetch_active_supervisors():
+    rows = get_db().execute(
+        """
+        SELECT id, name, region, phone, email, is_active
+        FROM supervisors
+        WHERE is_active = 1
+        ORDER BY name ASC
+        """
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def toggle_supervisor_active(supervisor_id):
+    connection = get_db()
+    connection.execute(
+        """
+        UPDATE supervisors
+        SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
+        WHERE id = ?
+        """,
+        (int(supervisor_id),),
+    )
+    connection.commit()
+    return fetch_supervisor_by_id(supervisor_id)
+
+
+def create_vehicle(
+    plate,
+    brand,
+    model,
+    year=None,
+    status="activo",
+    unit_number=None,
+    odometer_km=None,
+    assigned_employee_code=None,
+    review_date=None,
+    insurance_expiry=None,
+    extinguisher_expiry=None,
+    gnc_expiry=None,
+    rto_expiry=None,
+    botiquin_expiry=None,
+):
+    safe_plate = "".join((plate or "").strip().upper().split())
+    if not safe_plate:
+        raise ValueError("La patente es obligatoria.")
+    safe_brand = " ".join((brand or "").strip().split())
+    if not safe_brand:
+        safe_brand = "Sin marca"
+    safe_model = " ".join((model or "").strip().split())
+    if not safe_model:
+        safe_model = "Sin modelo"
+    safe_year = normalize_integer_value(year)
+    safe_status = " ".join((status or "activo").strip().lower().split()) or "activo"
+    safe_unit = (unit_number or "").strip() or None
+    safe_km = normalize_integer_value(odometer_km)
+    safe_emp_code = (assigned_employee_code or "").strip() or None
+    safe_review = (review_date or "").strip() or None
+    safe_insurance = (insurance_expiry or "").strip() or None
+    safe_ext = (extinguisher_expiry or "").strip() or None
+    safe_gnc = (gnc_expiry or "").strip() or None
+    safe_rto = (rto_expiry or "").strip() or None
+    safe_bot = (botiquin_expiry or "").strip() or None
+    connection = get_db()
+    try:
+        if is_postgres():
+            cursor = connection.execute(
+                """
+                INSERT INTO vehicles (
+                    plate, brand, model, year, status, unit_number, odometer_km,
+                    assigned_employee_code, review_date, insurance_expiry,
+                    extinguisher_expiry, gnc_expiry, rto_expiry, botiquin_expiry
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                """,
+                (
+                    safe_plate, safe_brand, safe_model, safe_year, safe_status,
+                    safe_unit, safe_km, safe_emp_code, safe_review, safe_insurance,
+                    safe_ext, safe_gnc, safe_rto, safe_bot,
+                ),
+            )
+            row = cursor.fetchone()
+            connection.commit()
+            return (row["id"] if isinstance(row, dict) else row[0]) if row else None
+        cursor = connection.execute(
+            """
+            INSERT INTO vehicles (
+                plate, brand, model, year, status, unit_number, odometer_km,
+                assigned_employee_code, review_date, insurance_expiry,
+                extinguisher_expiry, gnc_expiry, rto_expiry, botiquin_expiry
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                safe_plate, safe_brand, safe_model, safe_year, safe_status,
+                safe_unit, safe_km, safe_emp_code, safe_review, safe_insurance,
+                safe_ext, safe_gnc, safe_rto, safe_bot,
+            ),
+        )
+        connection.commit()
+        return cursor.lastrowid
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise ValueError("Ya existe un vehículo con esa patente.") from exc
+        raise
+
+
+def update_vehicle(
+    vehicle_id,
+    plate=None,
+    brand=None,
+    model=None,
+    year=None,
+    status=None,
+    unit_number=None,
+    odometer_km=None,
+    assigned_employee_code=None,
+    review_date=None,
+    insurance_expiry=None,
+    extinguisher_expiry=None,
+    gnc_expiry=None,
+    rto_expiry=None,
+    botiquin_expiry=None,
+):
+    existing = fetch_vehicle_by_id(vehicle_id)
+    if not existing:
+        raise ValueError("Vehículo no encontrado.")
+    if plate is None:
+        safe_plate = existing.get("plate")
+    else:
+        safe_plate = "".join((plate or "").strip().upper().split())
+        if not safe_plate:
+            raise ValueError("La patente no puede quedar vacía.")
+    safe_brand = " ".join((brand if brand is not None else existing.get("brand") or "").strip().split()) or existing.get("brand")
+    safe_model = " ".join((model if model is not None else existing.get("model") or "").strip().split()) or existing.get("model")
+    safe_year = normalize_integer_value(year if year is not None else existing.get("year"))
+    if status is None:
+        safe_status = existing.get("status") or "activo"
+    else:
+        safe_status = " ".join((status or "activo").strip().lower().split()) or "activo"
+    safe_unit = (unit_number if unit_number is not None else existing.get("unit_number"))
+    safe_km = normalize_integer_value(odometer_km if odometer_km is not None else existing.get("odometer_km"))
+    if assigned_employee_code is None:
+        safe_emp_code = existing.get("assigned_employee_code")
+    else:
+        safe_emp_code = (assigned_employee_code or "").strip() or None
+    safe_review = (review_date if review_date is not None else existing.get("review_date"))
+    safe_insurance = (insurance_expiry if insurance_expiry is not None else existing.get("insurance_expiry"))
+    safe_ext = (extinguisher_expiry if extinguisher_expiry is not None else existing.get("extinguisher_expiry"))
+    safe_gnc = (gnc_expiry if gnc_expiry is not None else existing.get("gnc_expiry"))
+    safe_rto = (rto_expiry if rto_expiry is not None else existing.get("rto_expiry"))
+    safe_bot = (botiquin_expiry if botiquin_expiry is not None else existing.get("botiquin_expiry"))
+    connection = get_db()
+    try:
+        connection.execute(
+            """
+            UPDATE vehicles
+            SET plate=?, brand=?, model=?, year=?, status=?, unit_number=?,
+                odometer_km=?, assigned_employee_code=?, review_date=?,
+                insurance_expiry=?, extinguisher_expiry=?, gnc_expiry=?,
+                rto_expiry=?, botiquin_expiry=?
+            WHERE id=?
+            """,
+            (
+                safe_plate, safe_brand, safe_model, safe_year, safe_status,
+                safe_unit, safe_km, safe_emp_code, safe_review, safe_insurance,
+                safe_ext, safe_gnc, safe_rto, safe_bot, int(vehicle_id),
+            ),
+        )
+        connection.commit()
+        return True
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise ValueError("Ya existe un vehículo con esa patente.") from exc
+        raise
+
+
+def fetch_vehicle_by_id(vehicle_id):
+    row = get_db().execute("SELECT * FROM vehicles WHERE id = ?", (int(vehicle_id),)).fetchone()
+    if not row:
+        return None
+    r = dict(row)
+    emp = (r.get("assigned_employee_code") or "").strip()
+    if emp:
+        tech_row = get_db().execute(
+            "SELECT id, name, employee_code FROM technicians WHERE employee_code = ?",
+            (emp,),
+        ).fetchone()
+        if tech_row:
+            r["assigned_technician"] = dict(tech_row)
+    return r
+
+
+def fetch_vehicle_by_plate(plate):
+    safe_plate = "".join((plate or "").strip().upper().split())
+    if not safe_plate:
+        return None
+    row = get_db().execute("SELECT * FROM vehicles WHERE plate = ?", (safe_plate,)).fetchone()
+    return dict(row) if row else None
+
+
+def fetch_vehicles(q=None, status=None, assigned=None, limit=None, offset=0, sort_by=None, sort_dir=None, include_assigned_technician_name=True):
+    params = []
+    clauses = []
+    if q and q.strip():
+        clauses.append("(plate LIKE ? OR COALESCE(unit_number, '') LIKE ? OR brand LIKE ? OR model LIKE ?)")
+        like = "%" + q.strip() + "%"
+        params.extend([like, like, like, like])
+    if status and status.strip():
+        clauses.append("status = ?")
+        params.append(status.strip().lower())
+    if assigned == "yes":
+        clauses.append("COALESCE(assigned_employee_code, '') != ''")
+    elif assigned == "no":
+        clauses.append("COALESCE(assigned_employee_code, '') = ''")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    allowed_sort = {"plate", "unit_number", "brand", "model", "year", "status", "assigned_employee_code"}
+    sort_column = sort_by if sort_by in allowed_sort else "is_active_sort, unit_number_sort"
+    sort_d = "DESC" if (sort_dir or "").lower() == "desc" else "ASC"
+    order_parts = []
+    if sort_by in allowed_sort:
+        order_parts.append(f"{sort_column} {sort_d}")
+    order_parts.append("CASE status WHEN 'activo' THEN 0 ELSE 1 END ASC")
+    order_parts.append("CAST(unit_number AS INTEGER) ASC NULLS LAST, unit_number ASC")
+    order_parts.append("plate ASC")
+    technician_alias = ""
+    if include_assigned_technician_name:
+        technician_alias = """,
+            (SELECT t.name FROM technicians t WHERE t.employee_code = v.assigned_employee_code AND COALESCE(t.is_active, 1) = 1 LIMIT 1) AS assigned_technician_name"""
+    sql = f"""
+        SELECT v.*
+               {technician_alias}
+        FROM vehicles v
+        {where}
+        ORDER BY {", ".join(order_parts)}
+        {{limit_clause}}
+    """
+    if not is_postgres():
+        sql = sql.replace("NULLS LAST", "")
+    if limit is not None:
+        sql = sql.format(limit_clause="LIMIT ? OFFSET ?")
+        params.extend([int(limit), int(offset or 0)])
+    else:
+        sql = sql.format(limit_clause="")
+    rows = get_db().execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_vehicles(q=None, status=None, assigned=None):
+    params = []
+    clauses = []
+    if q and q.strip():
+        clauses.append("(plate LIKE ? OR COALESCE(unit_number, '') LIKE ? OR brand LIKE ? OR model LIKE ?)")
+        like = "%" + q.strip() + "%"
+        params.extend([like, like, like, like])
+    if status and status.strip():
+        clauses.append("status = ?")
+        params.append(status.strip().lower())
+    if assigned == "yes":
+        clauses.append("COALESCE(assigned_employee_code, '') != ''")
+    elif assigned == "no":
+        clauses.append("COALESCE(assigned_employee_code, '') = ''")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    row = get_db().execute(f"SELECT COUNT(*) AS c FROM vehicles {where}", params).fetchone()
+    return int((row["c"] if isinstance(row, dict) else row[0]) or 0)
+
+
+def toggle_vehicle_active(vehicle_id):
+    connection = get_db()
+    connection.execute(
+        """
+        UPDATE vehicles
+        SET status = CASE WHEN status = 'activo' THEN 'inactivo' ELSE 'activo' END
+        WHERE id = ?
+        """,
+        (int(vehicle_id),),
+    )
+    connection.commit()
+    return fetch_vehicle_by_id(vehicle_id)
+
+
+def assign_vehicle_to_technician(vehicle_id, employee_code):
+    safe_code = (employee_code or "").strip() or None
+    connection = get_db()
+    connection.execute(
+        "UPDATE vehicles SET assigned_employee_code = ? WHERE id = ?",
+        (safe_code, int(vehicle_id)),
+    )
+    connection.commit()
+    return fetch_vehicle_by_id(vehicle_id)
+
+
+def create_technician(
+    employee_code,
+    name,
+    region,
+    phone=None,
+    commune=None,
+    team=None,
+    company_name=None,
+    union_name=None,
+    supervisor_name=None,
+    supervisor_id=None,
+    center_name=None,
+    is_active=1,
+):
+    safe_code = " ".join((employee_code or "").strip().split())
+    if not safe_code:
+        raise ValueError("El legajo (employee_code) es obligatorio.")
+    safe_name = " ".join((name or "").strip().split())
+    if not safe_name:
+        raise ValueError("El nombre del técnico es obligatorio.")
+    safe_region = " ".join((region or "").strip().split())
+    if not safe_region:
+        raise ValueError("La región es obligatoria.")
+    safe_phone = (phone or "").strip() or None
+    safe_commune = (commune or "").strip() or None
+    safe_team = (team or "").strip() or None
+    safe_company = (company_name or "").strip() or None
+    safe_union = (union_name or "").strip() or None
+    safe_center = (center_name or "").strip() or None
+    safe_supervisor_name = " ".join((supervisor_name or "").strip().split()) or None
+    safe_supervisor_id = int(supervisor_id) if supervisor_id not in (None, "") else None
+    safe_active = 1 if _normalize_bool(is_active) else 0
+    if safe_supervisor_id and not safe_supervisor_name:
+        row = get_db().execute("SELECT name FROM supervisors WHERE id = ?", (safe_supervisor_id,)).fetchone()
+        if row:
+            safe_supervisor_name = row["name"] if isinstance(row, dict) else row[0]
+    elif safe_supervisor_name and not safe_supervisor_id:
+        safe_supervisor_id = ensure_supervisor(safe_supervisor_name)
+    connection = get_db()
+    try:
+        if is_postgres():
+            cursor = connection.execute(
+                """
+                INSERT INTO technicians (
+                    employee_code, name, region, phone, commune, team,
+                    company_name, union_name, supervisor_name, supervisor_id,
+                    center_name, is_active
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                """,
+                (
+                    safe_code, safe_name, safe_region, safe_phone, safe_commune, safe_team,
+                    safe_company, safe_union, safe_supervisor_name, safe_supervisor_id,
+                    safe_center, safe_active,
+                ),
+            )
+            row = cursor.fetchone()
+            connection.commit()
+            return (row["id"] if isinstance(row, dict) else row[0]) if row else None
+        cursor = connection.execute(
+            """
+            INSERT INTO technicians (
+                employee_code, name, region, phone, commune, team,
+                company_name, union_name, supervisor_name, supervisor_id,
+                center_name, is_active
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                safe_code, safe_name, safe_region, safe_phone, safe_commune, safe_team,
+                safe_company, safe_union, safe_supervisor_name, safe_supervisor_id,
+                safe_center, safe_active,
+            ),
+        )
+        connection.commit()
+        return cursor.lastrowid
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise ValueError("Ya existe un técnico con ese legajo.") from exc
+        raise
+
+
+def update_technician(
+    technician_id,
+    employee_code=None,
+    name=None,
+    region=None,
+    phone=None,
+    commune=None,
+    team=None,
+    company_name=None,
+    union_name=None,
+    supervisor_name=None,
+    supervisor_id=None,
+    center_name=None,
+    is_active=None,
+):
+    existing = fetch_technician_by_id(technician_id)
+    if not existing:
+        raise ValueError("Técnico no encontrado.")
+    if employee_code is None:
+        safe_code = existing.get("employee_code")
+    else:
+        safe_code = " ".join((employee_code or "").strip().split())
+        if not safe_code:
+            raise ValueError("El legajo no puede quedar vacío.")
+    safe_name = " ".join((name if name is not None else existing.get("name") or "").strip().split()) or existing.get("name")
+    safe_region = " ".join((region if region is not None else existing.get("region") or "").strip().split()) or existing.get("region")
+    if not safe_region:
+        raise ValueError("La región no puede quedar vacía.")
+    safe_phone = (phone if phone is not None else existing.get("phone"))
+    safe_commune = (commune if commune is not None else existing.get("commune"))
+    safe_team = (team if team is not None else existing.get("team"))
+    safe_company = (company_name if company_name is not None else existing.get("company_name"))
+    safe_union = (union_name if union_name is not None else existing.get("union_name"))
+    safe_center = (center_name if center_name is not None else existing.get("center_name"))
+    if supervisor_id is None and supervisor_name is None:
+        safe_supervisor_id = existing.get("supervisor_id")
+        safe_supervisor_name = existing.get("supervisor_name")
+    else:
+        safe_supervisor_id = int(supervisor_id) if supervisor_id not in (None, "") else None
+        safe_supervisor_name = " ".join((supervisor_name or "").strip().split()) or None
+        if safe_supervisor_id and not safe_supervisor_name:
+            row = get_db().execute("SELECT name FROM supervisors WHERE id = ?", (safe_supervisor_id,)).fetchone()
+            if row:
+                safe_supervisor_name = row["name"] if isinstance(row, dict) else row[0]
+        elif safe_supervisor_name and not safe_supervisor_id:
+            safe_supervisor_id = ensure_supervisor(safe_supervisor_name)
+    if is_active is None:
+        safe_active = existing.get("is_active")
+    else:
+        safe_active = 1 if _normalize_bool(is_active) else 0
+    connection = get_db()
+    try:
+        connection.execute(
+            """
+            UPDATE technicians
+            SET employee_code=?, name=?, region=?, phone=?, commune=?, team=?,
+                company_name=?, union_name=?, supervisor_name=?, supervisor_id=?,
+                center_name=?, is_active=?
+            WHERE id=?
+            """,
+            (
+                safe_code, safe_name, safe_region, safe_phone, safe_commune, safe_team,
+                safe_company, safe_union, safe_supervisor_name, safe_supervisor_id,
+                safe_center, safe_active, int(technician_id),
+            ),
+        )
+        connection.commit()
+        return True
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise ValueError("Ya existe un técnico con ese legajo.") from exc
+        raise
+
+
+def fetch_technician_by_employee_code(code):
+    safe_code = " ".join((code or "").strip().split())
+    if not safe_code:
+        return None
+    row = get_db().execute(
+        "SELECT * FROM technicians WHERE employee_code = ?",
+        (safe_code,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def toggle_technician_active(technician_id):
+    connection = get_db()
+    connection.execute(
+        """
+        UPDATE technicians
+        SET is_active = CASE WHEN COALESCE(is_active, 1) = 1 THEN 0 ELSE 1 END
+        WHERE id = ?
+        """,
+        (int(technician_id),),
+    )
+    connection.commit()
+    return fetch_technician_by_id(technician_id)
+
+
+def fetch_master_technicians(q=None, region=None, supervisor=None, center=None, company=None, is_active=None, limit=100, offset=0, sort_by=None, sort_dir=None):
+    params = []
+    clauses = []
+    if q and q.strip():
+        clauses.append("(name LIKE ? OR employee_code LIKE ? OR COALESCE(phone, '') LIKE ?)")
+        like = "%" + q.strip() + "%"
+        params.extend([like, like, like])
+    if region and region.strip():
+        clauses.append("region = ?")
+        params.append(region.strip())
+    if supervisor and supervisor.strip():
+        clauses.append("COALESCE(supervisor_name, '') = ?")
+        params.append(supervisor.strip())
+    if center and center.strip():
+        clauses.append("COALESCE(center_name, '') = ?")
+        params.append(center.strip())
+    if company and company.strip():
+        clauses.append("COALESCE(company_name, '') = ?")
+        params.append(company.strip())
+    if is_active is not None and is_active != "":
+        clauses.append("COALESCE(is_active, 1) = ?")
+        params.append(1 if _normalize_bool(is_active) else 0)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    allowed_sort = {"name", "employee_code", "region", "supervisor_name", "center_name", "company_name", "is_active"}
+    safe_sort = sort_by if sort_by in allowed_sort else "is_active_sort, employee_code"
+    sort_d = "DESC" if (sort_dir or "").lower() == "desc" else "ASC"
+    order_parts = []
+    if sort_by in allowed_sort:
+        order_parts.append(f"{safe_sort} {sort_d}")
+    order_parts.append("CASE COALESCE(is_active, 1) WHEN 1 THEN 0 ELSE 1 END ASC")
+    order_parts.append("CAST(employee_code AS INTEGER) ASC NULLS LAST, employee_code ASC")
+    sql = f"""
+        SELECT
+            t.*,
+            (SELECT plate FROM vehicles v WHERE v.assigned_employee_code = t.employee_code LIMIT 1) AS assigned_vehicle_plate,
+            (SELECT unit_number FROM vehicles v WHERE v.assigned_employee_code = t.employee_code LIMIT 1) AS assigned_vehicle_unit
+        FROM technicians t
+        {where}
+        ORDER BY {", ".join(order_parts)}
+        LIMIT ? OFFSET ?
+    """
+    if not is_postgres():
+        sql = sql.replace("NULLS LAST", "")
+    params.extend([int(limit or 100), int(offset or 0)])
+    rows = get_db().execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_master_technicians(q=None, region=None, supervisor=None, center=None, company=None, is_active=None):
+    params = []
+    clauses = []
+    if q and q.strip():
+        clauses.append("(name LIKE ? OR employee_code LIKE ? OR COALESCE(phone, '') LIKE ?)")
+        like = "%" + q.strip() + "%"
+        params.extend([like, like, like])
+    if region and region.strip():
+        clauses.append("region = ?")
+        params.append(region.strip())
+    if supervisor and supervisor.strip():
+        clauses.append("COALESCE(supervisor_name, '') = ?")
+        params.append(supervisor.strip())
+    if center and center.strip():
+        clauses.append("COALESCE(center_name, '') = ?")
+        params.append(center.strip())
+    if company and company.strip():
+        clauses.append("COALESCE(company_name, '') = ?")
+        params.append(company.strip())
+    if is_active is not None and is_active != "":
+        clauses.append("COALESCE(is_active, 1) = ?")
+        params.append(1 if _normalize_bool(is_active) else 0)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    row = get_db().execute(f"SELECT COUNT(*) AS c FROM technicians {where}", params).fetchone()
+    return int((row["c"] if isinstance(row, dict) else row[0]) or 0)
 
 

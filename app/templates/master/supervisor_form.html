@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Nuevo supervisor" if mode == "new" else "Editar supervisor" }} · Administrar Datos{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Administrar Datos / Supervisores</p>
+        <h2>{{ "Nuevo supervisor" if mode == "new" else "Editar supervisor" }}</h2>
+        <p class="hero-copy">
+            {% if mode == "new" %}
+                Da de alta un supervisor. Podrá ser asignado a técnicos y aparecer en los filtros.
+            {% else %}
+                Actualiza los datos. El cambio de nombre por defecto NO toca históricos.
+            {% endif %}
+        </p>
+    </div>
+    <div class="hero-actions">
+        <a class="button button-secondary" href="{{ url_for('main.master_supervisor_list') }}">Volver</a>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label>
+            <span>Nombre completo *</span>
+            <input type="text" name="name" value="{{ row.name if row else '' }}" required placeholder="Ej: Alfredo Leiva">
+        </label>
+        <label>
+            <span>Región</span>
+            <input type="text" name="region" value="{{ row.region if row else '' }}" placeholder="Ej: Zona Norte, Cuyo">
+        </label>
+        <label>
+            <span>Teléfono</span>
+            <input type="text" name="phone" value="{{ row.phone if row else '' }}" placeholder="Ej: +54 9 261 ...">
+        </label>
+        <label>
+            <span>Email</span>
+            <input type="email" name="email" value="{{ row.email if row else '' }}" placeholder="nombre@empresa.com">
+        </label>
+        <label>
+            <span>Estado</span>
+            <select name="is_active" required>
+                {% set selected_active = (row.is_active if row else 1) %}
+                <option value="1" {{ "selected" if selected_active else "" }}>Activo (aparece en asignaciones)</option>
+                <option value="0" {{ "selected" if not selected_active else "" }}>Inactivo (sólo históricos)</option>
+            </select>
+        </label>
+
+        {% if mode == "edit" %}
+        <fieldset style="grid-column: 1 / -1; border: 1px solid #E5E7EB; border-radius: 10px; padding: 12px 16px; margin: 0;">
+            <legend style="padding: 0 8px; font-weight: 600;">Cambios en técnicos vinculados</legend>
+            <label>
+                <span class="inline-checkbox-wrap">
+                    <input type="checkbox" name="skip_rename" value="1" class="inline-checkbox">
+                    <strong>No actualizar el nombre del supervisor en la tabla de técnicos</strong>
+                    <small style="display:block; color:#6B7280; font-weight:normal; margin-top:4px;">
+                        Por defecto SÍ se sincroniza el nuevo nombre en los técnicos (para que aparezca actualizado en el filtro de Perfiles Técnicos).
+                        Marcá esta opción sólo si querés preservar el nombre anterior en los técnicos.
+                    </small>
+                </span>
+            </label>
+            <label style="margin-top: 10px;">
+                <span class="inline-checkbox-wrap">
+                    <input type="checkbox" name="include_inactive_technicians" value="1" class="inline-checkbox">
+                    <strong>Incluir técnicos INACTIVOS en la actualización de nombre</strong>
+                    <small style="display:block; color:#6B7280; font-weight:normal; margin-top:4px;">
+                        Por defecto, sólo se renombran los técnicos activos (is_active=1).
+                        Marcá esta opción para renombrar también los inactivos (todos los históricos vivos del maestro).
+                        <strong>Esto NO afecta tablas snapshots cerradas (auditorías, QC, service, hallazgos, etc.)</strong>.
+                    </small>
+                </span>
+            </label>
+        </fieldset>
+        {% endif %}
+
+        <div class="filter-actions" style="grid-column: 1 / -1">
+            <button class="button button-primary" type="submit">{{ "Crear" if mode == "new" else "Guardar cambios" }}</button>
+            <a class="button button-secondary" href="{{ url_for('main.master_supervisor_list') }}">Cancelar</a>
+        </div>
+    </form>
+</section>
+
+<style>
+    .inline-checkbox-wrap { display: flex; align-items: flex-start; gap: 10px; }
+    .inline-checkbox { margin-top: 4px; transform: scale(1.1); }
+</style>
+{% endblock %}

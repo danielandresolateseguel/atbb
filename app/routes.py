@@ -89,6 +89,7 @@ from app.models import (
     fetch_mobile_related_audits,
     fetch_mobile_storage_locations,
     fetch_mobile_unit_by_id,
+    fetch_mobile_unit_by_any_id,
     fetch_mobile_unit_detail,
     fetch_vehicles_by_employee_code,
     fetch_tnps_responses,
@@ -161,6 +162,35 @@ from app.models import (
     update_vehicle_gnc_expiry,
     update_vehicle_rto_expiry,
     update_vehicle_botiquin_expiry,
+    create_supervisor,
+    update_supervisor,
+    fetch_supervisor_by_id,
+    fetch_supervisors,
+    count_supervisors,
+    fetch_active_supervisors,
+    toggle_supervisor_active,
+    create_vehicle,
+    update_vehicle,
+    fetch_vehicle_by_id,
+    fetch_vehicle_by_plate,
+    toggle_vehicle_active,
+    assign_vehicle_to_technician,
+    create_technician,
+    update_technician,
+    fetch_technician_by_employee_code,
+    toggle_technician_active,
+    fetch_master_technicians,
+    count_master_technicians,
+    parse_unit_plate,
+    fetch_distinct_supervisors,
+    fetch_distinct_centers,
+    fetch_distinct_regions,
+    fetch_distinct_companies,
+    fetch_vehicles,
+    count_vehicles,
+    fetch_technicians,
+    fetch_technician_by_id,
+    fetch_vehicles_by_employee_code,
 )
 from app.spreadsheets import parse_tabular_upload
 
@@ -6685,7 +6715,7 @@ def new_audit():
                 raise ValueError("Debes seleccionar un movil tecnico.")
 
             mobile_unit_id = int(mobile_unit_id_raw)
-            selected_mobile = fetch_mobile_unit_by_id(mobile_unit_id)
+            selected_mobile = fetch_mobile_unit_by_any_id(mobile_unit_id)
             if not selected_mobile:
                 raise ValueError("Debes seleccionar un movil tecnico valido.")
 
@@ -6698,6 +6728,9 @@ def new_audit():
             technician_company_snapshot = (selected_mobile.get("technician_company_name") or "").strip().upper() or None
             technician_supervisor_snapshot = (selected_mobile.get("technician_supervisor_name") or "").strip().upper() or None
             technician_center_snapshot = (selected_mobile.get("technician_center_name") or "").strip().upper() or None
+            is_virtual_mobile = bool(selected_mobile.get("_is_virtual")) or int(selected_mobile.get("id") or 0) < 0
+            if not technician_display_name and technician_employee_code:
+                technician_display_name = technician_employee_code
 
             vehicle_id_raw = request.form.get("vehicle_id", "").strip()
             if not vehicle_id_raw:
@@ -6907,7 +6940,7 @@ def new_audit():
                     "location": request.form["location"].strip().upper(),
                     "address": (request.form.get("address") or "").strip().upper() or None,
                     "installation_type": request.form["installation_type"].strip().upper(),
-                    "mobile_unit_id": mobile_unit_id,
+                    "mobile_unit_id": None if is_virtual_mobile else mobile_unit_id,
                     "technician_id": selected_mobile.get("technician_id"),
                     "vehicle_id": int(vehicle_id_raw),
                     "total_score": total_score,
@@ -7024,3 +7057,550 @@ def new_audit():
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+def _require_admin_and_csrf():
+    if not is_admin():
+        abort(403)
+    if request.method == "POST":
+        token = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
+        if not validate_csrf_token(token):
+            abort(400)
+
+
+def _parse_page_and_size(page_raw, size_raw, default_size=20, max_size=200):
+    try:
+        page = max(1, int(page_raw)) if page_raw else 1
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = max(1, min(max_size, int(size_raw))) if size_raw else default_size
+    except (TypeError, ValueError):
+        page_size = default_size
+    return page, page_size
+
+
+def _pages_window(page, page_count):
+    if page_count <= 9:
+        return list(range(1, page_count + 1))
+    window = [1]
+    if page - 2 > 2:
+        window.append(None)
+    start = max(2, page - 2)
+    end = min(page_count - 1, page + 2)
+    for p in range(start, end + 1):
+        window.append(p)
+    if page + 2 < page_count - 1:
+        window.append(None)
+    window.append(page_count)
+    return window
+
+
+def _normalize_bool(val):
+    if val is None:
+        return False
+    if isinstance(val, bool):
+        return val
+    try:
+        ival = int(val)
+        return ival != 0
+    except (TypeError, ValueError):
+        pass
+    s = str(val).strip().lower()
+    return s in {"1", "true", "yes", "s", "si", "activo", "active"}
+
+
+@main.route("/master")
+def master_index():
+    if not is_admin():
+        abort(403)
+    stats = {
+        "supervisors_total": count_supervisors(),
+        "supervisors_active": count_supervisors(is_active=True),
+        "supervisors_inactive": count_supervisors(is_active=False),
+        "vehicles_total": count_vehicles(),
+        "vehicles_active": count_vehicles(status="activo"),
+        "vehicles_assigned": count_vehicles(assigned="yes"),
+        "technicians_total": count_master_technicians(),
+        "technicians_active": count_master_technicians(is_active=1),
+        "technicians_inactive": count_master_technicians(is_active=0),
+    }
+    return render_template(
+        "master/index.html",
+        active_tab="home",
+        stats=stats,
+        page_class="page-wide",
+    )
+
+
+@main.route("/master/supervisors")
+def master_supervisor_list():
+    if not is_admin():
+        abort(403)
+    q = request.args.get("q", "").strip()
+    is_active_raw = request.args.get("is_active", "").strip()
+    sort_by = request.args.get("sort_by", "").strip()
+    sort_dir = request.args.get("sort_dir", "").strip()
+    page_raw = request.args.get("page", "")
+    page_size_raw = request.args.get("page_size", "")
+    is_active_filter = None
+    if is_active_raw == "1":
+        is_active_filter = True
+    elif is_active_raw == "0":
+        is_active_filter = False
+    page, page_size = _parse_page_and_size(page_raw, page_size_raw)
+    total = count_supervisors(q=q, is_active=is_active_filter)
+    page_count = max(1, (total + page_size - 1) // page_size) if total else 1
+    if page > page_count:
+        page = page_count
+    offset = (page - 1) * page_size
+    rows = fetch_supervisors(q=q, is_active=is_active_filter, limit=page_size, offset=offset)
+    return render_template(
+        "master/supervisor_list.html",
+        active_tab="supervisors",
+        rows=rows,
+        total=total,
+        page=page,
+        page_count=page_count,
+        page_size=page_size,
+        pages_window=_pages_window(page, page_count),
+        has_prev_page=page > 1,
+        has_next_page=(offset + page_size) < total,
+        q=q,
+        is_active=is_active_raw,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page_class="page-wide",
+    )
+
+
+@main.route("/master/supervisors/new", methods=["GET", "POST"])
+def master_supervisor_new():
+    _require_admin_and_csrf()
+    if request.method == "POST":
+        try:
+            name = (request.form.get("name") or "").strip()
+            region = (request.form.get("region") or "").strip()
+            phone = (request.form.get("phone") or "").strip()
+            email = (request.form.get("email") or "").strip()
+            is_active = (request.form.get("is_active") or "1").strip() == "1"
+            create_supervisor(name=name, region=region, phone=phone, email=email, is_active=1 if is_active else 0)
+            flash("Supervisor creado.", "success")
+            return redirect(url_for("main.master_supervisor_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template(
+        "master/supervisor_form.html",
+        active_tab="supervisors",
+        mode="new",
+        row=None,
+    )
+
+
+@main.route("/master/supervisors/<int:supervisor_id>/edit", methods=["GET", "POST"])
+def master_supervisor_edit(supervisor_id):
+    _require_admin_and_csrf()
+    row = fetch_supervisor_by_id(supervisor_id)
+    if not row:
+        abort(404)
+    if request.method == "POST":
+        try:
+            name = (request.form.get("name") or "").strip()
+            region = (request.form.get("region") or "").strip()
+            phone = (request.form.get("phone") or "").strip()
+            email = (request.form.get("email") or "").strip()
+            is_active_raw = (request.form.get("is_active") or "").strip()
+            do_rename = (request.form.get("skip_rename") or "").strip() != "1"
+            include_inactive = (request.form.get("include_inactive_technicians") or "").strip() == "1"
+            is_active = None
+            if is_active_raw == "1":
+                is_active = True
+            elif is_active_raw == "0":
+                is_active = False
+            update_supervisor(
+                supervisor_id,
+                name=name,
+                region=region,
+                phone=phone,
+                email=email,
+                is_active=is_active,
+                rename_technicians=do_rename,
+                only_active_technicians=(not include_inactive),
+            )
+            flash("Supervisor actualizado.", "success")
+            return redirect(url_for("main.master_supervisor_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template(
+        "master/supervisor_form.html",
+        active_tab="supervisors",
+        mode="edit",
+        row=row,
+    )
+
+
+@main.route("/master/supervisors/<int:supervisor_id>/toggle", methods=["POST"])
+def master_supervisor_toggle(supervisor_id):
+    _require_admin_and_csrf()
+    result = toggle_supervisor_active(supervisor_id)
+    if not result:
+        abort(404)
+    state = "activado" if _normalize_bool(result.get("is_active")) else "desactivado"
+    flash(f"Supervisor {state}.", "success")
+    return redirect(request.referrer or url_for("main.master_supervisor_list"))
+
+
+@main.route("/master/vehicles")
+def master_vehicle_list():
+    if not is_admin():
+        abort(403)
+    q = request.args.get("q", "").strip()
+    status = request.args.get("status", "").strip()
+    assigned = request.args.get("assigned", "").strip()
+    sort_by = request.args.get("sort_by", "").strip()
+    sort_dir = request.args.get("sort_dir", "").strip()
+    page_raw = request.args.get("page", "")
+    page_size_raw = request.args.get("page_size", "")
+    page, page_size = _parse_page_and_size(page_raw, page_size_raw)
+    total = count_vehicles(q=q, status=status, assigned=assigned)
+    page_count = max(1, (total + page_size - 1) // page_size) if total else 1
+    if page > page_count:
+        page = page_count
+    offset = (page - 1) * page_size
+    rows = fetch_vehicles(q=q, status=status, assigned=assigned, limit=page_size, offset=offset, sort_by=sort_by, sort_dir=sort_dir)
+    return render_template(
+        "master/vehicle_list.html",
+        active_tab="vehicles",
+        rows=rows,
+        total=total,
+        page=page,
+        page_count=page_count,
+        page_size=page_size,
+        pages_window=_pages_window(page, page_count),
+        has_prev_page=page > 1,
+        has_next_page=(offset + page_size) < total,
+        q=q,
+        status=status,
+        assigned=assigned,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        technicians_options=fetch_technicians(),
+        page_class="page-wide",
+    )
+
+
+@main.route("/master/vehicles/new", methods=["GET", "POST"])
+def master_vehicle_new():
+    _require_admin_and_csrf()
+    if request.method == "POST":
+        try:
+            combined = (request.form.get("combined_unit_plate") or "").strip()
+            unit_field = (request.form.get("unit_number") or "").strip()
+            plate_field = (request.form.get("plate") or "").strip()
+            parsed_unit, parsed_plate = parse_unit_plate(combined)
+            final_unit = unit_field or parsed_unit
+            final_plate = plate_field or parsed_plate
+            brand = (request.form.get("brand") or "").strip()
+            model = (request.form.get("model") or "").strip()
+            year = (request.form.get("year") or "").strip()
+            status = (request.form.get("status") or "activo").strip()
+            odometer = (request.form.get("odometer_km") or "").strip()
+            assigned = (request.form.get("assigned_employee_code") or "").strip()
+            review = (request.form.get("review_date") or "").strip()
+            ins = (request.form.get("insurance_expiry") or "").strip()
+            ext = (request.form.get("extinguisher_expiry") or "").strip()
+            gnc = (request.form.get("gnc_expiry") or "").strip()
+            rto = (request.form.get("rto_expiry") or "").strip()
+            bot = (request.form.get("botiquin_expiry") or "").strip()
+            create_vehicle(
+                plate=final_plate, brand=brand, model=model, year=year, status=status,
+                unit_number=final_unit, odometer_km=odometer, assigned_employee_code=assigned,
+                review_date=review, insurance_expiry=ins, extinguisher_expiry=ext,
+                gnc_expiry=gnc, rto_expiry=rto, botiquin_expiry=bot,
+            )
+            flash("Vehículo creado.", "success")
+            return redirect(url_for("main.master_vehicle_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template(
+        "master/vehicle_form.html",
+        active_tab="vehicles",
+        mode="new",
+        row=None,
+        technicians_options=fetch_technicians(),
+    )
+
+
+@main.route("/master/vehicles/<int:vehicle_id>/edit", methods=["GET", "POST"])
+def master_vehicle_edit(vehicle_id):
+    _require_admin_and_csrf()
+    row = fetch_vehicle_by_id(vehicle_id)
+    if not row:
+        abort(404)
+    if request.method == "POST":
+        try:
+            combined = (request.form.get("combined_unit_plate") or "").strip()
+            unit_field = (request.form.get("unit_number") or "").strip()
+            plate_field = (request.form.get("plate") or "").strip()
+            parsed_unit, parsed_plate = parse_unit_plate(combined)
+            final_unit = unit_field or parsed_unit
+            final_plate = plate_field or parsed_plate
+            brand = (request.form.get("brand") or "").strip()
+            model = (request.form.get("model") or "").strip()
+            year = (request.form.get("year") or "").strip()
+            status = (request.form.get("status") or "").strip()
+            odometer = (request.form.get("odometer_km") or "").strip()
+            assigned = (request.form.get("assigned_employee_code") or "").strip()
+            review = (request.form.get("review_date") or "").strip()
+            ins = (request.form.get("insurance_expiry") or "").strip()
+            ext = (request.form.get("extinguisher_expiry") or "").strip()
+            gnc = (request.form.get("gnc_expiry") or "").strip()
+            rto = (request.form.get("rto_expiry") or "").strip()
+            bot = (request.form.get("botiquin_expiry") or "").strip()
+            update_vehicle(
+                vehicle_id,
+                plate=final_plate if (final_plate or plate_field) else None,
+                brand=brand if brand else None,
+                model=model if model else None,
+                year=year if year else None,
+                status=status if status else None,
+                unit_number=final_unit if (final_unit or unit_field) else None,
+                odometer_km=odometer if odometer else None,
+                assigned_employee_code=assigned if assigned != "" else None,
+                review_date=review if review else None,
+                insurance_expiry=ins if ins else None,
+                extinguisher_expiry=ext if ext else None,
+                gnc_expiry=gnc if gnc else None,
+                rto_expiry=rto if rto else None,
+                botiquin_expiry=bot if bot else None,
+            )
+            if assigned != "":
+                assign_vehicle_to_technician(vehicle_id, assigned)
+            else:
+                assign_vehicle_to_technician(vehicle_id, None)
+            flash("Vehículo actualizado.", "success")
+            return redirect(url_for("main.master_vehicle_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template(
+        "master/vehicle_form.html",
+        active_tab="vehicles",
+        mode="edit",
+        row=row,
+        technicians_options=fetch_technicians(),
+    )
+
+
+@main.route("/master/vehicles/<int:vehicle_id>/toggle", methods=["POST"])
+def master_vehicle_toggle(vehicle_id):
+    _require_admin_and_csrf()
+    result = toggle_vehicle_active(vehicle_id)
+    if not result:
+        abort(404)
+    state = "activado" if (result.get("status") or "").lower() == "activo" else "desactivado"
+    flash(f"Vehículo {state}.", "success")
+    return redirect(request.referrer or url_for("main.master_vehicle_list"))
+
+
+@main.route("/master/vehicles/<int:vehicle_id>/assign", methods=["POST"])
+def master_vehicle_assign(vehicle_id):
+    _require_admin_and_csrf()
+    code = (request.form.get("assigned_employee_code") or "").strip() or None
+    result = assign_vehicle_to_technician(vehicle_id, code)
+    if not result:
+        abort(404)
+    flash("Asignación actualizada.", "success")
+    return redirect(request.referrer or url_for("main.master_vehicle_list"))
+
+
+@main.route("/master/technicians")
+def master_technician_list():
+    if not is_admin():
+        abort(403)
+    q = request.args.get("q", "").strip()
+    region = request.args.get("region", "").strip()
+    supervisor = request.args.get("supervisor", "").strip()
+    center = request.args.get("center", "").strip()
+    company = request.args.get("company", "").strip()
+    is_active = request.args.get("is_active", "").strip()
+    sort_by = request.args.get("sort_by", "").strip()
+    sort_dir = request.args.get("sort_dir", "").strip()
+    page_raw = request.args.get("page", "")
+    page_size_raw = request.args.get("page_size", "")
+    page, page_size = _parse_page_and_size(page_raw, page_size_raw)
+    total = count_master_technicians(q=q, region=region, supervisor=supervisor, center=center, company=company, is_active=is_active if is_active != "" else None)
+    page_count = max(1, (total + page_size - 1) // page_size) if total else 1
+    if page > page_count:
+        page = page_count
+    offset = (page - 1) * page_size
+    rows = fetch_master_technicians(
+        q=q, region=region, supervisor=supervisor, center=center, company=company,
+        is_active=is_active if is_active != "" else None,
+        limit=page_size, offset=offset, sort_by=sort_by, sort_dir=sort_dir,
+    )
+    filter_options = {
+        "regions": fetch_distinct_regions(),
+        "supervisors": fetch_distinct_supervisors(),
+        "centers": fetch_distinct_centers(),
+        "companies": fetch_distinct_companies(),
+    }
+    return render_template(
+        "master/technician_list.html",
+        active_tab="technicians",
+        rows=rows,
+        total=total,
+        page=page,
+        page_count=page_count,
+        page_size=page_size,
+        pages_window=_pages_window(page, page_count),
+        has_prev_page=page > 1,
+        has_next_page=(offset + page_size) < total,
+        q=q,
+        region=region,
+        supervisor=supervisor,
+        center=center,
+        company=company,
+        is_active=is_active,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        filter_options=filter_options,
+        page_class="page-wide",
+    )
+
+
+@main.route("/master/technicians/new", methods=["GET", "POST"])
+def master_technician_new():
+    _require_admin_and_csrf()
+    if request.method == "POST":
+        try:
+            employee_code = (request.form.get("employee_code") or "").strip()
+            name = (request.form.get("name") or "").strip()
+            region = (request.form.get("region") or "").strip()
+            phone = (request.form.get("phone") or "").strip()
+            commune = (request.form.get("commune") or "").strip()
+            team = (request.form.get("team") or "").strip()
+            company_name = (request.form.get("company_name") or "").strip()
+            union_name = (request.form.get("union_name") or "").strip()
+            supervisor_id_raw = (request.form.get("supervisor_id") or "").strip()
+            supervisor_name = (request.form.get("supervisor_name") or "").strip()
+            center_name = (request.form.get("center_name") or "").strip()
+            is_active = (request.form.get("is_active") or "1").strip() == "1"
+            assigned_vehicle_id = (request.form.get("vehicle_id") or "").strip()
+            supervisor_id = int(supervisor_id_raw) if supervisor_id_raw else None
+            technician_id = create_technician(
+                employee_code=employee_code, name=name, region=region,
+                phone=phone, commune=commune, team=team,
+                company_name=company_name, union_name=union_name,
+                supervisor_name=supervisor_name, supervisor_id=supervisor_id,
+                center_name=center_name, is_active=is_active,
+            )
+            if assigned_vehicle_id:
+                try:
+                    assign_vehicle_to_technician(int(assigned_vehicle_id), employee_code)
+                except Exception:
+                    pass
+            flash(f"Técnico {employee_code} creado.", "success")
+            return redirect(url_for("main.master_technician_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    vehicles_options = fetch_vehicles(status="activo", assigned="no", limit=500)
+    return render_template(
+        "master/technician_form.html",
+        active_tab="technicians",
+        mode="new",
+        row=None,
+        supervisors_options=fetch_active_supervisors(),
+        filter_options={
+            "regions": fetch_distinct_regions(),
+            "centers": fetch_distinct_centers(),
+            "companies": fetch_distinct_companies(),
+        },
+        vehicles_options=vehicles_options,
+    )
+
+
+@main.route("/master/technicians/<int:technician_id>/edit", methods=["GET", "POST"])
+def master_technician_edit(technician_id):
+    _require_admin_and_csrf()
+    row = fetch_technician_by_id(technician_id)
+    if not row:
+        abort(404)
+    if request.method == "POST":
+        try:
+            employee_code = (request.form.get("employee_code") or "").strip()
+            name = (request.form.get("name") or "").strip()
+            region = (request.form.get("region") or "").strip()
+            phone = (request.form.get("phone") or "").strip()
+            commune = (request.form.get("commune") or "").strip()
+            team = (request.form.get("team") or "").strip()
+            company_name = (request.form.get("company_name") or "").strip()
+            union_name = (request.form.get("union_name") or "").strip()
+            supervisor_id_raw = (request.form.get("supervisor_id") or "").strip()
+            supervisor_name = (request.form.get("supervisor_name") or "").strip()
+            center_name = (request.form.get("center_name") or "").strip()
+            is_active_raw = (request.form.get("is_active") or "").strip()
+            assigned_vehicle_id = (request.form.get("vehicle_id") or "").strip()
+            clear_vehicle = (request.form.get("clear_vehicle") or "").strip() == "1"
+            supervisor_id = int(supervisor_id_raw) if supervisor_id_raw else None
+            is_active = None
+            if is_active_raw == "1":
+                is_active = True
+            elif is_active_raw == "0":
+                is_active = False
+            update_technician(
+                technician_id,
+                employee_code=employee_code if employee_code else None,
+                name=name if name else None,
+                region=region if region else None,
+                phone=phone if phone else None,
+                commune=commune if commune else None,
+                team=team if team else None,
+                company_name=company_name if company_name else None,
+                union_name=union_name if union_name else None,
+                supervisor_name=supervisor_name if supervisor_name else None,
+                supervisor_id=supervisor_id,
+                center_name=center_name if center_name else None,
+                is_active=is_active,
+            )
+            new_code = employee_code or row.get("employee_code")
+            if assigned_vehicle_id:
+                try:
+                    assign_vehicle_to_technician(int(assigned_vehicle_id), new_code)
+                except Exception:
+                    pass
+            elif clear_vehicle:
+                try:
+                    current_vehicles = fetch_vehicles_by_employee_code(new_code) or []
+                    for v in current_vehicles:
+                        assign_vehicle_to_technician(v["id"], None)
+                except Exception:
+                    pass
+            flash("Técnico actualizado.", "success")
+            return redirect(url_for("main.master_technician_list"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    vehicles_options = fetch_vehicles(limit=500)
+    return render_template(
+        "master/technician_form.html",
+        active_tab="technicians",
+        mode="edit",
+        row=row,
+        supervisors_options=fetch_active_supervisors(),
+        filter_options={
+            "regions": fetch_distinct_regions(),
+            "centers": fetch_distinct_centers(),
+            "companies": fetch_distinct_companies(),
+        },
+        vehicles_options=vehicles_options,
+    )
+
+
+@main.route("/master/technicians/<int:technician_id>/toggle", methods=["POST"])
+def master_technician_toggle(technician_id):
+    _require_admin_and_csrf()
+    result = toggle_technician_active(technician_id)
+    if not result:
+        abort(404)
+    state = "activado" if _normalize_bool(result.get("is_active")) else "desactivado"
+    flash(f"Técnico {state}.", "success")
+    return redirect(request.referrer or url_for("main.master_technician_list"))

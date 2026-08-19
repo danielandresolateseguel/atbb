@@ -122,6 +122,9 @@
                                 {% if can_create_users %}
                                     <a role="menuitem" href="{{ url_for('main.users_new') }}">Crear usuario</a>
                                 {% endif %}
+                                {% if is_admin %}
+                                    <a role="menuitem" href="{{ url_for('main.master_index') }}">Administrar Datos</a>
+                                {% endif %}
                                 <form class="logout-form" method="post" action="{{ url_for('main.logout') }}">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="logout-button" role="menuitem" type="submit">Cerrar sesión</button>
