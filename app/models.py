@@ -11453,9 +11453,9 @@ def fetch_technician_distribution_ranking(technician_id, filters=None, auditor_u
         scopes.append(("Región", "region", region))
     scopes.append(("Empresa", "company_name", (tech_row.get("company_name") if isinstance(tech_row, dict) else getattr(tech_row, "company_name", None)) or ""))
     kpis = [
-        ("audit_avg_score", "Score Audit promedio", "score", "AVG(audits.total_score)"),
-        ("qc_avg_score", "Score QC promedio", "score", "AVG(qc_sessions.total_score)"),
-        ("avg_nps", "NPS promedio", "nps", "AVG(tnps_responses.score)"),
+        ("audit_avg_score", "Score Audit", "score", "AVG(audits.total_score)"),
+        ("qc_avg_score", "Score QC", "score", "AVG(qc_sessions.total_score)"),
+        ("avg_nps", "NPS", "nps", "AVG(tnps_responses.score)"),
     ]
     out_rows = []
     db = get_db()

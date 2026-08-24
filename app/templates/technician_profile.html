@@ -819,7 +819,7 @@
                     <div class="dist-kpi">
                         <span class="dist-kpi-label">{{ row.kpi_label }}</span>
                         <strong class="dist-kpi-val">
-                            {% if row.kpi_key == 'audit_approval_rate' or row.kpi_key == 'qc_approval_rate' %}
+                            {% if row.kpi_key == 'audit_avg_score' or row.kpi_key == 'qc_avg_score' or row.kpi_key == 'audit_approval_rate' or row.kpi_key == 'qc_approval_rate' %}
                                 {{ (row.technician_value or 0) | round(1) }}%
                             {% elif row.kpi_key == 'avg_nps' %}
                                 {{ (row.technician_value or 0) | round(1) }}
@@ -830,19 +830,25 @@
                     </div>
                     <div class="dist-peer">
                         <span class="meta">Peer avg</span>
-                        <strong class="dist-peer-val">{{ (row.peer_avg or 0) | round(1) }}</strong>
+                        <strong class="dist-peer-val">
+                            {% if row.kpi_key == 'audit_avg_score' or row.kpi_key == 'qc_avg_score' or row.kpi_key == 'audit_approval_rate' or row.kpi_key == 'qc_approval_rate' %}
+                                {{ (row.peer_avg or 0) | round(1) }}%
+                            {% else %}
+                                {{ (row.peer_avg or 0) | round(1) }}
+                            {% endif %}
+                        </strong>
                         {% if row.delta is not none %}
                             <span class="dist-delta">
-                                {% if row.delta > 0 %}<span class="pill-ok-inline">▲ {{ row.delta }}</span>
-                                {% elif row.delta < 0 %}<span class="pill-danger-inline">▼ {{ row.delta | abs }}</span>
-                                {% else %}<span class="pill-warn-inline">= 0</span>{% endif %}
+                                {% if row.delta > 0 %}<span class="pill-ok-inline">▲ {{ row.delta }}{% if row.kpi_key == 'audit_avg_score' or row.kpi_key == 'qc_avg_score' or row.kpi_key == 'audit_approval_rate' or row.kpi_key == 'qc_approval_rate' %}%{% endif %}</span>
+                                {% elif row.delta < 0 %}<span class="pill-danger-inline">▼ {{ row.delta | abs }}{% if row.kpi_key == 'audit_avg_score' or row.kpi_key == 'qc_avg_score' or row.kpi_key == 'audit_approval_rate' or row.kpi_key == 'qc_approval_rate' %}%{% endif %}</span>
+                                {% else %}<span class="pill-warn-inline">= 0{% if row.kpi_key == 'audit_avg_score' or row.kpi_key == 'qc_avg_score' or row.kpi_key == 'audit_approval_rate' or row.kpi_key == 'qc_approval_rate' %}%{% endif %}</span>{% endif %}
                             </span>
                         {% endif %}
                     </div>
                     <div class="dist-rank">
                         {% if row.rank and row.total_peers %}
                             <span class="rank-num">#{{ row.rank }}</span>
-                            <span class="meta rank-denom"> / {{ row.total_peers }}</span>
+                            <span class="meta rank-denom">·{{ row.total_peers }}</span>
                         {% else %}
                             <span class="meta">-</span>
                         {% endif %}
