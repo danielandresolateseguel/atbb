@@ -814,7 +814,7 @@
                 <div class="dist-row">
                     <div class="dist-scope">
                         <span class="dist-scope-label">{{ row.scope_label }}</span>
-                        <span class="dist-scope-value">{{ row.scope_value }}</span>
+                        <span class="dist-scope-value" title="{{ row.scope_value }}">{{ row.scope_value }}</span>
                     </div>
                     <div class="dist-kpi">
                         <span class="dist-kpi-label">{{ row.kpi_label }}</span>
@@ -830,17 +830,21 @@
                     </div>
                     <div class="dist-peer">
                         <span class="meta">Peer avg</span>
-                        <strong>{{ (row.peer_avg or 0) | round(1) }}</strong>
+                        <strong class="dist-peer-val">{{ (row.peer_avg or 0) | round(1) }}</strong>
                         {% if row.delta is not none %}
-                            {% if row.delta > 0 %}<span class="pill-ok-inline">▲ {{ row.delta }}</span>
-                            {% elif row.delta < 0 %}<span class="pill-danger-inline">▼ {{ row.delta | abs }}</span>
-                            {% else %}<span class="pill-warn-inline">= 0</span>{% endif %}
+                            <span class="dist-delta">
+                                {% if row.delta > 0 %}<span class="pill-ok-inline">▲ {{ row.delta }}</span>
+                                {% elif row.delta < 0 %}<span class="pill-danger-inline">▼ {{ row.delta | abs }}</span>
+                                {% else %}<span class="pill-warn-inline">= 0</span>{% endif %}
+                            </span>
                         {% endif %}
                     </div>
                     <div class="dist-rank">
                         {% if row.rank and row.total_peers %}
                             <span class="rank-num">#{{ row.rank }}</span>
-                            <span class="meta"> / {{ row.total_peers }}</span>
+                            <span class="meta rank-denom"> / {{ row.total_peers }}</span>
+                        {% else %}
+                            <span class="meta">-</span>
                         {% endif %}
                     </div>
                     <div class="dist-quintile">
@@ -864,7 +868,7 @@
     <div class="section-heading flat">
         <div>
             <p class="eyebrow">Etapa 4 · 4.3 / 3</p>
-            <h3>Hallazgos trackeados por ítem · Tendencia últimos {{ findings_trend.months | length or 6 }} meses</h3>
+            <h3>Hallazgos trackeados por ítem · Tendencia últimos 6 meses</h3>
             <p class="meta" style="margin:4px 0 0;">Semáforo: 🔴 = subió 2 meses seguidos (empeora) · 🟡 sin tendencia · 🟢 = bajó último mes</p>
         </div>
     </div>
@@ -1103,31 +1107,81 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px 16px;
     }
-    @media (max-width: 1000px) { .dist-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1100px) { .dist-grid { grid-template-columns: 1fr; } }
     .dist-row {
         display: grid;
-        grid-template-columns: 1.1fr 1fr 1.3fr 0.7fr 1fr;
-        align-items: center;
-        gap: 10px;
-        padding: 8px 10px;
+        grid-template-columns: 1.35fr 1.1fr 1.5fr;
+        grid-template-rows: auto auto;
+        grid-template-areas:
+            "scope kpi peer"
+            "rank  rank quintile";
+        align-items: start;
+        gap: 8px 14px;
+        padding: 12px 14px;
         border: 1px solid #E5E7EB;
-        border-radius: 10px;
+        border-radius: 12px;
         background: #FAFBFC;
     }
     @media (max-width: 700px) {
-        .dist-row { grid-template-columns: 1fr 1fr; }
-        .dist-quintile { grid-column: 1 / -1; }
+        .dist-row {
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "scope scope"
+                "kpi peer"
+                "rank quintile";
+        }
     }
-    .dist-scope { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-    .dist-scope-label { font-size: 0.75rem; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px; }
-    .dist-scope-value { font-weight: 600; color: #1E3A8A; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .dist-kpi { display: flex; flex-direction: column; gap: 2px; }
-    .dist-kpi-label { font-size: 0.8rem; color: #374151; }
-    .dist-kpi-val { font-size: 1.05rem; color: #111827; }
-    .dist-peer { display: flex; flex-direction: column; gap: 4px; }
-    .dist-rank { display: flex; align-items: baseline; gap: 3px; }
-    .rank-num { font-weight: 700; color: #1E3A8A; font-size: 1rem; }
-    .dist-quintile { display: flex; align-items: center; justify-content: flex-end; }
+    .dist-scope {
+        grid-area: scope;
+        display: flex; flex-direction: column; gap: 3px; min-width: 0;
+    }
+    .dist-scope-label {
+        font-size: 0.73rem;
+        color: #6B7280;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        font-weight: 600;
+    }
+    .dist-scope-value {
+        font-weight: 700;
+        color: #1E3A8A;
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+    }
+    .dist-kpi {
+        grid-area: kpi;
+        display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    }
+    .dist-kpi-label {
+        font-size: 0.8rem; color: #374151;
+    }
+    .dist-kpi-val {
+        font-size: 1.25rem; color: #111827; font-weight: 800; line-height: 1.1;
+    }
+    .dist-peer {
+        grid-area: peer;
+        display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start;
+    }
+    .dist-peer-val {
+        color: #111827; font-size: 1rem;
+    }
+    .dist-delta { margin-top: 2px; }
+    .dist-rank {
+        grid-area: rank;
+        display: flex; align-items: baseline; gap: 4px;
+        min-width: 0;
+    }
+    .rank-num { font-weight: 800; color: #1E3A8A; font-size: 1.1rem; }
+    .rank-denom { font-size: 0.85rem; }
+    .dist-quintile {
+        grid-area: quintile;
+        display: flex; align-items: center;
+        justify-content: flex-end;
+        min-width: 0;
+    }
     .quintile {
         padding: 3px 9px; border-radius: 8px; font-weight: 700; font-size: 0.78rem;
         border: 1px solid transparent;

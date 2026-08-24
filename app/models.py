@@ -11635,9 +11635,29 @@ def fetch_technician_findings_trend(technician_id, filters=None, limit_months=6)
         qc_rows = db.execute(qc_sql, (tid,) + tuple(range_params[(len(range_params)//4) : 2*(len(range_params)//4)])).fetchall()
     except Exception:
         qc_rows = []
-    def _rows_to_findings(rows_in):
+
+    def _last_n_month_keys(n):
+        out = []
+        try:
+            from datetime import date
+            anchor = date.today().replace(day=1)
+            for _i in range(max(1, int(n))):
+                y = anchor.year
+                m = anchor.month
+                out.append("%04d-%02d" % (y, m))
+                if anchor.month == 1:
+                    anchor = anchor.replace(year=anchor.year - 1, month=12)
+                else:
+                    anchor = anchor.replace(month=anchor.month - 1)
+        except Exception:
+            return []
+        out.reverse()
+        return out
+
+    expected_months = _last_n_month_keys(limit_months)
+
+    def _rows_to_findings(rows_in, months_axis):
         by_item = {}
-        months_set = set()
         for r in rows_in:
             pk = r["period_key"] if isinstance(r, dict) else r[0]
             label = r["item_label"] if isinstance(r, dict) else r[1]
@@ -11646,10 +11666,8 @@ def fetch_technician_findings_trend(technician_id, filters=None, limit_months=6)
                 cnt = int(cnt)
             except Exception:
                 cnt = 0
-            months_set.add(pk)
             by_item.setdefault(label, {})[pk] = cnt
-        months = sorted(months_set, reverse=True)[:limit_months]
-        months = sorted(months)
+        months = list(months_axis) if months_axis else []
         result = []
         for item, monthly in by_item.items():
             total = sum(monthly.values())
@@ -11685,19 +11703,29 @@ def fetch_technician_findings_trend(technician_id, filters=None, limit_months=6)
                 "item": item,
                 "total": total,
                 "max_count": max_cnt,
-                "series_months": months,
+                "series_months": list(months),
                 "series_counts": [s["count"] for s in series],
                 "trend": trend,
             })
         result.sort(key=lambda x: (-x["total"], -x["max_count"]))
         return result[:10], months
-    audit_findings, aud_months = _rows_to_findings(audit_rows)
-    qc_findings, qc_months = _rows_to_findings(qc_rows)
-    all_months = sorted(set(aud_months + qc_months))
+    audit_findings, aud_months = _rows_to_findings(audit_rows, expected_months)
+    qc_findings, qc_months = _rows_to_findings(qc_rows, expected_months)
+    all_months = sorted(set((aud_months or []) + (qc_months or [])) + list(expected_months or []), key=lambda x: x)
+    seen = set()
+    ordered_all = []
+    for m in (list(expected_months) + sorted(set((aud_months or []) + (qc_months or [])))):
+        if m in seen:
+            continue
+        seen.add(m)
+        ordered_all.append(m)
+    ordered_all.sort()
+    if not ordered_all:
+        ordered_all = list(expected_months or [])
     return {
         "audit_findings": audit_findings,
         "qc_findings": qc_findings,
-        "months": all_months[-limit_months:],
+        "months": ordered_all[-limit_months:] if ordered_all else [],
         "today": _fmt_today_iso(),
     }
 
