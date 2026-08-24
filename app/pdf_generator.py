@@ -358,8 +358,8 @@ class TechnProfilePdf:
         q = hist.get("quality") or {}
         peaks = hist.get("peaks") or {}
         streaks = hist.get("streaks") or {}
+        util_w = WIDTH - LEFT_MARGIN - RIGHT_MARGIN
 
-        # Antigüedad
         first = age.get("first") or "-"
         last = age.get("last") or "-"
         years = age.get("years")
@@ -368,10 +368,19 @@ class TechnProfilePdf:
             ant = f"{int(years)}a {int(months)}m"
         else:
             ant = age.get("label") or "-"
+        label_w1 = 3.3 * cm
+        val_w1 = (util_w - 2 * label_w1 - 2.7 * cm) / 2.0
+        label_w3 = 2.7 * cm
+        val_w3 = util_w - label_w1 - val_w1 - label_w1 - val_w1 - label_w3
+        if val_w3 < 2.2 * cm:
+            val_w1 = 3.3 * cm
+            val_w3 = util_w - 3.3 - 3.3 - 3.3 - 3.3 - 2.7
+            val_w3 = max(val_w3, 2.0) * cm
+            val_w1 = 3.3 * cm
         row1 = [
             ["Primera actividad", _p(str(first), S["tdb"]), "Última actividad", _p(str(last), S["tdb"]), "Antigüedad", _p(ant, S["tdb"])],
         ]
-        t_ant = Table(row1, colWidths=[2.8*cm, 4.5*cm, 2.8*cm, 3.2*cm, 2.4*cm, 2.0*cm])
+        t_ant = Table(row1, colWidths=[label_w1, val_w1, label_w1, val_w1, label_w3, util_w - label_w1 - val_w1 - label_w1 - val_w1 - label_w3], hAlign="LEFT")
         t_ant.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (0, 0), NAVY_SOFT),
             ("BACKGROUND", (2, 0), (2, 0), NAVY_SOFT),
@@ -379,16 +388,17 @@ class TechnProfilePdf:
             ("FONTNAME", (0, 0), (0, -1), _FONT_BOLD),
             ("FONTNAME", (2, 0), (2, -1), _FONT_BOLD),
             ("FONTNAME", (4, 0), (4, -1), _FONT_BOLD),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("GRID", (0, 0), (-1, -1), 0.4, GREY_200),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
         story.append(t_ant)
         story.append(Spacer(1, 5))
 
-        # Volúmenes históricos
         story.append(_p("Volúmenes · Todo histórico", S["h3"]))
         def _vol(label, key_val, avg_key):
             total = vols.get(key_val) or 0
@@ -396,7 +406,7 @@ class TechnProfilePdf:
             return [
                 _p(label, S["tdb"]),
                 _p(_fmt_num(total, 0), S["tdbr"]),
-                _p(f"Prom/mes: {_fmt_num(avg)}", S["tdr"]),
+                _p(_fmt_num(avg), S["tdr"]),
             ]
         rows_vol = [
             [_p("Indicador", S["th"]), _p("Total", S["th"]), _p("Promedio / mes", S["th"])],
@@ -405,16 +415,19 @@ class TechnProfilePdf:
             _vol("Service", "service_total", "service"),
             _vol("NPS (respuestas)", "nps_total", "nps"),
         ]
-        tv = Table(rows_vol, colWidths=[5.2*cm, 3.2*cm, 5.2*cm])
+        w_label_v = 6.0 * cm
+        w_total_v = 3.5 * cm
+        w_avg_v = util_w - w_label_v - w_total_v
+        tv = Table(rows_vol, colWidths=[w_label_v, w_total_v, w_avg_v], hAlign="LEFT")
         tv.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), NAVY),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("GRID", (0, 0), (-1, -1), 0.4, GREY_200),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GREY_50]),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
         story.append(tv)
@@ -434,46 +447,62 @@ class TechnProfilePdf:
             _kv("Críticas Audit (total)", q.get("audit_critical_count"), False),
             _kv("% Críticas Audit", q.get("audit_critical_rate")),
         ]
-        tq = Table(rows_q, colWidths=[6.2*cm, 4.2*cm])
+        w_label_q = 7.0 * cm
+        w_val_q = util_w - w_label_q
+        tq = Table(rows_q, colWidths=[w_label_q, w_val_q], hAlign="LEFT")
         tq.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), NAVY),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("GRID", (0, 0), (-1, -1), 0.4, GREY_200),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GREY_50]),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]))
         story.append(tq)
         story.append(Spacer(1, 3))
 
-        # Picos + Rachas
         story.append(_p("Picos y rachas", S["h3"]))
         def _peak(v):
             if not v:
                 return "-"
             try:
-                return f"{v.get('month')}: {v.get('count')}"
+                m = v.get("month")
+                c = v.get("count")
+                if not m or m == "None" or str(m).lower() == "none":
+                    return "-"
+                if c is None or str(c).lower() == "none":
+                    return str(m)
+                return f"{m} · {c}"
             except Exception:
-                return str(v)
+                s = str(v)
+                if s.strip() in ("", "None", "None: None"):
+                    return "-"
+                return s
         rows_pr = [
-            [_p("Pico Auditorías mes", S["tdb"]), _p(_peak(peaks.get("audit")), S["td"]),
-             _p("Racha sin actividad (días)", S["tdb"]), _p(_fmt_num(streaks.get("days_since_last_activity"), 0), S["td"])],
-            [_p("Pico QC mes", S["tdb"]), _p(_peak(peaks.get("qc")), S["td"]),
-             _p("Días desde últ. Auditoría", S["tdb"]), _p(_fmt_num(streaks.get("days_since_last_audit"), 0), S["td"])],
-            [_p("Pico Service mes", S["tdb"]), _p(_peak(peaks.get("service")), S["td"]),
-             _p("Días desde últ. QC", S["tdb"]), _p(_fmt_num(streaks.get("days_since_last_qc"), 0), S["td"])],
+            [_p("Pico Auditorías", S["tdb"]), _p(_peak(peaks.get("audit")), S["td"]),
+             _p("Racha sin actividad (días)", S["tdb"]), _p(_fmt_num(streaks.get("days_since_last_activity"), 0), S["tdr"])],
+            [_p("Pico QC", S["tdb"]), _p(_peak(peaks.get("qc")), S["td"]),
+             _p("Días desde últ. Auditoría", S["tdb"]), _p(_fmt_num(streaks.get("days_since_last_audit"), 0), S["tdr"])],
+            [_p("Pico Service", S["tdb"]), _p(_peak(peaks.get("service")), S["td"]),
+             _p("Días desde últ. QC", S["tdb"]), _p(_fmt_num(streaks.get("days_since_last_qc"), 0), S["tdr"])],
         ]
-        tpr = Table(rows_pr, colWidths=[3.6*cm, 4.2*cm, 3.6*cm, 4.6*cm])
+        lab_pr1 = 3.4 * cm
+        val_pr1 = 4.2 * cm
+        lab_pr2 = 4.6 * cm
+        val_pr2 = util_w - lab_pr1 - val_pr1 - lab_pr2
+        tpr = Table(rows_pr, colWidths=[lab_pr1, val_pr1, lab_pr2, max(val_pr2, 2.5)*cm], hAlign="LEFT")
         tpr.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (0, -1), NAVY_SOFT),
             ("BACKGROUND", (2, 0), (2, -1), NAVY_SOFT),
             ("GRID", (0, 0), (-1, -1), 0.4, GREY_200),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
         story.append(tpr)
         return story
