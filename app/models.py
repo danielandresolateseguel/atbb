@@ -11730,6 +11730,135 @@ def fetch_technician_findings_trend(technician_id, filters=None, limit_months=6)
     }
 
 
+def fetch_technician_pdf_data(technician_id, filters=None, auditor_user_id=None):
+    if not technician_id:
+        return None
+    technician = fetch_technician_by_id(technician_id)
+    if not technician:
+        return None
+
+    def _safe(cb, default=None):
+        try:
+            out = cb()
+        except Exception:
+            out = None
+        if default is None:
+            return out
+        if isinstance(default, dict) and (out is None or not isinstance(out, dict)):
+            return dict(default)
+        if isinstance(default, list) and (out is None or not isinstance(out, list)):
+            return list(default)
+        return out
+
+    summary = _safe(lambda: fetch_technician_profile_summary(technician_id, filters=filters, auditor_user_id=auditor_user_id), {}) or {}
+    benchmarks = _safe(lambda: fetch_technician_profile_benchmarks(technician_id, filters=filters, auditor_user_id=auditor_user_id), {}) or {}
+    recent_audits = _safe(lambda: fetch_technician_recent_audits(technician_id, filters=filters, limit=8), []) or []
+    recent_qc = _safe(lambda: fetch_technician_recent_qc(technician_id, filters=filters, limit=8), []) or []
+    recent_service = _safe(lambda: fetch_technician_recent_service(technician_id, filters=filters, limit=8), []) or []
+    monthly_series = _safe(lambda: fetch_technician_monthly_series(technician_id, filters=filters, granularity="month", limit=18), []) or []
+    pvp = _safe(lambda: fetch_technician_period_over_period(technician_id, filters=filters), {}) or {}
+    historic = _safe(lambda: fetch_technician_historical_profile(technician_id, filters=filters), {}) or {}
+    vehicle = _safe(lambda: lookup_vehicle_for_technician(technician), {}) or {}
+    distribution = _safe(lambda: fetch_technician_distribution_ranking(technician_id, filters=filters, auditor_user_id=auditor_user_id), {}) or {}
+    findings_trend = _safe(lambda: fetch_technician_findings_trend(technician_id, filters=filters, limit_months=6), {}) or {}
+
+    historic = historic or {}
+    historic.setdefault("today", "")
+    historic.setdefault("age", {})
+    historic["age"].setdefault("first", "")
+    historic["age"].setdefault("last", "")
+    historic["age"].setdefault("label", "")
+    historic["age"].setdefault("total_days", None)
+    historic["age"].setdefault("total_months", None)
+    historic["age"].setdefault("years", None)
+    historic["age"].setdefault("months", None)
+    historic.setdefault("volumes", {})
+    historic["volumes"].setdefault("audits_total", 0)
+    historic["volumes"].setdefault("qc_total", 0)
+    historic["volumes"].setdefault("service_total", 0)
+    historic["volumes"].setdefault("nps_total", 0)
+    historic["volumes"].setdefault("avg_per_month", {})
+    historic["volumes"]["avg_per_month"].setdefault("audits", 0)
+    historic["volumes"]["avg_per_month"].setdefault("qc", 0)
+    historic["volumes"]["avg_per_month"].setdefault("service", 0)
+    historic["volumes"]["avg_per_month"].setdefault("nps", 0)
+    historic.setdefault("quality", {})
+    historic["quality"].setdefault("audit_avg_score", None)
+    historic["quality"].setdefault("qc_avg_score", None)
+    historic["quality"].setdefault("service_avg_score", None)
+    historic["quality"].setdefault("avg_nps", None)
+    historic["quality"].setdefault("audit_approval_rate", 0)
+    historic["quality"].setdefault("qc_approval_rate", 0)
+    historic["quality"].setdefault("audit_critical_count", 0)
+    historic["quality"].setdefault("audit_critical_rate", 0)
+    historic["quality"].setdefault("audit_rejected_count", 0)
+    historic.setdefault("peaks", {})
+    historic["peaks"].setdefault("audit", None)
+    historic["peaks"].setdefault("qc", None)
+    historic["peaks"].setdefault("service", None)
+    historic["peaks"].setdefault("worst_audit_approval", None)
+    historic["peaks"].setdefault("worst_qc_approval", None)
+    historic.setdefault("streaks", {})
+    historic["streaks"].setdefault("days_since_last_activity", None)
+    historic["streaks"].setdefault("days_since_last_audit", None)
+    historic["streaks"].setdefault("days_since_last_qc", None)
+    historic["streaks"].setdefault("days_since_last_service", None)
+    historic["streaks"].setdefault("last_audit_date", "")
+    historic["streaks"].setdefault("last_qc_date", "")
+    historic["streaks"].setdefault("last_service_date", "")
+    historic.setdefault("monthly_series", [])
+    historic.setdefault("lifetime_summary", {})
+
+    pvp = pvp or {}
+    pvp.setdefault("rows", [])
+    pvp.setdefault("previous_range_label", "")
+    pvp.setdefault("current_range_label", "")
+
+    summary = summary or {}
+    summary.setdefault("top_audit_no_cumple_items", [])
+    summary.setdefault("top_qc_nc_mayor_items", [])
+
+    vehicle = vehicle or {}
+    vehicle.setdefault("truck_number", None)
+    vehicle.setdefault("plate", None)
+    vehicle.setdefault("source", None)
+
+    distribution = distribution or {}
+    distribution.setdefault("scope_rows", [])
+    distribution.setdefault("peer_count", 0)
+    distribution.setdefault("scope_label", "")
+
+    findings_trend = findings_trend or {}
+    findings_trend.setdefault("audit_findings", [])
+    findings_trend.setdefault("qc_findings", [])
+    findings_trend.setdefault("months", [])
+    findings_trend.setdefault("today", "")
+
+    last_activity = (
+        (summary or {}).get("last_audit_date")
+        or (summary or {}).get("last_qc_date")
+        or (summary or {}).get("last_service_date")
+        or ""
+    )
+
+    return {
+        "technician": dict(technician) if not isinstance(technician, dict) else technician,
+        "filters": dict(filters or {}),
+        "summary": summary or {},
+        "benchmarks": benchmarks or {},
+        "recent_audits": recent_audits,
+        "recent_qc": recent_qc,
+        "recent_service": recent_service,
+        "monthly_series": monthly_series,
+        "pvp": pvp or {},
+        "historic": historic or {},
+        "vehicle": vehicle or {},
+        "distribution": distribution or {},
+        "findings_trend": findings_trend or {},
+        "last_activity": last_activity or "",
+    }
+
+
 def ensure_supervisor(name):
     cleaned = " ".join((name or "").strip().split())
     if not cleaned:

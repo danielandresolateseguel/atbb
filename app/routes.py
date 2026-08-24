@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime, timedelta
 
-from flask import Blueprint, abort, current_app, flash, g, jsonify, make_response, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, g, jsonify, make_response, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -120,6 +120,7 @@ from app.models import (
     fetch_technician_findings_trend,
     lookup_vehicle_for_technician,
     load_truck_plate_map,
+    fetch_technician_pdf_data,
     fetch_distinct_supervisors,
     fetch_distinct_centers,
     fetch_distinct_regions,
@@ -4996,6 +4997,67 @@ def technician_profile(technician_id):
         last_activity=last_any or "",
         page_class="page-wide",
     )
+
+
+@main.route("/technicians/<int:technician_id>/pdf")
+def technician_profile_pdf(technician_id):
+    if not can_view_reports():
+        abort(403)
+
+    user = current_user()
+    auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
+    supervisor_scope_names = current_supervisor_scope_names()
+
+    technician = fetch_technician_by_id(technician_id)
+    if not technician:
+        abort(404)
+
+    if supervisor_scope_names:
+        allowed_names = {s.upper().strip() for s in supervisor_scope_names if s}
+        tech_supervisor = (technician.get("supervisor_name") or "").upper().strip() if isinstance(technician, dict) else (getattr(technician, "supervisor_name", None) or "").upper().strip()
+        if allowed_names and tech_supervisor not in allowed_names:
+            abort(403)
+
+    default_from, default_to = _default_technician_profile_range()
+    all_time_flag = request.args.get("all_time", "").strip() == "1"
+    if all_time_flag:
+        from_date = ""
+        to_date = ""
+    else:
+        from_date_raw = request.args.get("from_date", "").strip()
+        to_date_raw = request.args.get("to_date", "").strip()
+        has_any = any(k in request.args for k in ("from_date", "to_date", "all_time"))
+        if not has_any:
+            from_date = default_from
+            to_date = default_to
+        else:
+            from_date = from_date_raw
+            to_date = to_date_raw
+
+    filters = {"from_date": from_date, "to_date": to_date, "all_time": all_time_flag}
+
+    data = None
+    try:
+        data = fetch_technician_pdf_data(technician_id, filters=filters, auditor_user_id=auditor_user_id)
+    except Exception as exc:
+        current_app.logger.error("PDF fetch_technician_pdf_data falló: %s", exc)
+
+    if not data:
+        abort(404)
+
+    try:
+        from app.pdf_generator import build_technician_pdf
+        emitter = (f"{user.get('full_name') or user.get('username') or 'Usuario'}" if user else "Sistema")
+        buf, filename = build_technician_pdf(data, emitter_label=emitter)
+        return send_file(
+            buf,
+            mimetype="application/pdf",
+            as_attachment=False,
+            download_name=filename,
+        )
+    except Exception as exc:
+        current_app.logger.error("PDF build falló technician_id=%s: %s", technician_id, exc)
+        abort(500)
 
 
 @main.route("/reports/technicians")
