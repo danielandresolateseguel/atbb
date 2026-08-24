@@ -116,6 +116,10 @@ from app.models import (
     fetch_technician_monthly_series,
     fetch_technician_period_over_period,
     fetch_technician_historical_profile,
+    fetch_technician_distribution_ranking,
+    fetch_technician_findings_trend,
+    lookup_vehicle_for_technician,
+    load_truck_plate_map,
     fetch_distinct_supervisors,
     fetch_distinct_centers,
     fetch_distinct_regions,
@@ -4868,6 +4872,18 @@ def technician_profile(technician_id):
         historic = fetch_technician_historical_profile(technician_id, filters=filters) or {}
     except Exception:
         historic = {}
+    try:
+        vehicle = lookup_vehicle_for_technician(technician) or {}
+    except Exception:
+        vehicle = {}
+    try:
+        distribution = fetch_technician_distribution_ranking(technician_id, filters=filters, auditor_user_id=auditor_user_id) or {}
+    except Exception:
+        distribution = {}
+    try:
+        findings_trend = fetch_technician_findings_trend(technician_id, filters=filters, limit_months=6) or {}
+    except Exception:
+        findings_trend = {}
 
     if not isinstance(summary, dict):
         summary = {}
@@ -4934,6 +4950,23 @@ def technician_profile(technician_id):
     summary.setdefault("top_audit_no_cumple_items", [])
     summary.setdefault("top_qc_nc_mayor_items", [])
 
+    if not isinstance(vehicle, dict):
+        vehicle = {}
+    vehicle.setdefault("truck_number", None)
+    vehicle.setdefault("plate", None)
+    vehicle.setdefault("source", None)
+    if not isinstance(distribution, dict):
+        distribution = {}
+    distribution.setdefault("scope_rows", [])
+    distribution.setdefault("peer_count", 0)
+    distribution.setdefault("scope_label", "")
+    if not isinstance(findings_trend, dict):
+        findings_trend = {}
+    findings_trend.setdefault("audit_findings", [])
+    findings_trend.setdefault("qc_findings", [])
+    findings_trend.setdefault("months", [])
+    findings_trend.setdefault("today", "")
+
     show_from = from_date if from_date else default_from
     show_to = to_date if to_date else default_to
 
@@ -4957,6 +4990,9 @@ def technician_profile(technician_id):
         monthly_series=monthly_series,
         pvp=pvp or {},
         historic=historic or {},
+        vehicle=vehicle or {},
+        distribution=distribution or {},
+        findings_trend=findings_trend or {},
         last_activity=last_any or "",
         page_class="page-wide",
     )

@@ -1,6 +1,8 @@
 import sqlite3
 import unicodedata
 import json
+import csv
+import os
 from datetime import datetime, timedelta, timezone
 
 from flask import current_app, g
@@ -11312,6 +11314,392 @@ def _fmt_today_iso():
         return datetime.today().strftime("%Y-%m-%d")
     except Exception:
         return ""
+
+
+_TRUCK_PLATE_CSV_CACHE = None
+_TRUCK_PLATE_CSV_MTIME = None
+
+
+def _project_root_dir():
+    try:
+        base = os.path.dirname(os.path.abspath(current_app.root_path))
+        if os.path.basename(base) in ("SoftBerardi",):
+            return base
+        return current_app.root_path
+    except Exception:
+        return os.path.abspath(".")
+
+
+def load_truck_plate_map():
+    global _TRUCK_PLATE_CSV_CACHE, _TRUCK_PLATE_CSV_MTIME
+    candidates = []
+    try:
+        candidates.append(os.path.join(_project_root_dir(), "..", "archivo de datos", "nro_camioneta_patente.csv"))
+    except Exception:
+        pass
+    try:
+        candidates.append(os.path.join(_project_root_dir(), "_external", "archivo de datos", "nro_camioneta_patente.csv"))
+    except Exception:
+        pass
+    try:
+        candidates.append(os.path.join(os.path.dirname(_project_root_dir()), "archivo de datos", "nro_camioneta_patente.csv"))
+    except Exception:
+        pass
+    candidates.append(os.path.abspath(os.path.join(os.path.dirname(_project_root_dir()), "archivo de datos", "nro_camioneta_patente.csv")))
+    path = None
+    mtime = None
+    for c in candidates:
+        try:
+            if os.path.isfile(c):
+                path = c
+                mtime = os.path.getmtime(c)
+                break
+        except Exception:
+            continue
+    if path is None:
+        return {}
+    if _TRUCK_PLATE_CSV_CACHE is not None and _TRUCK_PLATE_CSV_MTIME is not None and _TRUCK_PLATE_CSV_MTIME == mtime:
+        return _TRUCK_PLATE_CSV_CACHE
+    result = {}
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.reader(f)
+            header_seen = False
+            for row in reader:
+                if not row:
+                    continue
+                raw = (row[0] or "").strip()
+                if not raw:
+                    continue
+                if not header_seen and raw.lower() in ("nro_camioneta_patente", "nro camioneta patente", "legajo_patente", "legajo patente"):
+                    header_seen = True
+                    continue
+                header_seen = True
+                if " - " in raw:
+                    left, right = raw.split(" - ", 1)
+                elif "-" in raw and len(raw) < 30:
+                    left, right = raw.split("-", 1)
+                else:
+                    continue
+                legajo = (left or "").strip()
+                plate = (right or "").strip().upper()
+                if not legajo or not plate:
+                    continue
+                try:
+                    legajo_norm = str(int(float(legajo)))
+                except Exception:
+                    legajo_norm = legajo
+                result.setdefault(legajo_norm, {"truck_number": legajo_norm, "plate": plate, "source": path})
+                if legajo != legajo_norm:
+                    result.setdefault(legajo, {"truck_number": legajo, "plate": plate, "source": path})
+    except Exception:
+        return {}
+    _TRUCK_PLATE_CSV_CACHE = result
+    _TRUCK_PLATE_CSV_MTIME = mtime
+    return result
+
+
+def lookup_vehicle_for_technician(technician):
+    if not technician:
+        return None
+    try:
+        code = None
+        if isinstance(technician, dict):
+            code = str(technician.get("employee_code") or "")
+        else:
+            code = str(getattr(technician, "employee_code", None) or "")
+        code = code.strip()
+        if not code:
+            return None
+        m = load_truck_plate_map() or {}
+        if code in m:
+            return dict(m[code])
+        try:
+            code_int = str(int(float(code)))
+            if code_int in m:
+                return dict(m[code_int])
+        except Exception:
+            pass
+        code_clean = "".join(ch for ch in code if ch.isdigit())
+        if code_clean and code_clean in m:
+            return dict(m[code_clean])
+        return None
+    except Exception:
+        return None
+
+
+def fetch_technician_distribution_ranking(technician_id, filters=None, auditor_user_id=None):
+    if not technician_id:
+        return {"scope_rows": [], "peer_count": 0, "scope_label": ""}
+    try:
+        from app import is_postgres as _is_pg
+    except Exception:
+        _is_pg = lambda: False
+    tech_row = fetch_technician_by_id(technician_id) or {}
+    if isinstance(tech_row, dict):
+        supervisor = (tech_row.get("supervisor_name") or "").strip()
+        center = (tech_row.get("center_name") or "").strip()
+        region = (tech_row.get("region") or "").strip()
+    else:
+        supervisor = (getattr(tech_row, "supervisor_name", None) or "").strip()
+        center = (getattr(tech_row, "center_name", None) or "").strip()
+        region = (getattr(tech_row, "region", None) or "").strip()
+    scopes = []
+    if supervisor:
+        scopes.append(("Supervisor", "supervisor_name", supervisor))
+    if center:
+        scopes.append(("Centro", "center_name", center))
+    if region:
+        scopes.append(("Región", "region", region))
+    scopes.append(("Empresa", "company_name", (tech_row.get("company_name") if isinstance(tech_row, dict) else getattr(tech_row, "company_name", None)) or ""))
+    kpis = [
+        ("audit_avg_score", "Score Audit promedio", "score", "AVG(audits.total_score)"),
+        ("qc_avg_score", "Score QC promedio", "score", "AVG(qc_sessions.total_score)"),
+        ("avg_nps", "NPS promedio", "nps", "AVG(tnps_responses.score)"),
+    ]
+    out_rows = []
+    db = get_db()
+    (audit_from, audit_to, qc_from, qc_to, service_from, service_to, tnps_from, tnps_to), range_params = _build_range_params(filters or {})
+    n_params = len(range_params) // 4
+    def _run_agg(col_name, col_value, kpi_sql, kpi_key):
+        try:
+            if kpi_key.startswith("audit") or kpi_key == "audit_avg_score":
+                base_sql = """
+                    SELECT
+                        technicians.id AS tid,
+                        COALESCE({kpi_sql}, 0) AS kpi_val
+                    FROM technicians
+                    LEFT JOIN audits ON audits.technician_id = technicians.id
+                    WHERE technicians.{col_name} {op} ?
+                    {audit_from}
+                    {audit_to}
+                    GROUP BY technicians.id
+                    HAVING COUNT(audits.id) > 0
+                """ if kpi_key == "audit_avg_score" else None
+                if kpi_key == "audit_avg_score":
+                    sql = base_sql.format(
+                        kpi_sql=kpi_sql,
+                        col_name=col_name,
+                        op=("=" if col_value is not None and str(col_value).strip() != "" else "IS NOT"),
+                        audit_from=audit_from, audit_to=audit_to,
+                    )
+                    params = [col_value] + list(range_params[:n_params])
+                rows = db.execute(sql, tuple(params)).fetchall()
+            elif kpi_key == "qc_avg_score":
+                sql = """
+                    SELECT
+                        technicians.id AS tid,
+                        COALESCE({kpi_sql}, 0) AS kpi_val
+                    FROM technicians
+                    LEFT JOIN qc_sessions ON qc_sessions.technician_id = technicians.id
+                    WHERE technicians.{col_name} = ?
+                    {qc_from}
+                    {qc_to}
+                    GROUP BY technicians.id
+                    HAVING COUNT(qc_sessions.id) > 0
+                """.format(
+                    kpi_sql=kpi_sql,
+                    col_name=col_name,
+                    qc_from=qc_from, qc_to=qc_to,
+                )
+                params = [col_value] + list(range_params[n_params:2*n_params])
+                rows = db.execute(sql, tuple(params)).fetchall()
+            else:
+                sql = """
+                    SELECT
+                        technicians.id AS tid,
+                        COALESCE({kpi_sql}, 0) AS kpi_val
+                    FROM technicians
+                    LEFT JOIN tnps_responses ON tnps_responses.technician_id = technicians.id
+                    WHERE technicians.{col_name} = ?
+                    {tnps_from}
+                    {tnps_to}
+                    GROUP BY technicians.id
+                    HAVING COUNT(tnps_responses.id) > 0
+                """.format(
+                    kpi_sql=kpi_sql,
+                    col_name=col_name,
+                    tnps_from=tnps_from, tnps_to=tnps_to,
+                )
+                params = [col_value] + list(range_params[3*n_params:4*n_params])
+                rows = db.execute(sql, tuple(params)).fetchall()
+            arr = []
+            for r in rows:
+                v = r["kpi_val"] if isinstance(r, dict) else r[1]
+                arr.append((int(r["tid"]) if isinstance(r, dict) else int(r[0]), float(v) if v is not None else 0.0))
+            return arr
+        except Exception:
+            return []
+    for (scope_label, col_name, col_value) in scopes:
+        if not col_value:
+            continue
+        peer_count_scope = 0
+        try:
+            pc_row = db.execute("SELECT COUNT(*) AS c FROM technicians WHERE {c} = ?".format(c=col_name), (col_value,)).fetchone()
+            peer_count_scope = pc_row["c"] if isinstance(pc_row, dict) else pc_row[0]
+        except Exception:
+            peer_count_scope = 0
+        for (kpi_key, kpi_label, kpi_kind, kpi_sql) in kpis:
+            tech_val = None
+            try:
+                s = fetch_technician_profile_summary(technician_id, filters=filters or {}, auditor_user_id=auditor_user_id) or {}
+                tech_val = s.get(kpi_key)
+            except Exception:
+                tech_val = None
+            if tech_val is None or tech_val == "":
+                continue
+            peers = _run_agg(col_name, col_value, kpi_sql, kpi_key)
+            if not peers:
+                out_rows.append({
+                    "scope_label": scope_label, "scope_value": col_value,
+                    "kpi_key": kpi_key, "kpi_label": kpi_label,
+                    "technician_value": tech_val, "peer_avg": None, "delta": None,
+                    "rank": None, "total_peers": peer_count_scope, "quintile": None, "pct_better": None,
+                })
+                continue
+            vals = sorted([v for (_, v) in peers], reverse=True)
+            try:
+                tech_val_f = float(tech_val)
+            except Exception:
+                tech_val_f = 0.0
+            avg_peer = sum(vals) / float(len(vals)) if vals else 0.0
+            n_better = sum(1 for v in vals if v > tech_val_f)
+            pct_better = (100.0 * n_better / float(len(vals))) if vals else 0.0
+            rank = n_better + 1
+            quintile = 1
+            if len(vals) >= 2:
+                pct_rank = 100.0 * (rank - 1) / float(len(vals))
+                if pct_rank < 20: quintile = 1
+                elif pct_rank < 40: quintile = 2
+                elif pct_rank < 60: quintile = 3
+                elif pct_rank < 80: quintile = 4
+                else: quintile = 5
+            delta = tech_val_f - avg_peer
+            out_rows.append({
+                "scope_label": scope_label, "scope_value": col_value,
+                "kpi_key": kpi_key, "kpi_label": kpi_label,
+                "technician_value": tech_val_f,
+                "peer_avg": (round(avg_peer, 1) if avg_peer is not None else None),
+                "delta": (round(delta, 1) if delta is not None else None),
+                "rank": rank, "total_peers": len(vals),
+                "quintile": quintile,
+                "pct_better": round(pct_better, 0),
+            })
+    return {"scope_rows": out_rows, "peer_count": (sum(1 for r in out_rows if r["total_peers"]))}
+
+
+def fetch_technician_findings_trend(technician_id, filters=None, limit_months=6):
+    if not technician_id:
+        return {"audit_findings": [], "qc_findings": [], "months": [], "today": _fmt_today_iso()}
+    (audit_from, audit_to, qc_from, qc_to, service_from, service_to, tnps_from, tnps_to), range_params = _build_range_params(filters or {})
+    audit_period = _period_key_expr("audits.audit_date", "month")
+    qc_period = _period_key_expr("qc_sessions.qc_date", "month")
+    try:
+        tid = int(technician_id)
+    except Exception:
+        return {"audit_findings": [], "qc_findings": [], "months": [], "today": _fmt_today_iso()}
+    db = get_db()
+    audit_sql = """
+        SELECT
+            {ap} AS period_key,
+            audit_items.item_label AS item_label,
+            COUNT(*) AS cnt
+        FROM audits
+        JOIN audit_items ON audit_items.audit_id = audits.id
+        WHERE audits.technician_id = ?
+          AND audit_items.status = 'no_cumple'
+        {af}
+        {at}
+        GROUP BY period_key, audit_items.item_label
+        ORDER BY period_key DESC, cnt DESC
+    """.format(ap=audit_period, af=audit_from, at=audit_to)
+    qc_sql = """
+        SELECT
+            {qp} AS period_key,
+            qc_items.item_label AS item_label,
+            COUNT(*) AS cnt
+        FROM qc_sessions
+        JOIN qc_items ON qc_items.qc_session_id = qc_sessions.id
+        WHERE qc_sessions.technician_id = ?
+          AND qc_items.status = 'nc_mayor'
+        {qf}
+        {qt}
+        GROUP BY period_key, qc_items.item_label
+        ORDER BY period_key DESC, cnt DESC
+    """.format(qp=qc_period, qf=qc_from, qt=qc_to)
+    try:
+        audit_rows = db.execute(audit_sql, (tid,) + tuple(range_params[:(len(range_params)//4)])).fetchall()
+    except Exception:
+        audit_rows = []
+    try:
+        qc_rows = db.execute(qc_sql, (tid,) + tuple(range_params[(len(range_params)//4) : 2*(len(range_params)//4)])).fetchall()
+    except Exception:
+        qc_rows = []
+    def _rows_to_findings(rows_in):
+        by_item = {}
+        months_set = set()
+        for r in rows_in:
+            pk = r["period_key"] if isinstance(r, dict) else r[0]
+            label = r["item_label"] if isinstance(r, dict) else r[1]
+            cnt = r["cnt"] if isinstance(r, dict) else r[2]
+            try:
+                cnt = int(cnt)
+            except Exception:
+                cnt = 0
+            months_set.add(pk)
+            by_item.setdefault(label, {})[pk] = cnt
+        months = sorted(months_set, reverse=True)[:limit_months]
+        months = sorted(months)
+        result = []
+        for item, monthly in by_item.items():
+            total = sum(monthly.values())
+            if total <= 0:
+                continue
+            series = []
+            prev_val = None
+            up_streak = 0
+            last_2_up = False
+            for m in months:
+                v = monthly.get(m, 0)
+                series.append({"period": m, "count": v})
+                if prev_val is not None and v > prev_val:
+                    up_streak += 1
+                    if up_streak >= 2:
+                        last_2_up = True
+                elif prev_val is not None and v < prev_val:
+                    up_streak = 0
+                else:
+                    pass
+                prev_val = v
+            if len(series) >= 2 and series[-2]["count"] > 0 and series[-1]["count"] > series[-2]["count"]:
+                last_2_up = True
+            max_cnt = max((s["count"] for s in series), default=0)
+            trend = "stable"
+            if last_2_up:
+                trend = "up"
+            elif len(series) >= 3 and series[-1]["count"] < series[-2]["count"]:
+                trend = "down"
+            if max_cnt == 0:
+                continue
+            result.append({
+                "item": item,
+                "total": total,
+                "max_count": max_cnt,
+                "series_months": months,
+                "series_counts": [s["count"] for s in series],
+                "trend": trend,
+            })
+        result.sort(key=lambda x: (-x["total"], -x["max_count"]))
+        return result[:10], months
+    audit_findings, aud_months = _rows_to_findings(audit_rows)
+    qc_findings, qc_months = _rows_to_findings(qc_rows)
+    all_months = sorted(set(aud_months + qc_months))
+    return {
+        "audit_findings": audit_findings,
+        "qc_findings": qc_findings,
+        "months": all_months[-limit_months:],
+        "today": _fmt_today_iso(),
+    }
 
 
 def ensure_supervisor(name):

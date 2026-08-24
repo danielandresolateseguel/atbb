@@ -762,20 +762,176 @@
     {% endif %}
 </section>
 
-<section class="card info-card">
-    <div class="section-heading">
+<section id="vehicle" class="card info-card flat">
+    <div class="section-heading flat">
         <div>
-            <p class="eyebrow">Próximamente</p>
-            <h3>Módulos en desarrollo (Etapa 4+)</h3>
+            <p class="eyebrow">Etapa 4 · 4.1 / 3</p>
+            <h3>Vehículo / Camioneta asignada</h3>
+            {% if findings_trend.today %}<p class="meta" style="margin: 4px 0 0;">Datos legajo / patente · actualizados al {{ findings_trend.today }}</p>{% endif %}
         </div>
     </div>
-    <div class="tabs-preview">
-        <span class="tab-preview-chip tab-preview-active">Resumen</span>
-        <span class="tab-preview-chip">Distribución centro/supervisor</span>
-        <span class="tab-preview-chip">Hallazgos trackeados</span>
-        <span class="tab-preview-chip">Adjuntos / vehículo asignado</span>
+    <div class="finding-list">
+        {% if vehicle.truck_number or vehicle.plate %}
+            <div class="vehicle-card">
+                <div class="vehicle-row">
+                    <span class="vehicle-icon">🚚</span>
+                    <div class="vehicle-data">
+                        <div class="vehicle-row-main">
+                            {% if vehicle.truck_number %}
+                                <span class="vehicle-num">N° {{ vehicle.truck_number }}</span>
+                            {% endif %}
+                            {% if vehicle.plate %}
+                                <span class="vehicle-plate">{{ vehicle.plate }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="vehicle-row-sub">
+                            <span class="meta">Legajo coincidente por <code>employee_code = technician.employee_code</code></span>
+                            {% if vehicle.source %}
+                                <span class="meta">· Fuente: <code>{{ vehicle.source.split('/')[-1].split('\\')[-1] }}</code></span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% else %}
+            <p class="empty-state" style="margin:8px 0 0;">Sin camioneta / patente asociada a este legajo en el CSV. Si debería existir, revisá <code>nro_camioneta_patente.csv</code> (formato: <code>legajo - PATENTE</code>).</p>
+        {% endif %}
     </div>
-    <p class="meta" style="margin-top: 10px;">Secciones "Tendencias" y "Comparativa" habilitadas. Quedan pendientes las 3 últimas solapas.</p>
+</section>
+
+<section id="distribution" class="card info-card flat">
+    <div class="section-heading flat">
+        <div>
+            <p class="eyebrow">Etapa 4 · 4.2 / 3</p>
+            <h3>Distribución · Posicionamiento vs grupo</h3>
+            <p class="meta" style="margin: 4px 0 0;">Rango {{ show_from }} → {{ show_to }} · 3 KPIs × 4 niveles de agrupación (Supervisor / Centro / Región / Empresa)</p>
+        </div>
+    </div>
+    <div class="finding-list">
+        {% if distribution.scope_rows %}
+            <div class="dist-grid">
+                {% for row in distribution.scope_rows %}
+                <div class="dist-row">
+                    <div class="dist-scope">
+                        <span class="dist-scope-label">{{ row.scope_label }}</span>
+                        <span class="dist-scope-value">{{ row.scope_value }}</span>
+                    </div>
+                    <div class="dist-kpi">
+                        <span class="dist-kpi-label">{{ row.kpi_label }}</span>
+                        <strong class="dist-kpi-val">
+                            {% if row.kpi_key == 'audit_approval_rate' or row.kpi_key == 'qc_approval_rate' %}
+                                {{ (row.technician_value or 0) | round(1) }}%
+                            {% elif row.kpi_key == 'avg_nps' %}
+                                {{ (row.technician_value or 0) | round(1) }}
+                            {% else %}
+                                {{ (row.technician_value or 0) | round(1) }}
+                            {% endif %}
+                        </strong>
+                    </div>
+                    <div class="dist-peer">
+                        <span class="meta">Peer avg</span>
+                        <strong>{{ (row.peer_avg or 0) | round(1) }}</strong>
+                        {% if row.delta is not none %}
+                            {% if row.delta > 0 %}<span class="pill-ok-inline">▲ {{ row.delta }}</span>
+                            {% elif row.delta < 0 %}<span class="pill-danger-inline">▼ {{ row.delta | abs }}</span>
+                            {% else %}<span class="pill-warn-inline">= 0</span>{% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="dist-rank">
+                        {% if row.rank and row.total_peers %}
+                            <span class="rank-num">#{{ row.rank }}</span>
+                            <span class="meta"> / {{ row.total_peers }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="dist-quintile">
+                        {% if row.quintile == 1 %}<span class="quintile quintile-1" title="Top 20% · mejor quintil">Q1 · Top 20%</span>
+                        {% elif row.quintile == 2 %}<span class="quintile quintile-2" title="Q2 · 20-40%">Q2 · Bueno</span>
+                        {% elif row.quintile == 3 %}<span class="quintile quintile-3" title="Q3 · medio">Q3 · Medio</span>
+                        {% elif row.quintile == 4 %}<span class="quintile quintile-4" title="Q4 · bajo">Q4 · Bajo</span>
+                        {% elif row.quintile == 5 %}<span class="quintile quintile-5" title="Q5 · peor 20% · alerta">Q5 · Alerta</span>
+                        {% else %}<span class="meta">-</span>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state" style="margin: 8px 0 0;">Sin datos suficientes para comparar. Probá cambiar el rango (ej: Todo histórico).</p>
+        {% endif %}
+    </div>
+</section>
+
+<section id="findings" class="card info-card flat">
+    <div class="section-heading flat">
+        <div>
+            <p class="eyebrow">Etapa 4 · 4.3 / 3</p>
+            <h3>Hallazgos trackeados por ítem · Tendencia últimos {{ findings_trend.months | length or 6 }} meses</h3>
+            <p class="meta" style="margin:4px 0 0;">Semáforo: 🔴 = subió 2 meses seguidos (empeora) · 🟡 sin tendencia · 🟢 = bajó último mes</p>
+        </div>
+    </div>
+    <div class="finding-list">
+        <div class="two-cols">
+            <div>
+                <h4 class="section-subtitle">⚠️ Auditoría · No cumple</h4>
+                {% if findings_trend.audit_findings %}
+                    {% for f in findings_trend.audit_findings %}
+                    <div class="finding-row">
+                        <div class="finding-label">
+                            <div>
+                                <strong>{{ f.item }}</strong>
+                                <span class="meta"> · total {{ f.total }} · pico {{ f.max_count }}</span>
+                            </div>
+                        </div>
+                        <div class="finding-trend">
+                            {% for c in f.series_counts %}
+                                <span class="trend-count" style="--w: {{ 8 + 28 * (c / (1 if f.max_count == 0 else f.max_count)) }}px;">{{ c }}</span>
+                            {% endfor %}
+                        </div>
+                        <div class="finding-badge">
+                            {% if f.trend == 'up' %}<span class="pill-danger-inline" title="Subió 2 meses seguidos · Empeora">🔴 Empeora</span>
+                            {% elif f.trend == 'down' %}<span class="pill-ok-inline" title="Último mes bajó · Mejora">🟢 Mejora</span>
+                            {% else %}<span class="pill-warn-inline">🟡 Estable</span>{% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="empty-state" style="margin: 8px 0;">Sin ítems No-Cumple Audit en este rango.</p>
+                {% endif %}
+            </div>
+            <div>
+                <h4 class="section-subtitle">🚨 QC · NC Mayor</h4>
+                {% if findings_trend.qc_findings %}
+                    {% for f in findings_trend.qc_findings %}
+                    <div class="finding-row">
+                        <div class="finding-label">
+                            <div>
+                                <strong>{{ f.item }}</strong>
+                                <span class="meta"> · total {{ f.total }} · pico {{ f.max_count }}</span>
+                            </div>
+                        </div>
+                        <div class="finding-trend">
+                            {% for c in f.series_counts %}
+                                <span class="trend-count trend-count-danger" style="--w: {{ 8 + 28 * (c / (1 if f.max_count == 0 else f.max_count)) }}px;">{{ c }}</span>
+                            {% endfor %}
+                        </div>
+                        <div class="finding-badge">
+                            {% if f.trend == 'up' %}<span class="pill-danger-inline" title="Subió 2 meses seguidos · Empeora">🔴 Empeora</span>
+                            {% elif f.trend == 'down' %}<span class="pill-ok-inline" title="Último mes bajó · Mejora">🟢 Mejora</span>
+                            {% else %}<span class="pill-warn-inline">🟡 Estable</span>{% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="empty-state" style="margin: 8px 0;">Sin ítems NC Mayor QC en este rango.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% if findings_trend.months %}
+        <div style="margin-top: 8px;">
+            <p class="meta">Meses visualizados:
+            {% for m in findings_trend.months %}<code style="margin-right: 6px;">{{ m }}</code>{% endfor %}</p>
+        </div>
+        {% endif %}
+    </div>
 </section>
 
 <style>
@@ -895,6 +1051,113 @@
         background: #D1FAE5; color: #065F46;
         border-radius: 999px; padding: 2px 10px; font-size: 0.82rem;
     }
+    .vehicle-card {
+        background: linear-gradient(135deg, #EFF6FF 0%, #E0E7FF 100%);
+        border: 1px solid #BFDBFE;
+        border-radius: 14px;
+        padding: 14px 16px;
+    }
+    .vehicle-row {
+        display: flex; align-items: center; gap: 14px;
+    }
+    .vehicle-icon {
+        font-size: 2rem;
+        line-height: 1;
+        background: #fff;
+        border-radius: 12px;
+        padding: 8px 10px;
+        box-shadow: 0 1px 2px rgba(30, 58, 138, 0.1);
+    }
+    .vehicle-data { flex: 1; min-width: 0; }
+    .vehicle-row-main {
+        display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    }
+    .vehicle-num {
+        font-weight: 700; color: #1E3A8A;
+        font-size: 1.4rem;
+    }
+    .vehicle-plate {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-weight: 700;
+        letter-spacing: 2px;
+        background: #FDE68A;
+        border: 2px solid #111827;
+        border-radius: 8px;
+        padding: 4px 10px;
+        color: #111827;
+    }
+    .vehicle-row-sub {
+        margin-top: 6px;
+        display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .section-subtitle {
+        margin: 8px 0 10px 0;
+        color: #1E3A8A;
+        font-size: 0.95rem;
+        font-weight: 600;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #E5E7EB;
+    }
+    .dist-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 16px;
+    }
+    @media (max-width: 1000px) { .dist-grid { grid-template-columns: 1fr; } }
+    .dist-row {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr 1.3fr 0.7fr 1fr;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border: 1px solid #E5E7EB;
+        border-radius: 10px;
+        background: #FAFBFC;
+    }
+    @media (max-width: 700px) {
+        .dist-row { grid-template-columns: 1fr 1fr; }
+        .dist-quintile { grid-column: 1 / -1; }
+    }
+    .dist-scope { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .dist-scope-label { font-size: 0.75rem; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px; }
+    .dist-scope-value { font-weight: 600; color: #1E3A8A; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dist-kpi { display: flex; flex-direction: column; gap: 2px; }
+    .dist-kpi-label { font-size: 0.8rem; color: #374151; }
+    .dist-kpi-val { font-size: 1.05rem; color: #111827; }
+    .dist-peer { display: flex; flex-direction: column; gap: 4px; }
+    .dist-rank { display: flex; align-items: baseline; gap: 3px; }
+    .rank-num { font-weight: 700; color: #1E3A8A; font-size: 1rem; }
+    .dist-quintile { display: flex; align-items: center; justify-content: flex-end; }
+    .quintile {
+        padding: 3px 9px; border-radius: 8px; font-weight: 700; font-size: 0.78rem;
+        border: 1px solid transparent;
+    }
+    .quintile-1 { background: #D1FAE5; color: #064E3B; border-color: #6EE7B7; }
+    .quintile-2 { background: #ECFCCB; color: #3F6212; border-color: #BEF264; }
+    .quintile-3 { background: #FEF3C7; color: #78350F; border-color: #FCD34D; }
+    .quintile-4 { background: #FED7AA; color: #7C2D12; border-color: #FDBA74; }
+    .quintile-5 { background: #FEE2E2; color: #7F1D1D; border-color: #FCA5A5; }
+    .finding-trend {
+        display: inline-flex; gap: 3px; align-items: center;
+        padding: 0 8px; min-width: 0;
+        justify-content: flex-end;
+    }
+    .trend-count {
+        display: inline-block;
+        background: #FEF3C7;
+        color: #78350F;
+        font-size: 0.72rem;
+        font-weight: 600;
+        width: var(--w, 16px);
+        text-align: center;
+        border-radius: 5px;
+        padding: 2px 0;
+        min-width: 16px;
+    }
+    .trend-count-danger {
+        background: #FEE2E2; color: #7F1D1D;
+    }
+    .finding-badge { flex-shrink: 0; }
 </style>
 
 <script>
