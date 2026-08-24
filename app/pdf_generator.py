@@ -176,19 +176,21 @@ def _trend_badge(trend, st):
     return _p(lab, st["tdc"])
 
 
-def _kpi_card(label, value, styles, highlight=None):
+def _kpi_card(label, value, styles, highlight=None, card_w=None):
     data = [[_p(label, styles["kpi_label"])], [_p(value, styles["kpi_val_s"])]]
-    t = Table(data, colWidths=[4.2*cm], rowHeights=[None, None])
+    w = card_w if card_w else 4.2 * cm
+    t = Table(data, colWidths=[w], rowHeights=[None, None], hAlign="CENTER")
     col = GREY_50 if not highlight else (OK_BG if highlight == "ok" else (BAD_BG if highlight == "bad" else WARN_BG))
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), col),
-        ("BOX", (0, 0), (-1, -1), 0.5, GREY_200),
+        ("BOX", (0, 0), (-1, -1), 0.6, GREY_200),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, GREY_200),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, 0), 5),
-        ("BOTTOMPADDING", (0, -1), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, 0), 6),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
     ]))
     return t
 
@@ -231,14 +233,18 @@ class TechnProfilePdf:
 
     def _canvas_header_footer(self, c, doc):
         c.saveState()
+        header_bar_top = HEIGHT - TOP_MARGIN + 0.7 * cm
+        header_bar_h = 0.55 * cm
+        header_bar_bot = header_bar_top - header_bar_h
         c.setFillColor(NAVY)
-        c.rect(LEFT_MARGIN, HEIGHT - TOP_MARGIN + 0.3*cm, WIDTH - LEFT_MARGIN - RIGHT_MARGIN, 0.18*cm, fill=1, stroke=0)
+        c.rect(LEFT_MARGIN, header_bar_bot, WIDTH - LEFT_MARGIN - RIGHT_MARGIN, header_bar_h, fill=1, stroke=0)
         c.setFont(_FONT_BOLD, 8)
-        c.setFillColor(NAVY)
-        c.drawString(LEFT_MARGIN, HEIGHT - TOP_MARGIN + 0.45*cm, "PERFIL TÉCNICO INDIVIDUAL · INFORME EJECUTIVO")
-        c.setFillColor(GREY_600)
+        c.setFillColor(colors.white)
+        baseline_text = header_bar_bot + (header_bar_h - 8) / 2.0 + 1.2
+        c.drawString(LEFT_MARGIN + 4, baseline_text, "PERFIL TÉCNICO INDIVIDUAL · INFORME EJECUTIVO")
+        c.setFillColor(colors.HexColor("#F3F4F6"))
         c.setFont(_FONT_NAME, 7.5)
-        c.drawRightString(WIDTH - RIGHT_MARGIN, HEIGHT - TOP_MARGIN + 0.45*cm, f"Emitido: {self.emitted_at}")
+        c.drawRightString(WIDTH - RIGHT_MARGIN - 4, baseline_text, f"Emitido: {self.emitted_at}")
         c.setStrokeColor(GREY_200)
         c.setLineWidth(0.4)
         c.line(LEFT_MARGIN, BOTTOM_MARGIN - 0.35*cm, WIDTH - RIGHT_MARGIN, BOTTOM_MARGIN - 0.35*cm)
@@ -253,7 +259,6 @@ class TechnProfilePdf:
     def _section_cover_and_hero(self):
         S = self.styles
         story = []
-        # Carátula
         name = _tech_get(self.tech, "name", "Técnico sin datos")
         legajo = _tech_get(self.tech, "employee_code", "-")
         sindicato = _tech_get(self.tech, "union_name", "-")
@@ -265,11 +270,12 @@ class TechnProfilePdf:
         centro = _tech_get(self.tech, "center_name", "-")
         empresa = _tech_get(self.tech, "company_name", "-")
         ult_act = self.data.get("last_activity") or (self.data.get("historic") or {}).get("age", {}).get("last", "-")
+        primera_act = self.data.get("first_activity") or (self.data.get("historic") or {}).get("age", {}).get("first", "-")
+        edad = self.data.get("age_label") or ""
 
         story.append(_p("Perfil Técnico Individual", S["title"]))
         story.append(_p(f"Informe Ejecutivo · Rango analizado: {self.range_label}", S["subtitle"]))
 
-        # Tabla carátula datos básicos
         rows = [
             ["Nombre completo", _p(name, S["tdb"]), "Legajo", _p(str(legajo), S["tdb"])],
             ["Sindicato", _p(str(sindicato), S["td"]), "Estado", _p(str(estado), S["td"])],
@@ -277,14 +283,18 @@ class TechnProfilePdf:
             ["Región", _p(str(region), S["td"]), "Últ. actividad", _p(str(ult_act or "-"), S["td"])],
             ["Supervisor", _p(str(supervisor), S["td"]), "Centro", _p(str(centro), S["td"])],
             ["Empresa", _p(str(empresa), S["td"]), "Equipo / Flota", _p(str(_tech_get(self.tech, "team", "-")), S["td"])],
+            ["Primera actividad", _p(str(primera_act or "-"), S["td"]), "Antigüedad", _p(str(edad or "-"), S["td"])],
         ]
-        # Vehículo
         veh = self.data.get("vehicle") or {}
         if veh.get("plate") or veh.get("truck_number"):
             vn = veh.get("truck_number") or "-"
             vp = veh.get("plate") or "-"
             rows.append(["N° Camioneta", _p(str(vn), S["tdb"]), "Patente", _p(str(vp), S["tdb"])])
-        t0 = Table(rows, colWidths=[3.2*cm, 6.3*cm, 2.8*cm, 5.1*cm])
+        total_col0 = 3.4 * cm
+        total_col1 = 6.2 * cm
+        total_col2 = 3.0 * cm
+        total_col3 = 5.2 * cm
+        t0 = Table(rows, colWidths=[total_col0, total_col1, total_col2, total_col3], hAlign="LEFT")
         t0.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (0, -1), NAVY_SOFT),
             ("BACKGROUND", (2, 0), (2, -1), NAVY_SOFT),
@@ -296,15 +306,14 @@ class TechnProfilePdf:
             ("ALIGN", (2, 0), (2, -1), "LEFT"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("GRID", (0, 0), (-1, -1), 0.4, GREY_200),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
         story.append(t0)
         story.append(Spacer(1, 6))
 
-        # Hero 4 cajas rango actual
         story.append(_p("Resumen Ejecutivo · Rango seleccionado", S["h2"]))
         summary = self.data.get("summary") or {}
         audits_cnt = summary.get("audits_count") or 0
@@ -317,17 +326,23 @@ class TechnProfilePdf:
         qc_approval = _fmt_pct(summary.get("qc_approval_rate"))
         svc_score = _fmt_num(summary.get("service_avg_score"))
         nps_score = _fmt_num(summary.get("avg_nps"))
+        util_w = WIDTH - LEFT_MARGIN - RIGHT_MARGIN
+        gutter = 0.18 * cm
+        card_w = (util_w - (3 * gutter)) / 4.0
         hero_cells = [
-            _kpi_card(f"AUDITORÍAS · {audits_cnt}", f"Score {audit_score} · Aprob. {audit_approval}", S),
-            _kpi_card(f"QC · {qc_cnt}", f"Score {qc_score} · Aprob. {qc_approval}", S),
-            _kpi_card(f"SERVICE · {svc_cnt}", f"Score {svc_score}", S),
-            _kpi_card(f"NPS · {nps_cnt}", f"Prom. {nps_score}", S),
+            _kpi_card(f"AUDITORÍAS · {audits_cnt}", f"Score {audit_score} · Aprob. {audit_approval}", S, card_w=card_w),
+            _kpi_card(f"QC · {qc_cnt}", f"Score {qc_score} · Aprob. {qc_approval}", S, card_w=card_w),
+            _kpi_card(f"SERVICE · {svc_cnt}", f"Score {svc_score}", S, card_w=card_w),
+            _kpi_card(f"NPS · {nps_cnt}", f"Prom. {nps_score}", S, card_w=card_w),
         ]
-        hero_grid = Table([hero_cells], colWidths=[4.2*cm, 4.2*cm, 4.2*cm, 4.2*cm])
+        hero_grid = Table([hero_cells], colWidths=[card_w, card_w + gutter, card_w + gutter, card_w], hAlign="LEFT")
         hero_grid.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (0, -1), 0),
+            ("LEFTPADDING", (1, 0), (1, -1), gutter),
+            ("LEFTPADDING", (2, 0), (2, -1), gutter),
+            ("LEFTPADDING", (3, 0), (3, -1), gutter),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
             ("TOPPADDING", (0, 0), (-1, -1), 0),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))

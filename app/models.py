@@ -11834,12 +11834,48 @@ def fetch_technician_pdf_data(technician_id, filters=None, auditor_user_id=None)
     findings_trend.setdefault("months", [])
     findings_trend.setdefault("today", "")
 
-    last_activity = (
-        (summary or {}).get("last_audit_date")
-        or (summary or {}).get("last_qc_date")
-        or (summary or {}).get("last_service_date")
-        or ""
+    def _max_date(*args):
+        best = None
+        for v in args:
+            if not v:
+                continue
+            try:
+                if best is None or str(v) > str(best):
+                    best = v
+            except Exception:
+                continue
+        return best or ""
+
+    last_activity = _max_date(
+        (summary or {}).get("last_audit_date"),
+        (summary or {}).get("last_qc_date"),
+        (summary or {}).get("last_service_date"),
+        (historic or {}).get("streaks", {}).get("last_audit_date"),
+        (historic or {}).get("streaks", {}).get("last_qc_date"),
+        (historic or {}).get("streaks", {}).get("last_service_date"),
+        (historic or {}).get("age", {}).get("last"),
     )
+    first_activity = _max_date.__wrapped__ if False else None
+    try:
+        candidates_first = [
+            (historic or {}).get("age", {}).get("first"),
+            (summary or {}).get("first_audit_date"),
+            (summary or {}).get("first_qc_date"),
+            (summary or {}).get("first_service_date"),
+        ]
+        best_first = None
+        for v in candidates_first:
+            if not v:
+                continue
+            try:
+                if best_first is None or str(v) < str(best_first):
+                    best_first = v
+            except Exception:
+                continue
+        first_activity = best_first or ""
+    except Exception:
+        first_activity = ""
+    age_label = ((historic or {}).get("age") or {}).get("label") or ""
 
     return {
         "technician": dict(technician) if not isinstance(technician, dict) else technician,
@@ -11856,6 +11892,8 @@ def fetch_technician_pdf_data(technician_id, filters=None, auditor_user_id=None)
         "distribution": distribution or {},
         "findings_trend": findings_trend or {},
         "last_activity": last_activity or "",
+        "first_activity": first_activity or "",
+        "age_label": age_label or "",
     }
 
 
