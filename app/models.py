@@ -1279,6 +1279,7 @@ def init_db_postgres():
     ensure_qc_columns_postgres(cursor)
     ensure_badge_deliveries_columns_postgres(cursor)
     ensure_technician_orders_postgres(cursor)
+    ensure_users_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
     connection.commit()
     connection.close()
@@ -1303,56 +1304,116 @@ def count_active_admins():
 
 
 def fetch_user_by_id(user_id):
-    row = get_db().execute(
-        """
-        SELECT
-            users.id,
-            users.username,
-            users.password_hash,
-            users.role,
-            users.is_active,
-            users.technician_id,
-            users.must_change_password,
-            COALESCE((
-                SELECT COUNT(*)
-                FROM user_supervisor_scopes
-                WHERE user_supervisor_scopes.user_id = users.id
-                  AND user_supervisor_scopes.is_active = 1
-            ), 0) AS supervisor_scope_count
-        FROM users
-        WHERE users.id = ?
-        """,
-        (user_id,),
-    ).fetchone()
-    return dict(row) if row else None
+    try:
+        row = get_db().execute(
+            """
+            SELECT
+                users.id,
+                users.username,
+                users.password_hash,
+                users.role,
+                users.is_active,
+                users.technician_id,
+                users.must_change_password,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM user_supervisor_scopes
+                    WHERE user_supervisor_scopes.user_id = users.id
+                      AND user_supervisor_scopes.is_active = 1
+                ), 0) AS supervisor_scope_count
+            FROM users
+            WHERE users.id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "technician_id" in msg or "must_change_password" in msg:
+            row = get_db().execute(
+                """
+                SELECT
+                    users.id,
+                    users.username,
+                    users.password_hash,
+                    users.role,
+                    users.is_active,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM user_supervisor_scopes
+                        WHERE user_supervisor_scopes.user_id = users.id
+                          AND user_supervisor_scopes.is_active = 1
+                    ), 0) AS supervisor_scope_count
+                FROM users
+                WHERE users.id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            d.setdefault("technician_id", None)
+            d.setdefault("must_change_password", 0)
+            return d
+        raise
 
 
 def fetch_user_by_username(username):
     normalized = (username or "").strip()
     if not normalized:
         return None
-    row = get_db().execute(
-        """
-        SELECT
-            users.id,
-            users.username,
-            users.password_hash,
-            users.role,
-            users.is_active,
-            users.technician_id,
-            users.must_change_password,
-            COALESCE((
-                SELECT COUNT(*)
-                FROM user_supervisor_scopes
-                WHERE user_supervisor_scopes.user_id = users.id
-                  AND user_supervisor_scopes.is_active = 1
-            ), 0) AS supervisor_scope_count
-        FROM users
-        WHERE users.username = ?
-        """,
-        (normalized,),
-    ).fetchone()
-    return dict(row) if row else None
+    try:
+        row = get_db().execute(
+            """
+            SELECT
+                users.id,
+                users.username,
+                users.password_hash,
+                users.role,
+                users.is_active,
+                users.technician_id,
+                users.must_change_password,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM user_supervisor_scopes
+                    WHERE user_supervisor_scopes.user_id = users.id
+                      AND user_supervisor_scopes.is_active = 1
+                ), 0) AS supervisor_scope_count
+            FROM users
+            WHERE users.username = ?
+            """,
+            (normalized,),
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "technician_id" in msg or "must_change_password" in msg:
+            row = get_db().execute(
+                """
+                SELECT
+                    users.id,
+                    users.username,
+                    users.password_hash,
+                    users.role,
+                    users.is_active,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM user_supervisor_scopes
+                        WHERE user_supervisor_scopes.user_id = users.id
+                          AND user_supervisor_scopes.is_active = 1
+                    ), 0) AS supervisor_scope_count
+                FROM users
+                WHERE users.username = ?
+                """,
+                (normalized,),
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            d.setdefault("technician_id", None)
+            d.setdefault("must_change_password", 0)
+            return d
+        raise
 
 
 def fetch_users():
@@ -1890,6 +1951,8 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "technicians", "phone", "TEXT")
     add_column_if_missing(connection, "technicians", "commune", "TEXT")
     add_column_if_missing(connection, "technicians", "team", "TEXT")
+    add_column_if_missing(connection, "users", "technician_id", "INTEGER")
+    add_column_if_missing(connection, "users", "must_change_password", "INTEGER NOT NULL DEFAULT 0")
     add_column_if_missing(connection, "technicians", "company_name", "TEXT")
     add_column_if_missing(connection, "technicians", "union_name", "TEXT")
     add_column_if_missing(connection, "technicians", "supervisor_name", "TEXT")
@@ -2382,6 +2445,11 @@ def ensure_audits_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_company_snapshot TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_supervisor_snapshot TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_center_snapshot TEXT")
+
+
+def ensure_users_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS technician_id INTEGER")
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0")
 
 
 def ensure_audit_findings_columns_postgres(cursor):
