@@ -1,0 +1,490 @@
+{% extends "base.html" %}
+
+{% block title %}Mis estadísticas · {{ technician["name"] or "Técnico" }}{% endblock %}
+
+{% block content %}
+<style>
+  .profile-hero {
+    background: linear-gradient(135deg,#0b1220,#111c33 60%,#0e2451);
+    color: #e2e8f0;
+    border-radius: 16px;
+    padding: 18px 18px 14px;
+    margin-bottom: 16px;
+    border: 1px solid #1e293b;
+    box-shadow: 0 10px 28px rgba(2,6,23,.25);
+  }
+  .profile-hero .row { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .profile-hero .ph { width:78px; height:78px; border-radius:50%; overflow:hidden; background:#1e293b; border:2px solid #334155; flex-shrink:0; }
+  .profile-hero .ph img { width:100%; height:100%; object-fit:cover; display:block; }
+  .profile-hero .ph .pph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:28px; color:#94a3b8; letter-spacing:.5px; }
+  .profile-hero .name { font-size: 22px; margin:0 0 4px; color:#f8fafc; }
+  .profile-hero .eye { margin:0 0 6px; color:#93c5fd; font-size:13px; letter-spacing:.3px; }
+  .profile-hero .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .profile-hero .chips .chip { background:rgba(148,163,184,.15); color:#e2e8f0; border-color:#334155; }
+  .profile-hero .chips .chip.chip-primary { background:rgba(99,102,241,.18); color:#c7d2fe; border-color:#6366f1; }
+  .profile-hero .back-cta { display:flex; gap:10px; margin-left:auto; flex-wrap:wrap; }
+  .stat-grid-4, .stat-grid-6 { display:grid; gap:10px; margin-bottom:16px; }
+  .stat-grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+  .stat-grid-6 { grid-template-columns: repeat(6, minmax(0,1fr)); }
+  .s-card { background:linear-gradient(180deg,#0f172a,#111c33); color:#e2e8f0; border:1px solid #1e293b; border-radius:12px; padding:10px 12px; min-height:78px; display:flex; flex-direction:column; justify-content:center; }
+  .s-card .n { font-size: 24px; font-weight:900; color:#fff; line-height:1.05; }
+  .s-card .n.ok { color:#34d399; } .s-card .n.warn { color:#fbbf24; } .s-card .n.bad { color:#f87171; } .s-card .n.info { color:#60a5fa; }
+  .s-card .t { font-size:12.5px; color:#94a3b8; margin-top:4px; line-height:1.2; }
+  .s-card .s { font-size:11.5px; color:#64748b; margin-top:2px; }
+  .blk { margin-bottom: 18px; }
+  .blk-head { display:flex; align-items:center; justify-content:space-between; margin:0 0 8px; }
+  .blk-head h3 { margin:0; font-size:15px; color:#0f172a; font-weight:800; }
+  .blk-head .sub { font-size:12px; color:#64748b; }
+  .tbl { width:100%; border-collapse: collapse; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .tbl th, .tbl td { padding:9px 10px; text-align:left; vertical-align:middle; border-bottom:1px solid #e2e8f0; font-size:13px; }
+  .tbl th { background:#f8fafc; color:#334155; font-weight:700; font-size:12px; letter-spacing:.2px; }
+  .tbl tr:last-child td { border-bottom:none; }
+  .tbl .num { text-align:right; white-space:nowrap; }
+  .tbl .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; }
+  .tbl .chip { padding:3px 8px; border-radius:999px; font-size:11.5px; font-weight:800; border:1px solid transparent; display:inline-block; }
+  .chip.ch-green { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+  .chip.ch-blue  { background:#dbeafe; color:#1e40af; border-color:#93c5fd; }
+  .chip.ch-gray  { background:#f1f5f9; color:#334155; border-color:#cbd5e1; }
+  .chip.ch-orange{ background:#ffedd5; color:#9a3412; border-color:#fdba74; }
+  .chip.ch-red   { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+  .chip.ch-violet{ background:#ede9fe; color:#5b21b6; border-color:#c4b5fd; }
+  .tbl .ot-link { font-weight:800; color:#1d4ed8; text-decoration:none; }
+  .tbl .ot-link:hover { text-decoration:underline; }
+  .tbl .empty td { padding:24px; text-align:center; color:#64748b; font-size:13.5px; }
+  .collapse-wrap { border:1px solid #e2e8f0; border-radius:14px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04); margin-bottom:14px; overflow:hidden; }
+.collapse-head { padding:10px 14px; background:linear-gradient(180deg,#f8fafc,#f1f5f9); display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; border-bottom:1px solid transparent; }
+.collapse-head h3 { margin:0; font-size:14.5px; color:#0f172a; font-weight:800; }
+.collapse-head .meta { font-size:12px; color:#64748b; }
+.collapse-head .chev { color:#475569; font-size:15px; font-weight:900; transition:transform .2s ease; margin-left:10px; }
+.collapse-wrap.is-open .collapse-head { border-bottom-color:#e2e8f0; }
+.collapse-wrap.is-open .collapse-head .chev { transform:rotate(90deg); }
+.collapse-body { display:none; padding:10px 12px 14px; }
+.collapse-wrap.is-open .collapse-body { display:block; }
+.collapse-head:hover { background:linear-gradient(180deg,#eff6ff,#e0f2fe); }
+  .row2 { display:grid; grid-template-columns:2fr 1fr; gap:12px; }
+.row2 .col-left { display:flex; flex-direction:column; gap:0; }
+.row2 .col-right { display:flex; flex-direction:column; gap:14px; }
+  .card { border:1px solid #e2e8f0; border-radius:14px; background:#fff; padding:12px 14px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  @media (max-width: 980px) {
+    .stat-grid-4 { grid-template-columns:repeat(2, 1fr); }
+    .stat-grid-6 { grid-template-columns:repeat(3, 1fr); }
+    .row2 { grid-template-columns:1fr; }
+  }
+  @media (max-width: 520px) {
+    .profile-hero .back-cta { margin-left:0; width:100%; }
+    .stat-grid-4 { grid-template-columns:repeat(2, 1fr); }
+    .stat-grid-6 { grid-template-columns:repeat(2, 1fr); }
+    .profile-hero .name { font-size:18px; }
+  }
+</style>
+
+{# ========================================================================== #}
+{# HERO                                                                       #}
+{# ========================================================================== #}
+<section class="profile-hero">
+  <div class="row">
+    <div class="ph">
+      {% set photo_url = technician["profile_photo_path"] | technician_photo_url %}
+      {% if photo_url %}
+        <img src="{{ photo_url }}" alt="Foto de {{ technician['name'] }}">
+      {% else %}
+        <div class="pph" aria-label="Iniciales">
+          {% set names = (technician["name"] or "").strip().split() %}
+          {% if names | length >= 2 %}
+            {{ (names[0] | first) ~ (names[-1] | first) }}
+          {% elif names | length == 1 %}
+            {{ names[0][:2] }}
+          {% else %}
+            SB
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <div style="flex:1; min-width:220px;">
+      <p class="eye">📊 Mis estadísticas · {{ today }}</p>
+      <h1 class="name">{{ technician["name"] }}</h1>
+      <div class="chips">
+        {% if technician["employee_code"] %}<span class="chip chip-primary">Legajo {{ technician["employee_code"] }}</span>{% endif %}
+        {% if technician["company_name"] %}<span class="chip">{{ technician["company_name"] }}</span>{% endif %}
+        {% if technician["region"] %}<span class="chip">{{ technician["region"] }}</span>{% endif %}
+        {% if technician["center_name"] %}<span class="chip">{{ technician["center_name"] }}</span>{% endif %}
+        {% if technician["supervisor_name"] %}<span class="chip">👔 Sup. {{ technician["supervisor_name"] }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="back-cta">
+      <a class="button button-secondary" href="{{ url_for('main.technician_dashboard') }}" style="background:#ffffff;color:#0f172a;border-color:#cbd5e1;font-weight:700;">↩ Volver al inicio</a>
+      <a class="button button-secondary" href="{{ url_for('main.technician_change_password') }}" style="background:#eef2ff;color:#3730a3;border-color:#a5b4fc;font-weight:700;">🔐 Cambiar contraseña</a>
+      <a class="button button-primary" href="{{ url_for('main.technician_badge', technician_id=technician['id']) }}" target="_blank" rel="noopener" style="background:#4f46e5;border-color:#4338ca;font-weight:800;">💳 Ver mi credencial</a>
+    </div>
+  </div>
+</section>
+
+{# ========================================================================== #}
+{# KPI CREDENCIALES (All Time)                                                #}
+{# ========================================================================== #}
+{% set s = badge_stats or {'deliveries':0,'client_confirmed':0,'views':0,'confirmed_last_7d':0,'views_last_7d':0} %}
+{% set tasa = ( (s.client_confirmed / s.deliveries * 100) | round(1) ) if s.deliveries else 0 %}
+<div class="stat-grid-4">
+  <div class="s-card"><div class="n info">{{ s.views or 0 }}</div><div class="t">👁 Vistas credencial (totales)</div><div class="s">+{{ s.views_last_7d or 0 }} últimas 7 días</div></div>
+  <div class="s-card"><div class="n">{{ s.deliveries or 0 }}</div><div class="t">📤 Credenciales enviadas</div><div class="s">&nbsp;</div></div>
+  <div class="s-card"><div class="n ok">{{ s.client_confirmed or 0 }}</div><div class="t">✅ Confirmadas por cliente</div><div class="s">+{{ s.confirmed_last_7d or 0 }} últimas 7 días</div></div>
+  <div class="s-card"><div class="n {% if tasa >= 80 %}ok{% elif tasa >= 60 %}warn{% else %}bad{% endif %}">{{ tasa }}%</div><div class="t">🎯 Tasa confirmación</div><div class="s">Confir. / Enviadas</div></div>
+</div>
+
+{# ========================================================================== #}
+{# KPI ÚLTIMO MES — OTs + Calidad                                             #}
+{# ========================================================================== #}
+{% set ot30 = ot_last30 or {'total_orders_30d':0,'total_completed_30d':0,'total_incomplete_30d':0} %}
+{% set _o30 = ot30.get('total_orders_30d', ot30.get('total_orders',0)) or 0 %}
+{% set _c30 = ot30.get('total_completed_30d', ot30.get('total_completed',0)) or 0 %}
+{% set _fallback_inc_raw = _o30 - _c30 %}
+{% if _fallback_inc_raw < 0 %}{% set _fallback_inc = 0 %}{% else %}{% set _fallback_inc = _fallback_inc_raw %}{% endif %}
+{% set _i30 = ot30.get('total_incomplete_30d', ot30.get('total_incomplete', _fallback_inc)) or _fallback_inc %}
+{% set mini = mini_q or {} %}
+<div class="blk">
+  <div class="blk-head">
+    <h3>🎯 Resumen — Calidad + OTs</h3>
+    <span class="sub">KPI últimos 30 días (all-time entre paréntesis si el rango está vacío)</span>
+  </div>
+  {% set ma = mini_q_all or {} %}
+  {% set a_cnt = mini.get('audit_count',0) or 0 %}
+  {% set a_cnt_all = ma.get('audit_count',0) or 0 %}
+  {% set a_sc = mini.get('audit_avg_score') %}
+  {% set a_sc_all = ma.get('audit_avg_score') %}
+  {% set q_cnt = mini.get('qc_count',0) or 0 %}
+  {% set q_cnt_all = ma.get('qc_count',0) or 0 %}
+  {% set q_sc = mini.get('qc_avg_score') %}
+  {% set q_sc_all = ma.get('qc_avg_score') %}
+  {% set s_cnt = mini.get('service_count',0) or 0 %}
+  {% set s_cnt_all = ma.get('service_count',0) or 0 %}
+  {% set s_sc = mini.get('service_avg_score') %}
+  {% set s_sc_all = ma.get('service_avg_score') %}
+  {% set n_cnt = mini.get('nps_count',0) or 0 %}
+  {% set n_cnt_all = ma.get('nps_count',0) or 0 %}
+  {% set n_sc = mini.get('avg_nps') %}
+  {% set n_sc_all = ma.get('avg_nps') %}
+  {# pick display: if 30d empty, use all-time for the main number but mark it #}
+  {% set _a_use_all = (a_cnt <= 0 and a_cnt_all > 0) %}{% set _a_show_cnt = a_cnt_all if _a_use_all else a_cnt %}{% set _a_show_sc = a_sc_all if _a_use_all else a_sc %}
+  {% set _q_use_all = (q_cnt <= 0 and q_cnt_all > 0) %}{% set _q_show_cnt = q_cnt_all if _q_use_all else q_cnt %}{% set _q_show_sc = q_sc_all if _q_use_all else q_sc %}
+  {% set _s_use_all = (s_cnt <= 0 and s_cnt_all > 0) %}{% set _s_show_cnt = s_cnt_all if _s_use_all else s_cnt %}{% set _s_show_sc = s_sc_all if _s_use_all else s_sc %}
+  {% set _n_use_all = (n_cnt <= 0 and n_cnt_all > 0) %}{% set _n_show_cnt = n_cnt_all if _n_use_all else n_cnt %}{% set _n_show_sc = n_sc_all if _n_use_all else n_sc %}
+  <div class="stat-grid-6">
+    <div class="s-card"><div class="n info">{{ _o30 }}{% if _o30 != (ot30.get('total_orders') or 0) %}<span style="font-size:12px;color:#94a3b8;font-weight:700;"> · hoy {{ ot30.get('total_orders') or 0 }}</span>{% endif %}</div><div class="t">📋 OTs cargadas</div><div class="s">Últimos 30 días</div></div>
+    <div class="s-card"><div class="n ok">{{ _c30 }}</div><div class="t">✅ OTs completas</div><div class="s">Foto1+Foto2+EDOC</div></div>
+    <div class="s-card"><div class="n warn">{{ _i30 }}</div><div class="t">⏳ OTs incompletas</div><div class="s">Pendientes</div></div>
+    <div class="s-card">
+      <div class="n {% if _a_show_sc not in [none,''] %}{{ 'ok' if _a_show_sc >= 9 else ('warn' if _a_show_sc >=7 else 'bad') }}{% endif %}">{{ (_a_show_sc if _a_show_sc not in [none,''] else '-') }}</div>
+      <div class="t">🔍 Auditorías</div>
+      <div class="s">{{ _a_show_cnt }} {% if _a_use_all %}<span style="color:#f97316;font-weight:700;">hist</span>{% else %}30d{% endif %}</div>
+    </div>
+    <div class="s-card">
+      <div class="n {% if _q_show_sc not in [none,''] %}{{ 'ok' if _q_show_sc >= 8.5 else ('warn' if _q_show_sc >=7 else 'bad') }}{% endif %}">{{ (_q_show_sc if _q_show_sc not in [none,''] else '-') }}</div>
+      <div class="t">🧪 QC Instalaciones</div>
+      <div class="s">{{ _q_show_cnt }} {% if _q_use_all %}<span style="color:#f97316;font-weight:700;">hist</span>{% else %}30d{% endif %}</div>
+    </div>
+    <div class="s-card">
+      <div class="n {% if _n_show_sc not in [none,''] %}{{ 'ok' if _n_show_sc >= 85 else ('warn' if _n_show_sc >=70 else 'bad') }}{% endif %}">{{ (_n_show_sc if _n_show_sc not in [none,''] else '-') }}</div>
+      <div class="t">💬 NPS / Service</div>
+      <div class="s">{{ _s_show_cnt }} serv · {% if _n_use_all %}<span style="color:#f97316;font-weight:700;">hist</span>{% else %}30d{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+{# ========================================================================== #}
+{# DOS COLUMNAS: ENTREGAS RECIENTES (colapsable) + OTs (colapsable) + CALIDAD #}
+{# ========================================================================== #}
+<div class="row2">
+  <div class="col-left">
+
+    {# — ENTREGAS DE CREDENCIAL (últimas 30, COLAPSADO por defecto) — #}
+    {% set _d_count = (recent_deliveries | count) if recent_deliveries else 0 %}
+    <div class="collapse-wrap" id="wrap-deliv">
+      <div class="collapse-head" onclick="document.getElementById('wrap-deliv').classList.toggle('is-open');">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="chev" aria-hidden="true">▶</span>
+          <h3>📤 Historial de entregas · últimas 30</h3>
+        </div>
+        <span class="meta">{{ _d_count }} · Chip verde = Cliente confirmó · Chip azul = Enviada OK</span>
+      </div>
+      <div class="collapse-body">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:130px;">Fecha</th>
+              <th>Cliente / Empresa</th>
+              <th style="width:88px;">Canal</th>
+              <th style="width:130px;">Estado</th>
+              <th style="width:110px;">Orden OT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if _d_count <= 0 %}
+            <tr class="empty"><td colspan="5">Todavía no compartiste ninguna credencial. Entrá a una OT y usá el botón verde 💚.</td></tr>
+            {% endif %}
+            {% for d in recent_deliveries %}
+            <tr>
+              <td class="mono">
+                {% if d.get('created_at') %}
+                  {% set dts = d.created_at | string %}
+                  {% if 'T' in dts %}{{ dts.split('T')[0] }}<br><span style="color:#94a3b8">{{ dts.split('T')[1][:5] }}</span>
+                  {% elif ' ' in dts %}{{ dts.split(' ')[0] }}<br><span style="color:#94a3b8">{{ dts.split(' ')[1][:5] }}</span>
+                  {% else %}{{ dts }}{% endif %}
+                {% else %}-{% endif %}
+              </td>
+              <td>
+                {% set oname = d.get('client_name') %}
+                {% set ocomp = d.get('client_company') %}
+                {% if not oname and d.get('_linked_order') %}
+                  {% set oname = d._linked_order.get('client_name') %}
+                  {% set ocomp = d._linked_order.get('client_address') %}
+                {% endif %}
+                {% if oname %}<strong style="color:#0f172a">{{ oname }}</strong>{% else %}<em style="color:#94a3b8">(sin nombre)</em>{% endif %}
+                {% if ocomp %}<br><span style="color:#64748b;font-size:12px;">{{ ocomp }}</span>{% endif %}
+              </td>
+              <td>
+                {% set ch = (d.get('delivery_channel') or '').lower() %}
+                {% if 'whatsapp' in ch or ch == 'wa' %}<span class="chip ch-green" title="WhatsApp">💬 WhatsApp</span>
+                {% elif ch == 'web_share' %}<span class="chip ch-blue" title="Web Share (compartir nativo)">🚀 Share API</span>
+                {% elif 'link' in ch or ch == 'copied' %}<span class="chip ch-violet" title="Link copiado">🔗 Copiado</span>
+                {% elif 'email' in ch %}<span class="chip ch-gray" title="Email">📧 Email</span>
+                {% elif not ch %}<span class="chip ch-gray">—</span>
+                {% else %}<span class="chip ch-orange">{{ d.get('delivery_channel') }}</span>{% endif %}
+              </td>
+              <td>
+                {% if d.get('client_confirmed_at') %}
+                  <span class="chip ch-green">✅ Cliente confirmó</span><br>
+                  <span style="color:#64748b;font-size:11.5px;">
+                    {% set cts = d.client_confirmed_at | string %}
+                    {% if 'T' in cts %}{{ cts.split('T')[0] }} {{ cts.split('T')[1][:5] }}
+                    {% elif ' ' in cts %}{{ cts.split(' ')[0] }} {{ cts.split(' ')[1][:5] }}{% else %}{{ cts }}{% endif %}
+                  </span>
+                {% elif d.get('share_confirmed_at') or d.get('has_sent') %}
+                  <span class="chip ch-blue">📤 Enviada OK</span>
+                {% elif d.get('share_cancelled_at') %}
+                  <span class="chip ch-red">✖ Cancelada</span>
+                {% else %}
+                  <span class="chip ch-gray">Sin registro</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if d.get('_linked_order') %}
+                  <a class="ot-link" href="{{ url_for('main.technician_order_detail', order_id=d._linked_order.id) }}">{{ d._linked_order.ot_number or 'OT-' ~ d._linked_order.id }}</a>
+                {% else %}
+                  <span class="chip ch-gray" title="Entrega sin OT asociada (compartida desde el panel)">N/D</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# — MIS ÚLTIMAS 20 OTs (COLAPSADO por defecto) — #}
+    {% set _o_count = (recent_orders | count) if recent_orders else 0 %}
+    <div class="collapse-wrap" id="wrap-ots">
+      <div class="collapse-head" onclick="document.getElementById('wrap-ots').classList.toggle('is-open');">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="chev" aria-hidden="true">▶</span>
+          <h3>📋 Mis últimas 20 OTs</h3>
+        </div>
+        <span class="meta" style="display:flex; align-items:center; gap:10px;">
+          {{ _o_count }} cargadas
+          <a class="button button-secondary" style="background:#e0f2fe;color:#0c4a6e;border-color:#7dd3fc;font-weight:700;font-size:12px;padding:5px 9px;text-decoration:none;" href="{{ url_for('main.technician_orders', technician_id=technician['id']) }}">🔍 Ver todas →</a>
+        </span>
+      </div>
+      <div class="collapse-body">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:130px;">Fecha</th>
+              <th style="width:110px;">N° OT</th>
+              <th>Cliente</th>
+              <th style="width:90px;">Fotos</th>
+              <th style="width:90px;">EDOC</th>
+              <th style="width:120px;">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if _o_count <= 0 %}
+            <tr class="empty"><td colspan="6">Todavía no cargaste ninguna OT. Volvé al inicio y usá "+ Nueva OT".</td></tr>
+            {% endif %}
+            {% for o in recent_orders %}
+            <tr>
+              <td class="mono">
+                {% if o.get('created_at') %}
+                  {% set ots = o.created_at | string %}
+                  {% if 'T' in ots %}{{ ots.split('T')[0] }}<br><span style="color:#94a3b8">{{ ots.split('T')[1][:5] }}</span>
+                  {% elif ' ' in ots %}{{ ots.split(' ')[0] }}<br><span style="color:#94a3b8">{{ ots.split(' ')[1][:5] }}</span>
+                  {% else %}{{ ots }}{% endif %}
+                {% else %}-{% endif %}
+              </td>
+              <td><a class="ot-link" href="{{ url_for('main.technician_order_detail', order_id=o['id']) }}">{{ o.get('ot_number') or 'OT-' ~ o.id }}</a></td>
+              <td>
+                {% if o.get('client_name') %}<strong>{{ o.client_name }}</strong>{% else %}<em style="color:#94a3b8">sin cliente</em>{% endif %}
+                {% if o.get('client_address') %}<br><span style="color:#64748b;font-size:12px;">{{ o.client_address }}</span>{% endif %}
+              </td>
+              <td>
+                {% set f1 = o.get('photo_1_path') %}
+                {% set f2 = o.get('photo_2_path') %}
+                {% if f1 and f2 %}<span class="chip ch-green">📸 2/2</span>
+                {% elif f1 or f2 %}<span class="chip ch-orange">📸 1/2</span>
+                {% else %}<span class="chip ch-gray">—</span>{% endif %}
+              </td>
+              <td>
+                {% if o.get('edoc_pdf_path') %}<span class="chip ch-green">📄 OK</span>
+                {% else %}<span class="chip ch-gray">—</span>{% endif %}
+              </td>
+              <td>
+                {% if f1 and f2 and o.get('edoc_pdf_path') %}
+                  <span class="chip ch-green">COMPLETA</span>
+                {% else %}
+                  <span class="chip ch-orange">PENDIENTE</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  {# — COLUMNA DERECHA — Auditorías / QC / Service (ALL TIME) — #}
+  <div class="col-right">
+
+    {# — Auditorías recientes (6) — #}
+    {% if recent_audits and (recent_audits | count) > 0 %}
+    <div class="blk card">
+      <div class="blk-head">
+        <h3>🔍 Auditorías recientes</h3>
+        <span class="sub">{{ recent_audits | count }} rows · total {{ a_cnt_all }}</span>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>Fecha</th><th>Cliente</th><th class="num">Score</th><th style="width:84px;">Acción</th></tr></thead>
+        <tbody>
+          {% for r in recent_audits[:6] %}
+          <tr>
+            <td class="mono">
+              {% set rdt = (r.get('audit_date') or r.get('created_at') or '-') | string %}
+              {% if 'T' in rdt %}{{ rdt.split('T')[0] }}{% elif ' ' in rdt %}{{ rdt.split(' ')[0] }}{% else %}{{ rdt }}{% endif %}
+            </td>
+            <td>{{ (r.get('client_name') or r.get('customer') or r.get('location') or r.get('sa_number') or '-') }}</td>
+            <td class="num">
+              {% set sc = r.get('total_score') or r.get('score') %}
+              <span class="chip {% if sc not in [none,''] %}{{ 'ch-green' if sc >= 9 else ('ch-orange' if sc >=7 else 'ch-red') }}{% else %}ch-gray{% endif %}">{{ sc if sc not in [none,''] else '-' }}</span>
+            </td>
+            <td class="num">
+              {% if r.get('id') %}
+                <a class="button button-secondary" target="_blank" rel="noopener" style="background:#eff6ff;color:#1e40af;border-color:#bfdbfe;font-weight:800;font-size:12px;padding:6px 10px;text-decoration:none;" href="{{ url_for('main.audit_detail', audit_id=r.id) }}">🔍 Ver Auditoría</a>
+              {% else %}
+                <span style="color:#94a3b8;">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {# — QC recientes (6) — #}
+    {% if recent_qc and (recent_qc | count) > 0 %}
+    <div class="blk card">
+      <div class="blk-head">
+        <h3>🧪 QC Instalaciones recientes</h3>
+        <span class="sub">{{ recent_qc | count }} rows · total {{ q_cnt_all }}</span>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>Fecha</th><th>Cliente</th><th class="num">Score</th><th style="width:84px;">Acción</th></tr></thead>
+        <tbody>
+          {% for r in recent_qc[:6] %}
+          <tr>
+            <td class="mono">
+              {% set rdt = (r.get('qc_date') or r.get('created_at') or '-') | string %}
+              {% if 'T' in rdt %}{{ rdt.split('T')[0] }}{% elif ' ' in rdt %}{{ rdt.split(' ')[0] }}{% else %}{{ rdt }}{% endif %}
+            </td>
+            <td>{{ (r.get('client_name') or r.get('customer') or r.get('installation_type') or '-') }}</td>
+            <td class="num">
+              {% set sc = r.get('total_score') or r.get('score') %}
+              <span class="chip {% if sc not in [none,''] %}{{ 'ch-green' if sc >= 8.5 else ('ch-orange' if sc >=7 else 'ch-red') }}{% else %}ch-gray{% endif %}">{{ sc if sc not in [none,''] else '-' }}</span>
+            </td>
+            <td class="num">
+              {% if r.get('id') %}
+                <a class="button button-secondary" target="_blank" rel="noopener" style="background:#f0fdf4;color:#166534;border-color:#86efac;font-weight:800;font-size:12px;padding:6px 10px;text-decoration:none;" href="{{ url_for('main.qc_detail', qc_session_id=r.id) }}">🧪 Ver QC</a>
+              {% else %}
+                <span style="color:#94a3b8;">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {# — Service recientes (6) — #}
+    {% if recent_service and (recent_service | count) > 0 %}
+    <div class="blk card">
+      <div class="blk-head">
+        <h3>🛠 Service recientes</h3>
+        <span class="sub">{{ recent_service | count }} rows · NPS tot {{ n_cnt_all }} / serv {{ s_cnt_all }}</span>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>Fecha</th><th>Cliente</th><th class="num">Score</th><th style="width:84px;">Acción</th></tr></thead>
+        <tbody>
+          {% for r in recent_service[:6] %}
+          <tr>
+            <td class="mono">
+              {% set rdt = (r.get('service_date') or r.get('created_at') or '-') | string %}
+              {% if 'T' in rdt %}{{ rdt.split('T')[0] }}{% elif ' ' in rdt %}{{ rdt.split(' ')[0] }}{% else %}{{ rdt }}{% endif %}
+            </td>
+            <td>{{ (r.get('client_name') or r.get('customer') or '-') }}</td>
+            <td class="num">
+              {% set sc = r.get('total_score') or r.get('score') or r.get('nps_score') %}
+              <span class="chip {% if sc not in [none,''] %}{{ 'ch-green' if sc >= 8.5 else ('ch-orange' if sc >=7 else 'ch-red') }}{% else %}ch-gray{% endif %}">{{ sc if sc not in [none,''] else '-' }}</span>
+            </td>
+            <td class="num">
+              {% if r.get('id') %}
+                <a class="button button-secondary" target="_blank" rel="noopener" style="background:#f5f3ff;color:#5b21b6;border-color:#c4b5fd;font-weight:800;font-size:12px;padding:6px 10px;text-decoration:none;" href="{{ url_for('main.service_detail', service_session_id=r.id) }}">🛠 Ver Service</a>
+              {% else %}
+                <span style="color:#94a3b8;">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {# — NO CALIDAD DATA — #}
+    {% if not (recent_audits or recent_qc or recent_service) %}
+    <div class="blk card" style="text-align:center;padding:24px;color:#64748b;">
+      <div style="font-size:24px;margin-bottom:8px;">📭</div>
+      <strong style="color:#334155;">Sin registros de auditoría / QC / service.</strong>
+      <p style="margin:6px 0 0;font-size:13px;">
+        Si el técnico #{{ technician.id }} tiene auditorías cargadas en la tabla <code>audits</code> con <code>technician_id</code> que coincide, se verán acá.
+      </p>
+      <p style="margin:6px 0 0;font-size:12.5px;color:#94a3b8;">
+        (Filtro automático all-time / sin fecha mínima para diagnosticar).
+      </p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+<script>
+  // Opcional: abrir automáticamente si la lista es corta (<=5 rows)
+  if (document.getElementById('wrap-deliv')) {
+    var nd = ({{ _d_count }});
+    if (nd > 0 && nd <= 5) document.getElementById('wrap-deliv').classList.add('is-open');
+  }
+  if (document.getElementById('wrap-ots')) {
+    var no2 = ({{ _o_count }});
+    if (no2 > 0 && no2 <= 5) document.getElementById('wrap-ots').classList.add('is-open');
+  }
+</script>
+
+{% endblock %}

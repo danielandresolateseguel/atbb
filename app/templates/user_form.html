@@ -42,9 +42,27 @@
                     <option value="auditor" {{ "selected" if selected_role == "auditor" else "" }}>Auditor</option>
                     <option value="gerente" {{ "selected" if selected_role == "gerente" else "" }}>Gerente</option>
                     <option value="supervisor" {{ "selected" if selected_role == "supervisor" else "" }}>Supervisor</option>
+                    <option value="technician" {{ "selected" if selected_role == "technician" else "" }}>Técnico</option>
                 {% endif %}
             </select>
         </label>
+        {% if selected_role == 'technician' or (mode == 'new') %}
+        <label>
+            <span>Técnico asociado (cuando el rol es Técnico)</span>
+            <select name="technician_id">
+                <option value="">— Sin asociar / se asigna automáticamente al primer login —</option>
+                {% for t in technicians_options %}
+                    <option value="{{ t.id }}" {% if user and user.technician_id == t.id %}selected{% endif %}>
+                        #{{ t.employee_code }} · {{ t.name }}
+                        {% if t.region %} ({{ t.region }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <small style="color:#64748b; display:block; margin-top:4px;">
+                Si el técnico todavía no tiene usuario, podés crear su usuario a mano. Si no, se crea automáticamente cuando ingresa por primera vez.
+            </small>
+        </label>
+        {% endif %}
         <label>
             <span>Activo</span>
             {% set selected_active = (user['is_active'] if user else 1) %}

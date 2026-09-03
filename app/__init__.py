@@ -13,6 +13,7 @@ from app.routes import main
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    app.config["UPLOADS_DIR"].mkdir(parents=True, exist_ok=True)
     app.config["AUDIT_EVIDENCE_DIR"].mkdir(parents=True, exist_ok=True)
 
     # #region debug-point post-commit-500
@@ -142,6 +143,31 @@ def create_app():
     debug_raw = str(os.environ.get("FLASK_DEBUG") or "").strip().lower()
     if debug_raw in {"1", "true", "yes", "y", "on"}:
         app.config["DEBUG"] = True
+
+    # ===== Logger FORZADO a INFO (para que los current_app.logger.info() de share/confirm SIEMPRE se vean) =====
+    import logging
+    try:
+        import sys as _sys
+        # Root logger
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[%(asctime)s] %(levelname)s in %(module)s: %(message)s",
+            stream=_sys.stdout,
+            force=True,
+        )
+        # Asegurarse werkzeug / flask logger
+        for _lname in ("app", "werkzeug", "flask.app", ""):
+            _l = logging.getLogger(_lname)
+            try:
+                _l.setLevel(logging.INFO)
+                if not _l.handlers:
+                    _h = logging.StreamHandler(_sys.stdout)
+                    _h.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s in %(module)s: %(message)s"))
+                    _l.addHandler(_h)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     if app.config.get("SECRET_KEY") == "dev-secret-key-change-me" and not app.debug and not app.testing:
         raise RuntimeError("SECRET_KEY no está configurada. Define la variable de entorno SECRET_KEY.")

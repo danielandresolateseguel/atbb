@@ -7,7 +7,7 @@
     <div>
         <p class="eyebrow">Administración</p>
         <h2>Usuarios</h2>
-        <p class="hero-copy">Crea usuarios administrador, auditor, gerente o supervisor.</p>
+        <p class="hero-copy">Crea usuarios administrador, auditor, gerente, supervisor o técnico.</p>
     </div>
     <div class="hero-actions">
         {% if can_create_users %}
@@ -23,7 +23,8 @@
                 <tr>
                     <th>Usuario</th>
                     <th>Rol</th>
-                    <th>Alcance</th>
+                    <th>Técnico / Alcance</th>
+                    <th>Cambiar clave</th>
                     <th>Activo</th>
                     <th>Creado</th>
                     <th></th>
@@ -33,13 +34,32 @@
                 {% for row in users %}
                     <tr>
                         <td>{{ row["username"] }}</td>
-                        <td>{{ row["role"] }}</td>
+                        <td>
+                            {% if row["role"] == "admin" %}<span class="chip" style="background:#1e293b; color:#f8fafc;">Administrador</span>
+                            {% elif row["role"] == "gerente" %}<span class="chip" style="background:#4338ca; color:#fff;">Gerente</span>
+                            {% elif row["role"] == "supervisor" %}<span class="chip" style="background:#0891b2; color:#fff;">Supervisor</span>
+                            {% elif row["role"] == "auditor" %}<span class="chip" style="background:#64748b; color:#fff;">Auditor</span>
+                            {% elif row["role"] == "technician" %}<span class="chip" style="background:#f97316; color:#fff;">Técnico</span>
+                            {% else %}{{ row["role"] }}{% endif %}
+                        </td>
                         <td>
                             {% if row["role"] == "supervisor" %}
                                 {{ row["supervisor_scope_count"] or 0 }} supervisor(es)
+                            {% elif row["role"] == "technician" %}
+                                {% if row.get("technician_id") %}
+                                    ID #{{ row["technician_id"] }}
+                                    {% if row.get("must_change_password") %}
+                                        <div style="font-size:11px; color:#991B1B; margin-top:4px;">⚠️ Debe cambiar la clave</div>
+                                    {% endif %}
+                                {% else %}
+                                    <em style="color:#64748b;">Sin asociar</em>
+                                {% endif %}
                             {% else %}
                                 -
                             {% endif %}
+                        </td>
+                        <td>
+                            {% if row.get("must_change_password") %}🔒 Obligado{% else %}❌ No{% endif %}
                         </td>
                         <td>{{ "Sí" if row["is_active"] else "No" }}</td>
                         <td>{{ row["created_at"]|ar_dt }}</td>
@@ -50,12 +70,16 @@
                                     |
                                     <a class="table-link" href="{{ url_for('main.user_supervisor_scopes', user_id=row['id']) }}">Alcance</a>
                                 {% endif %}
+                                {% if row["role"] == "technician" and row.get("technician_id") %}
+                                    |
+                                    <a class="table-link" href="{{ url_for('main.master_technician_edit', technician_id=row['technician_id']) }}">Ficha</a>
+                                {% endif %}
                             {% endif %}
                         </td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="6" class="empty-state">No hay usuarios.</td>
+                        <td colspan="7" class="empty-state">No hay usuarios.</td>
                     </tr>
                 {% endfor %}
             </tbody>

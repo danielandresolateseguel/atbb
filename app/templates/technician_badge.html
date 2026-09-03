@@ -1,0 +1,904 @@
+{% extends "base.html" %}
+
+{% set safe_token = (technician.badge_share_token or '') | string | trim %}
+{% set og_title %}Credencial de Técnico · {{ technician.name or 'Técnico' }}{% endset %}
+{% set og_desc %}Tarjeta de presentación oficial{% if technician.employee_code %} · Legajo {{ technician.employee_code }}{% endif %}{% if technician.role_title %} · {{ technician.role_title }}{% endif %}{% endset %}
+{% set og_image_url %}{{ url_for('main.technician_public_badge_jpg', token=safe_token, _external=True) }}{% endset %}
+{% set og_url %}{{ url_for('main.technician_public_badge', token=safe_token, _external=True) }}{% endset %}
+
+{% block extra_head %}
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="Soft Berardi" />
+<meta property="og:title" content="{{ og_title | trim }}" />
+<meta property="og:description" content="{{ og_desc | trim }}" />
+<meta property="og:image" content="{{ og_image_url | trim }}" />
+<meta property="og:image:secure_url" content="{{ og_image_url | trim }}" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="1600" />
+<meta property="og:url" content="{{ og_url | trim }}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{{ og_title | trim }}" />
+<meta name="twitter:description" content="{{ og_desc | trim }}" />
+<meta name="twitter:image" content="{{ og_image_url | trim }}" />
+{% endblock %}
+
+{% block title %}Tarjeta · {{ technician.name or 'Técnico' }}{% endblock %}
+
+{% block content %}
+{% set safe_token = (technician.badge_share_token or '') | string | trim %}
+<section class="badge-toolbar">
+    <div class="badge-toolbar-left">
+        {% if is_public_view %}
+            <a class="button button-secondary" href="https://wa.me/?text={{ 'Hola%2C%20te%20comparto%20mi%20credencial%20de%20t%C3%A9cnico.' | urlencode }}">
+                ↩️ Volver a WhatsApp
+            </a>
+        {% elif is_technician %}
+            <a class="button button-secondary" href="{{ url_for('main.technician_dashboard') }}">← Volver a Mi Perfil</a>
+        {% else %}
+            <a class="button button-secondary" href="{{ url_for('main.technician_profile', technician_id=technician.id) }}">← Volver al perfil</a>
+        {% endif %}
+    </div>
+    <div class="badge-toolbar-right">
+        {% if is_public_view and safe_token %}
+            {% set cc_href = url_for('main.technician_public_badge_confirm_client', token=safe_token) %}{% if desired_delivery_id %}{% set cc_href = cc_href + '?d=' ~ desired_delivery_id %}{% endif %}
+            <a class="button button-primary" id="btn-confirm-client"
+               href="{{ cc_href }}"
+               style="background:linear-gradient(145deg,#059669,#047857);color:#fff;border-color:#047857;">
+                ✅ Confirmar que recibí esta credencial
+            </a>
+        {% else %}
+            {% if not is_technician %}
+                <a class="button button-primary" href="{{ url_for('main.master_technician_edit', technician_id=technician.id) }}">✏️ Editar credencial</a>
+            {% endif %}
+            <button type="button" id="btn-share-badge" class="button button-secondary" style="background:linear-gradient(145deg,#f59e0b,#ef4444);color:#fff;border-color:transparent;">📲 Compartir credencial</button>
+            <button type="button" id="btn-download-jpg" class="button button-secondary">📥 Descargar JPG</button>
+            <button type="button" class="button button-secondary" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
+        {% endif %}
+    </div>
+</section>
+
+{% if is_public_view and safe_token %}
+<section class="confirm-client-hero no-print" style="max-width: 920px; margin: 18px auto 8px; background:linear-gradient(145deg,#ecfdf5,#d1fae5);border:1px solid #6ee7b7;border-radius:16px;padding:14px 18px;color:#064e3b;">
+    <div style="display:flex;gap:12px;align-items:center;">
+        <div style="width:40px;height:40px;border-radius:999px;background:#047857;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">📋</div>
+        <div style="flex:1;">
+            <div style="font-weight:700;margin-bottom:2px;">¿Sos el cliente que recibió esta credencial?</div>
+            <div style="font-size:13px;opacity:.85;">Confirmá recepción con tu nombre y obra / domicilio. Así la empresa queda informada que el técnico se presentó.</div>
+        </div>
+        {% set hero_href = url_for('main.technician_public_badge_confirm_client', token=safe_token) %}{% if desired_delivery_id %}{% set hero_href = hero_href + '?d=' ~ desired_delivery_id %}{% endif %}
+        <a class="button" style="background:#047857;color:#fff;border-color:#047857;white-space:nowrap;"
+           href="{{ hero_href }}">
+            Confirmar →
+        </a>
+    </div>
+</section>
+{% endif %}
+
+<main class="badge-shell no-print">
+    <article class="badge-card" id="badgebuild">
+        <header class="badge-header">
+            <div class="badge-brand">
+                <div class="badge-logo-wrap">
+                    <div class="badge-logo">SB</div>
+                </div>
+                <div class="badge-brand-text">
+                    <p class="badge-company">
+                        {% if technician.company_name and technician.company_name.strip() %}
+                            {{ technician.company_name | upper }}
+                        {% else %}
+                            SOFT BERARDI
+                        {% endif %}
+                    </p>
+                    <p class="badge-brand-kicker">TARJETA DE PRESENTACIÓN · TÉCNICO</p>
+                </div>
+            </div>
+            <div class="badge-code-chip">
+                <span>LEGAJO</span>
+                <strong>{{ technician.employee_code or '—' }}</strong>
+            </div>
+        </header>
+
+        <section class="badge-body">
+            <aside class="badge-photo-col">
+                <div class="badge-photo-frame">
+                    {% set photo_url = technician.profile_photo_path | technician_photo_url %}
+                    {% if photo_url %}
+                        <img src="{{ photo_url }}" alt="{{ technician.name }}" class="badge-photo" crossorigin="anonymous" referrerpolicy="no-referrer-when-downgrade" decoding="async" loading="eager" data-proxy-href="{{ url_for('main.technician_profile_photo_proxy', technician_id=technician.id) }}">
+                    {% else %}
+                        <div class="badge-photo-placeholder">
+                            {% set initials = '' %}
+                            {% set parts = (technician.name or '').strip().split() %}
+                            {% for p in parts[:2] %}
+                                {% set initials = initials ~ (p[0] | upper if p else '') %}
+                            {% endfor %}
+                            <span class="badge-initials">{{ initials or 'SB' }}</span>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="badge-region-tag">
+                    {% if technician.center_name %}
+                        {{ technician.center_name }}
+                    {% elif technician.region %}
+                        {{ technician.region }}
+                    {% endif %}
+                </div>
+            </aside>
+
+            <div class="badge-data-col">
+                <div class="badge-name-row">
+                    <h1 class="badge-fullname">{{ technician.name or '—' }}</h1>
+                </div>
+
+                <dl class="badge-data-list">
+                    {% if technician.blood_group %}
+                    <div class="badge-data-row badge-row-alert">
+                        <dt class="badge-icon blood-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path fill="currentColor" d="M12 2C10 6 7 9.5 7 13.5A5 5 0 0 0 12 21a5 5 0 0 0 5-7.5C17 9.5 14 6 12 2Zm0 16.5a3 3 0 0 1-3-4.5c0-2 1.5-4.6 3-6.9 1.5 2.3 3 4.9 3 6.9a3 3 0 0 1-3 4.5Z"/>
+                            </svg>
+                            Grupo Sanguíneo
+                        </dt>
+                        <dd>{{ technician.blood_group }}</dd>
+                    </div>
+                    {% endif %}
+
+                    {% if technician.art_provider %}
+                    <div class="badge-data-row">
+                        <dt class="badge-icon art-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path fill="currentColor" d="M12 2L3 7v6c0 5 3.8 9.6 9 11 5.2-1.4 9-6 9-11V7l-9-5Zm0 5a2 2 0 0 1 2 2v2h2a1 1 0 1 1 0 2h-2v2a1 1 0 1 1-2 0v-2h-2a1 1 0 1 1 0-2h2V9a2 2 0 0 1 2-2Z"/>
+                            </svg>
+                            ART
+                        </dt>
+                        <dd>{{ technician.art_provider }}</dd>
+                    </div>
+                    {% endif %}
+
+                    {% if technician.emergency_number %}
+                    <div class="badge-data-row">
+                        <dt class="badge-icon phone-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path fill="currentColor" d="M6.6 10.8A15 15 0 0 0 13.2 17.4l2-2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.6 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11 11 0 0 0 .6 3.4 1 1 0 0 1-.25 1l-2.25 2.4Z"/>
+                            </svg>
+                            Emergencia
+                        </dt>
+                        <dd><a class="badge-link" href="tel:{{ technician.emergency_number }}">{{ technician.emergency_number }}</a></dd>
+                    </div>
+                    {% endif %}
+
+                    {% if technician.phone %}
+                    <div class="badge-data-row">
+                        <dt class="badge-icon mobile-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path fill="currentColor" d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm5 18a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4ZM7 4v12h10V4H7Z"/>
+                            </svg>
+                            Teléfono
+                        </dt>
+                        <dd><a class="badge-link" href="tel:{{ technician.phone }}">{{ technician.phone }}</a></dd>
+                    </div>
+                    {% endif %}
+
+                    {% if technician.allergies %}
+                    <div class="badge-data-row badge-row-danger">
+                        <dt class="badge-icon alert-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path fill="currentColor" d="M12 2L1 21h22L12 2Zm0 4l7.5 13h-15L12 6Zm-1 5v4h2v-4h-2Zm0 5v2h2v-2h-2Z"/>
+                            </svg>
+                            Alergias / Preexistentes
+                        </dt>
+                        <dd>{{ technician.allergies }}</dd>
+                    </div>
+                    {% endif %}
+
+                    {% if technician.supervisor_name %}
+                    <div class="badge-data-row badge-row-muted">
+                        <dt class="badge-icon sup-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path fill="currentColor" d="M16 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 2c-3 0-6 1.5-6 4.5V20h12v-2.5C14 14.5 11 13 8 13Zm8 0c-.3 0-.6 0-.9.1 1.7 1.1 2.9 2.6 2.9 4.4V20h6v-2.5c0-3-3-4.5-8-4.5Z"/>
+                            </svg>
+                            Supervisor
+                        </dt>
+                        <dd>{{ technician.supervisor_name }}</dd>
+                    </div>
+                    {% endif %}
+                </dl>
+            </div>
+        </section>
+
+        <footer class="badge-footer">
+            <div class="badge-footer-left">
+                <span class="badge-footer-dot"></span>
+                Emitido: <strong>{{ today }}</strong>
+            </div>
+            <div class="badge-footer-right">
+                {% if technician.region %}Región <strong>{{ technician.region }}</strong> · {% endif %}
+                Documento confidencial de uso interno y presentación al cliente.
+            </div>
+        </footer>
+    </article>
+</main>
+
+<style>
+    .badge-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 24px;
+        max-width: 1040px;
+        margin: 0 auto;
+    }
+    .badge-toolbar-right {
+        display: flex;
+        gap: 10px;
+    }
+
+    .badge-shell {
+        max-width: 1040px;
+        margin: 0 auto 60px;
+        padding: 12px 24px 40px;
+    }
+
+    .badge-card {
+        background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+        border: 1px solid rgba(29, 78, 216, 0.12);
+        border-radius: 24px;
+        box-shadow: 0 30px 60px -20px rgba(15, 23, 42, 0.18),
+                    0 10px 24px -10px rgba(29, 78, 216, 0.14);
+        overflow: hidden;
+        position: relative;
+    }
+    .badge-card::before {
+        content: "";
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 6px;
+        background: linear-gradient(90deg, #1d4ed8 0%, #60a5fa 40%, #f59e0b 75%, #ef4444 100%);
+    }
+
+    .badge-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 28px 32px 20px;
+        background:
+            radial-gradient(500px circle at 92% 0%, rgba(245, 158, 11, 0.12), transparent 55%),
+            radial-gradient(600px circle at 0% 0%, rgba(29, 78, 216, 0.14), transparent 55%),
+            linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border-bottom: 1px solid #eef2f7;
+    }
+    .badge-brand {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        min-width: 0;
+    }
+    .badge-logo-wrap { flex: none; }
+    .badge-logo {
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(145deg, #1d4ed8 0%, #1e40af 100%);
+        color: #fff;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        font-size: 20px;
+        box-shadow: 0 10px 20px -8px rgba(29, 78, 216, 0.55);
+    }
+    .badge-brand-text { min-width: 0; }
+    .badge-company {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        color: #0f172a;
+    }
+    .badge-brand-kicker {
+        margin: 4px 0 0;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #1d4ed8;
+    }
+    .badge-code-chip {
+        text-align: right;
+        padding: 10px 16px;
+        border-radius: 999px;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        line-height: 1.1;
+    }
+    .badge-code-chip span {
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #1d4ed8;
+    }
+    .badge-code-chip strong {
+        display: block;
+        font-size: 1.3rem;
+        color: #1e3a8a;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .badge-body {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 32px;
+        padding: 32px;
+        align-items: start;
+    }
+    .badge-photo-col {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+    }
+    .badge-photo-frame {
+        width: 100%;
+        aspect-ratio: 4 / 5;
+        border-radius: 22px;
+        overflow: hidden;
+        background: linear-gradient(160deg, #dbeafe 0%, #e0e7ff 50%, #fef3c7 100%);
+        border: 2px solid #ffffff;
+        box-shadow: 0 20px 40px -14px rgba(29, 78, 216, 0.25),
+                    0 0 0 1px rgba(29, 78, 216, 0.08);
+        position: relative;
+    }
+    .badge-photo {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .badge-photo-placeholder {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(160deg, rgba(29,78,216,0.12), rgba(245,158,11,0.12));
+    }
+    .badge-initials {
+        font-size: 4rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        color: #1e3a8a;
+        opacity: 0.75;
+    }
+    .badge-region-tag {
+        text-align: center;
+        padding: 10px 14px;
+        border-radius: 14px;
+        background: #0f172a;
+        color: #f8fafc;
+        font-weight: 600;
+        font-size: 0.9rem;
+        letter-spacing: 0.02em;
+    }
+
+    .badge-data-col { min-width: 0; }
+    .badge-name-row {
+        padding-bottom: 18px;
+        border-bottom: 2px dashed #e5e7eb;
+        margin-bottom: 18px;
+    }
+    .badge-fullname {
+        margin: 0;
+        font-size: clamp(1.6rem, 2.4vw, 2.2rem);
+        font-weight: 800;
+        line-height: 1.1;
+        color: #0f172a;
+        letter-spacing: -0.01em;
+    }
+
+    .badge-data-list {
+        margin: 0;
+        display: grid;
+        gap: 14px;
+    }
+    .badge-data-row {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        gap: 16px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+    }
+    .badge-data-row.badge-row-alert {
+        background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+        border-color: #fecdd3;
+    }
+    .badge-data-row.badge-row-danger {
+        background: linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
+        border-color: #fde68a;
+    }
+    .badge-data-row.badge-row-muted {
+        background: #fafafa;
+        border-color: #e5e7eb;
+        opacity: 0.9;
+    }
+    .badge-icon {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+        font-weight: 700;
+        color: #334155;
+        font-size: 0.88rem;
+    }
+    .badge-icon svg {
+        width: 20px;
+        height: 20px;
+        flex: none;
+        color: #1d4ed8;
+    }
+    .badge-row-alert .badge-icon svg { color: #e11d48; }
+    .badge-row-danger .badge-icon svg { color: #b45309; }
+    .badge-row-muted .badge-icon svg { color: #475569; }
+    .blood-icon svg { color: #dc2626; }
+    .badge-data-row dd {
+        margin: 0;
+        color: #0f172a;
+        font-weight: 600;
+        font-size: 1rem;
+        line-height: 1.4;
+        word-break: break-word;
+    }
+    .badge-link {
+        color: #1d4ed8;
+        text-decoration: none;
+    }
+    .badge-link:hover { text-decoration: underline; }
+
+    .badge-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 32px 22px;
+        border-top: 1px solid #eef2f7;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        color: #475569;
+        font-size: 0.82rem;
+    }
+    .badge-footer-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 500;
+    }
+    .badge-footer-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #16a34a;
+        box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
+    }
+    .badge-footer-right {
+        text-align: right;
+        font-weight: 500;
+    }
+    .badge-footer strong { color: #0f172a; }
+
+    @media (max-width: 820px) {
+        .badge-body {
+            grid-template-columns: 1fr;
+            padding: 24px;
+            gap: 24px;
+        }
+        .badge-photo-col {
+            flex-direction: row;
+            align-items: flex-end;
+        }
+        .badge-photo-frame {
+            width: 160px;
+            aspect-ratio: 4 / 5;
+        }
+        .badge-region-tag { flex: 1; }
+        .badge-initials { font-size: 2.5rem; }
+        .badge-data-row {
+            grid-template-columns: 1fr;
+            gap: 6px;
+        }
+        .badge-header { padding: 22px 24px 16px; }
+        .badge-footer { padding: 16px 24px; flex-direction: column; align-items: flex-start; }
+        .badge-footer-right { text-align: left; }
+    }
+
+    @media (max-width: 560px) {
+        .badge-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 14px;
+        }
+        .badge-code-chip { align-self: flex-end; }
+        .badge-photo-col { flex-direction: column; }
+        .badge-photo-frame { width: 100%; max-width: 240px; margin: 0 auto; }
+    }
+
+    @media print {
+        .badge-toolbar, .no-print { display: none !important; }
+        body { background: #fff !important; }
+        .badge-shell { max-width: 100%; padding: 0; margin: 0; }
+        .badge-card {
+            box-shadow: none !important;
+            border: 1px solid #d1d5db !important;
+            border-radius: 18px;
+        }
+        @page { size: A4; margin: 14mm; }
+    }
+</style>
+
+<script src="{{ url_for('static', filename='vendor/html2canvas.min.js') }}"></script>
+<script>
+// Fallback: si el recurso local no cargó (por ej. deploy no lo copió), cargar desde CDN
+(function(){
+    function loadCDNFallback(){
+        if (typeof window.html2canvas === "function") return;
+        var s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+        s.crossOrigin = "anonymous";
+        s.onerror = function(){
+            var btn = document.getElementById("btn-download-jpg");
+            if (btn) { btn.disabled = true; btn.title = "No se puede cargar html2canvas local ni CDN"; }
+        };
+        document.head.appendChild(s);
+    }
+    // Esperar 50ms para ver si la versión inicial cargó
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function(){ setTimeout(loadCDNFallback, 80); });
+    } else {
+        setTimeout(loadCDNFallback, 80);
+    }
+})();
+</script>
+<script>
+(function(){
+    var btn = document.getElementById("btn-download-jpg");
+    if (!btn) return;
+    var origLabel = btn.innerHTML;
+    var SAFETY_TIMEOUT_MS = 20000;
+    var safetyTimer = null;
+
+    function unlock(){
+        try { clearTimeout(safetyTimer); } catch(e){}
+        btn.disabled = false;
+        btn.innerHTML = origLabel;
+    }
+
+    function slug(text){
+        return (text || "")
+            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9_-]+/g, "_")
+            .replace(/^_+|_+$/g, "")
+            .toUpperCase() || "TECNICO";
+    }
+
+    function triggerDownload(dataUrl, filename){
+        var a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){ try { document.body.removeChild(a); } catch(e){} }, 300);
+    }
+
+    function swapImgsForProxy(card){
+        var changed = [];
+        var imgs = card.querySelectorAll("img[data-proxy-href]");
+        for (var i = 0; i < imgs.length; i++){
+            var img = imgs[i];
+            var current = (img.src || "").trim();
+            // Skip swap if already same-origin (/static/ or relative): canvas captures OK
+            var isRelativeOrSame = !current || current.charAt(0) === "/" || current.indexOf(location.origin + "/") === 0;
+            var proxy = img.getAttribute("data-proxy-href");
+            if (proxy && !isRelativeOrSame && current !== proxy) {
+                changed.push({el: img, old: img.getAttribute("src")});
+                // Remove crossorigin before swap (same origin after)
+                try { img.removeAttribute("crossorigin"); } catch(e){}
+                img.src = proxy;
+            }
+        }
+        return changed;
+    }
+
+    function restoreSwap(list){
+        for (var i = 0; i < list.length; i++) {
+            try {
+                list[i].el.setAttribute("src", list[i].old);
+                list[i].el.setAttribute("crossorigin", "anonymous");
+            } catch(e){}
+        }
+    }
+
+    function waitForDomImages(changed){
+        return new Promise(function(resolve){
+            var pending = 0;
+            function doneOne(){ pending--; if (pending <= 0) resolve(); }
+            for (var i = 0; i < changed.length; i++){
+                var el = changed[i].el;
+                if (!el.complete || (el.naturalWidth || 0) === 0) {
+                    pending++;
+                    (function(e){
+                        var to = setTimeout(function(){ doneOne(); }, 10000);
+                        function off(){ try { clearTimeout(to); } catch(_){} e.removeEventListener("load", onLoad); e.removeEventListener("error", onErr); }
+                        function onLoad(){ off(); doneOne(); }
+                        function onErr(){ off(); doneOne(); }
+                        e.addEventListener("load", onLoad);
+                        e.addEventListener("error", onErr);
+                    })(el);
+                }
+            }
+            if (pending === 0) resolve();
+        });
+    }
+
+    function doRender(card, retryWithoutPhoto){
+        var cloneContainer = null;
+        var realPhoto = null;
+        var realPhotoParent = null;
+        var realPhotoNextSibling = null;
+
+        if (retryWithoutPhoto) {
+            realPhoto = card.querySelector("img.badge-photo");
+            if (realPhoto) {
+                realPhotoParent = realPhoto.parentNode;
+                realPhotoNextSibling = realPhoto.nextSibling;
+                var placeholder = document.createElement("div");
+                placeholder.className = "badge-photo-placeholder badge-photo";
+                placeholder.setAttribute("style", "display:grid;place-items:center;background:#e0e7ff;color:#1e3a8a;font-weight:800;font-size:2.2rem;aspect-ratio:4/5;width:100%;");
+                placeholder.textContent = "FOTO";
+                realPhotoParent.replaceChild(placeholder, realPhoto);
+                cloneContainer = placeholder;
+            }
+        }
+
+        function restorePhoto(){
+            if (realPhoto && realPhotoParent && cloneContainer) {
+                try {
+                    if (cloneContainer.parentNode === realPhotoParent) {
+                        realPhotoParent.insertBefore(realPhoto, cloneContainer.nextSibling || null);
+                        realPhotoParent.removeChild(cloneContainer);
+                    }
+                } catch(e){}
+            }
+        }
+
+        var swapped = swapImgsForProxy(card);
+        var loadedPromise = waitForDomImages(swapped);
+
+        return loadedPromise.then(function(){
+            return html2canvas(card, {
+                scale: 2,
+                backgroundColor: "#ffffff",
+                useCORS: true,
+                allowTaint: true,
+                logging: false,
+                imageTimeout: 12000,
+                ignoreElements: function(el){
+                    return el.classList && el.classList.contains("badge-toolbar");
+                }
+            }).then(function(canvas){
+                restoreSwap(swapped);
+                restorePhoto();
+                try {
+                    var dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+                    return { ok: true, dataUrl: dataUrl };
+                } catch (secErr) {
+                    restoreSwap(swapped);
+                    restorePhoto();
+                    return { ok: false, error: secErr, security: true };
+                }
+            }).catch(function(err){
+                restoreSwap(swapped);
+                restorePhoto();
+                return { ok: false, error: err };
+            });
+        });
+    }
+
+    function download(){
+        if (typeof window.html2canvas !== "function") {
+            alert("La librería para generar imágenes no se pudo cargar. Revisá tu conexión a Internet o desactivá el bloqueador de anuncios.");
+            return;
+        }
+        var card = document.getElementById("badgebuild");
+        if (!card) return;
+
+        btn.disabled = true;
+        btn.innerHTML = "⏳ Generando imagen...";
+        safetyTimer = setTimeout(function(){
+            unlock();
+            alert("Tiempo de espera agotado. Intentá nuevamente o usá la opción Imprimir/PDF.");
+        }, SAFETY_TIMEOUT_MS);
+
+        var legajo = slug({{ (technician.employee_code or '') | tojson }});
+        var nombre = slug({{ (technician.name or '') | tojson }});
+        var filename = "Tarjeta_" + (legajo || nombre) + (legajo && nombre ? "_" + nombre : "") + ".jpg";
+
+        doRender(card, false).then(function(res){
+            if (res.ok) {
+                triggerDownload(res.dataUrl, filename);
+                unlock();
+                return;
+            }
+            if (res.security || (res.error && String(res.error.message || res.error).toLowerCase().indexOf("taint") >= 0) ||
+                (res.error && String(res.error.message || res.error).toLowerCase().indexOf("security") >= 0)) {
+                btn.innerHTML = "⏳ Reintentando sin foto (CORS)...";
+                return doRender(card, true).then(function(res2){
+                    if (res2.ok) {
+                        triggerDownload(res2.dataUrl, filename);
+                        alert("Se generó la imagen sin la foto de perfil (CORS Cloudinary). Podés compartirla igual; la foto se ve desde el link online.");
+                    } else {
+                        alert("No se pudo generar la imagen. Usá la opción 🖨 Imprimir / Guardar PDF que funciona sin conexión externa.");
+                    }
+                    unlock();
+                });
+            }
+            alert("Error al generar: " + (res.error && res.error.message ? res.error.message : res.error));
+            unlock();
+        });
+    }
+
+    btn.addEventListener("click", download);
+
+    var shareBtn = document.getElementById("btn-share-badge");
+    if (shareBtn) {
+        var shareOrigLabel = shareBtn.innerHTML;
+        var SHARE_SAFETY_MS = 60000;
+        var shareSafetyTimer = null;
+        var techId = Number({{ technician.id | tojson }});
+        var techData = {{ technician | tojson }} || {};
+        var csrfToken = {{ csrf_token | tojson }};
+        var publicUrl = null;
+        try {
+            var tok = (techData && techData.badge_share_token) ? String(techData.badge_share_token).trim() : "";
+            if (tok) publicUrl = location.origin + "/t/" + encodeURIComponent(tok);
+        } catch(_) {}
+
+        function unlockShare() {
+            try { clearTimeout(shareSafetyTimer); } catch(_) {}
+            shareBtn.disabled = false;
+            shareBtn.innerHTML = shareOrigLabel;
+        }
+
+        function dataUrlToBlob(dataUrl) {
+            var parts = dataUrl.split(",");
+            var meta = parts[0];
+            var base64 = parts[1];
+            var mimeMatch = /data:(.*?);base64/.exec(meta || "");
+            var mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+            var raw = window.atob(base64);
+            var arr = new Uint8Array(raw.length);
+            for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+            return new Blob([arr], { type: mime });
+        }
+
+        function whatsappWebLink(text) {
+            var q = new URLSearchParams({ text: text });
+            return "https://wa.me/?" + q.toString();
+        }
+
+        function buildShareText(pUrl) {
+            var name = (techData && techData.name) ? String(techData.name).trim() : "";
+            var legajo = (techData && techData.employee_code) ? String(techData.employee_code).trim() : "";
+            var company = (techData && techData.company_name) ? String(techData.company_name).trim() || "Soft Berardi" : "Soft Berardi";
+            var today = new Date().toLocaleDateString("es-AR");
+            var parts = [];
+            parts.push("📋 Presentación Técnica · " + company);
+            if (name) parts.push("👤 Técnico: " + name + (legajo ? " — Leg. " + legajo : ""));
+            parts.push("📅 Fecha: " + today);
+            parts.push("");
+            parts.push("🔗 Ver credencial oficial (datos y foto actualizada):");
+            if (pUrl) parts.push(pUrl);
+            parts.push("");
+            parts.push("(*) Incluye grupo sanguíneo, ART y contacto de emergencia.");
+            return parts.join("\n");
+        }
+
+        async function apiInit(channel) {
+            var res = await fetch("{{ url_for('main.api_badge_delivery_init') }}", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrfToken,
+                },
+                credentials: "same-origin",
+                body: JSON.stringify({ technician_id: techId, delivery_channel: channel || "whatsapp_webshare" }),
+            });
+            if (!res.ok) throw new Error("No se pudo preparar la credencial.");
+            return res.json();
+        }
+
+        async function apiConfirm(deliveryId) {
+            if (!deliveryId) return;
+            var url = "{{ url_for('main.api_badge_delivery_confirm', delivery_id=0) }}".replace("/0/", "/" + encodeURIComponent(deliveryId) + "/");
+            await fetch(url, { method: "POST", headers: { "X-CSRF-Token": csrfToken }, credentials: "same-origin" });
+        }
+
+        async function apiCancel(deliveryId) {
+            if (!deliveryId) return;
+            var url = "{{ url_for('main.api_badge_delivery_cancel', delivery_id=0) }}".replace("/0/", "/" + encodeURIComponent(deliveryId) + "/");
+            await fetch(url, { method: "POST", headers: { "X-CSRF-Token": csrfToken }, credentials: "same-origin" });
+        }
+
+        async function renderImageWithFallback() {
+            var card = document.getElementById("badgebuild");
+            if (!card) throw new Error("No se encontró la credencial.");
+            var res = await doRender(card, false);
+            if (res && res.ok) return res;
+            if (res && (res.security || (res.error && String(res.error.message || res.error).toLowerCase().indexOf("taint") >= 0) || (res.error && String(res.error.message || res.error).toLowerCase().indexOf("security") >= 0))) {
+                var res2 = await doRender(card, true);
+                return res2;
+            }
+            return res || { ok: false, error: new Error("Render failed") };
+        }
+
+        shareBtn.addEventListener("click", async function() {
+            if (typeof window.html2canvas !== "function") {
+                alert("La librería para generar imágenes no se pudo cargar. Revisá tu conexión o desactivá el bloqueador de anuncios.");
+                return;
+            }
+            shareBtn.disabled = true;
+            shareBtn.innerHTML = "⏳ Preparando credencial...";
+            shareSafetyTimer = setTimeout(function() {
+                unlockShare();
+                alert("Tiempo de espera agotado. Intentá nuevamente.");
+            }, SHARE_SAFETY_MS);
+
+            var deliveryId = null;
+            try {
+                var init = await apiInit("whatsapp_webshare");
+                deliveryId = init && init.delivery_id ? init.delivery_id : null;
+                var pUrl = (init && init.public_url) ? init.public_url : publicUrl;
+                var render = await renderImageWithFallback();
+                if (!render || !render.ok) throw new Error((render && render.error && render.error.message) ? render.error.message : "No se pudo generar la imagen.");
+                var blob = dataUrlToBlob(render.dataUrl);
+                var legajoS = slug((techData.employee_code || "").toString());
+                var nombreS = slug(techData.name || "");
+                var fname = "Tarjeta_" + (legajoS || nombreS) + (legajoS && nombreS ? "_" + nombreS : "") + ".jpg";
+                var file = new File([blob], fname, { type: "image/jpeg" });
+                var shareText = buildShareText(pUrl);
+                var canShareFiles = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+
+                if (canShareFiles) {
+                    try {
+                        await navigator.share({
+                            title: "Credencial Técnico · " + (techData.name || ""),
+                            text: shareText,
+                            files: [file],
+                        });
+                        await apiConfirm(deliveryId);
+                        unlockShare();
+                        alert("¡Gracias por compartir tu credencial!");
+                        return;
+                    } catch (shareErr) {
+                        await apiCancel(deliveryId);
+                        // Fallback a WhatsApp Web
+                    }
+                }
+
+                // Fallback: WhatsApp link + download JPG
+                triggerDownload(render.dataUrl, fname);
+                setTimeout(function() {
+                    window.open(whatsappWebLink(shareText), "_blank", "noopener");
+                }, 400);
+                unlockShare();
+                alert("Listo: se descargó la credencial en JPG y se abrió WhatsApp para que la envíes. Recordá adjuntar la imagen descargada.");
+            } catch (e) {
+                if (deliveryId) { try { await apiCancel(deliveryId); } catch(_) {} }
+                unlockShare();
+                alert("Error: " + (e.message || e));
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

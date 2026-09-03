@@ -1,0 +1,1561 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    @media (min-width: 980px) {
+        .ot-block-grid > section {
+            height: 740px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: #94a3b8 #f8fafc;
+        }
+        .ot-block-grid > section::-webkit-scrollbar { width: 8px; }
+        .ot-block-grid > section::-webkit-scrollbar-track { background:#f8fafc;border-radius:999px; }
+        .ot-block-grid > section::-webkit-scrollbar-thumb { background:#94a3b8;border-radius:999px;border:2px solid #f8fafc; }
+        .ot-block-grid > section::-webkit-scrollbar-thumb:hover { background:#64748b; }
+    }
+    @media (max-width: 979px) {
+        .ot-block-grid > section { height: auto; overflow: visible; }
+    }
+
+    @media (max-width: 640px) {
+        .ot-header-wrap { padding: 18px 16px !important; border-radius: 18px !important; }
+        .ot-header-grid {
+            grid-template-columns: auto 1fr !important;
+            gap: 12px !important;
+            align-items: start !important;
+        }
+        .ot-header-icon { width: 52px !important; height: 52px !important; font-size: 24px !important; border-radius: 12px !important; }
+        .ot-header-main { min-width: 0; }
+        .ot-header-meta { font-size: 11px !important; letter-spacing: .08em !important; }
+        .ot-header-ot {
+            font-size: 19px !important;
+            line-height: 1.2 !important;
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
+        }
+        .ot-header-tech { font-size: 12px !important; line-height: 1.4 !important; }
+        .ot-header-status-desk { display: none !important; }
+        .ot-header-status-mob { display: block !important; }
+        .ot-chip {
+            display: block !important;
+            text-align: center !important;
+            width: 100% !important;
+            padding: 10px 16px !important;
+            font-size: 15px !important;
+            box-sizing: border-box !important;
+        }
+    }
+    @media (max-width: 420px) {
+        .ot-header-grid { gap: 10px !important; }
+        .ot-header-ot { font-size: 17px !important; }
+        .ot-chip { padding: 10px 12px !important; font-size: 14px !important; }
+    }
+    @media (max-width: 360px) {
+        .ot-header-icon { width: 44px !important; height: 44px !important; font-size: 20px !important; }
+        .ot-header-ot { font-size: 15px !important; }
+        .ot-header-tech { font-size: 11px !important; }
+    }
+</style>
+
+<!-- Tarjeta de credencial OCULTA (off-screen) para html2canvas del fallback candidato 8.
+     Es 1:1 con la tarjeta de technician_badge.html, pero NUNCA se ve al usuario. width=1100px
+     para que html2canvas renderice en tamaño grande (JPG se ve bien en WhatsApp). Usamos
+     visibility:hidden + overflow:hidden y altura del articulo AUTO (no fija) para que la
+     imagen JPG final sea exactamente del contenido, sin espacio blanco debajo. -->
+<div id="technicianBadgeCardHiddenWrap" aria-hidden="true" style="position:fixed;left:-999999px;top:-999999px;width:1120px;max-width:none;z-index:-1;visibility:hidden;overflow:hidden;background:#ffffff;padding:0;margin:0;border:0;">
+<article id="technicianBadgeCardHidden" class="badge-card-hidden" style="display:block;position:static;width:1100px;height:auto;background:linear-gradient(180deg,#ffffff 0%,#fcfdff 100%);border:1px solid rgba(29,78,216,0.12);border-radius:24px;overflow:hidden;margin:0;padding:0;">
+  <div style="position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(90deg,#1d4ed8 0%,#60a5fa 40%,#f59e0b 75%,#ef4444 100%);"></div>
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 32px 20px;background:radial-gradient(500px circle at 92% 0%,rgba(245,158,11,0.12),transparent 55%),radial-gradient(600px circle at 0% 0%,rgba(29,78,216,0.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);border-bottom:1px solid #eef2f7;">
+    <div style="display:flex;align-items:center;gap:16px;min-width:0;">
+      <div style="width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,#1d4ed8 0%,#1e40af 100%);color:#fff;font-weight:800;letter-spacing:0.08em;font-size:20px;box-shadow:0 10px 20px -8px rgba(29,78,216,0.55);">SB</div>
+      <div style="min-width:0;">
+        <p style="margin:0;font-size:1.35rem;font-weight:800;letter-spacing:0.02em;color:#0f172a;">
+          {%- if technician.company_name and technician.company_name.strip() -%}
+            {{ technician.company_name | upper }}
+          {%- else -%}SOFT BERARDI{%- endif -%}
+        </p>
+        <p style="margin:4px 0 0;font-size:0.72rem;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#1d4ed8;">TARJETA DE PRESENTACIÓN · TÉCNICO</p>
+      </div>
+    </div>
+    <div style="text-align:right;padding:10px 16px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;line-height:1.1;">
+      <span style="display:block;font-size:0.68rem;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#1d4ed8;">LEGAJO</span>
+      <strong style="display:block;font-size:1.3rem;color:#1e3a8a;font-variant-numeric:tabular-nums;">{{ technician.employee_code or '—' }}</strong>
+    </div>
+  </header>
+  <section style="display:grid;grid-template-columns:260px 1fr;gap:32px;padding:32px;align-items:start;">
+    <aside style="display:flex;flex-direction:column;align-items:stretch;gap:14px;">
+      <div style="width:100%;aspect-ratio:4 / 5;border-radius:22px;overflow:hidden;background:linear-gradient(160deg,#dbeafe 0%,#e0e7ff 50%,#fef3c7 100%);border:2px solid #ffffff;box-shadow:0 20px 40px -14px rgba(29,78,216,0.25),0 0 0 1px rgba(29,78,216,0.08);position:relative;">
+        {% set photo_url_hidden = technician.profile_photo_path | technician_photo_url %}
+        {% if photo_url_hidden %}
+        <img src="{{ photo_url_hidden }}" alt="{{ technician.name or 'Tecnico' }}" crossorigin="anonymous" referrerpolicy="no-referrer-when-downgrade" decoding="async" loading="eager" style="width:100%;height:100%;object-fit:cover;display:block;">
+        {% else %}
+        <div style="width:100%;height:100%;display:grid;place-items:center;background:linear-gradient(160deg,rgba(29,78,216,0.12),rgba(245,158,11,0.12));">
+          {% set init_h = '' %}{% set parts_h = (technician.name or '').strip().split() %}{% for p in parts_h[:2] %}{% set init_h = init_h ~ (p[0] | upper if p else '') %}{% endfor %}<span style="font-size:4rem;font-weight:800;letter-spacing:0.06em;color:#1e3a8a;opacity:0.75;">{{ init_h or 'SB' }}</span>
+        </div>
+        {% endif %}
+      </div>
+      <div style="text-align:center;padding:10px 14px;border-radius:14px;background:#0f172a;color:#f8fafc;font-weight:600;font-size:0.9rem;letter-spacing:0.02em;">
+        {% if technician.center_name %}{{ technician.center_name }}{% elif technician.region %}{{ technician.region }}{% endif %}
+      </div>
+    </aside>
+    <div style="min-width:0;">
+      <div style="padding-bottom:18px;border-bottom:2px dashed #e5e7eb;margin-bottom:18px;">
+        <h1 style="margin:0;font-size:2.2rem;font-weight:800;line-height:1.1;color:#0f172a;letter-spacing:-0.01em;">{{ technician.name or '—' }}</h1>
+      </div>
+      <dl style="margin:0;display:grid;gap:14px;">
+        {% if technician.blood_group %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:linear-gradient(180deg,#fff1f2 0%,#ffe4e6 100%);border:1px solid #fecdd3;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#dc2626;"><path fill="currentColor" d="M12 2C10 6 7 9.5 7 13.5A5 5 0 0 0 12 21a5 5 0 0 0 5-7.5C17 9.5 14 6 12 2Zm0 16.5a3 3 0 0 1-3-4.5c0-2 1.5-4.6 3-6.9 1.5 2.3 3 4.9 3 6.9a3 3 0 0 1-3 4.5Z"/></svg>Grupo Sanguíneo
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.blood_group }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.art_provider %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M12 2L3 7v6c0 5 3.8 9.6 9 11 5.2-1.4 9-6 9-11V7l-9-5Zm0 5a2 2 0 0 1 2 2v2h2a1 1 0 1 1 0 2h-2v2a1 1 0 1 1-2 0v-2h-2a1 1 0 1 1 0-2h2V9a2 2 0 0 1 2-2Z"/></svg>ART
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.art_provider }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.emergency_number %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M6.6 10.8A15 15 0 0 0 13.2 17.4l2-2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.6 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11 11 0 0 0 .6 3.4 1 1 0 0 1-.25 1l-2.25 2.4Z"/></svg>Emergencia
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.emergency_number }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.phone %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm5 18a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4ZM7 4v12h10V4H7Z"/></svg>Teléfono
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.phone }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.allergies %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:linear-gradient(180deg,#fffbeb 0%,#fef3c7 100%);border:1px solid #fde68a;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#b45309;"><path fill="currentColor" d="M12 2L1 21h22L12 2Zm0 4l7.5 13h-15L12 6Zm-1 5v4h2v-4h-2Zm0 5v2h2v-2h-2Z"/></svg>Alergias / Preexistentes
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.allergies }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.supervisor_name %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#fafafa;border:1px solid #e5e7eb;border-radius:14px;opacity:0.9;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#475569;"><path fill="currentColor" d="M16 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 2c-3 0-6 1.5-6 4.5V20h12v-2.5C14 14.5 11 13 8 13Zm8 0c-.3 0-.6 0-.9.1 1.7 1.1 2.9 2.6 2.9 4.4V20h6v-2.5c0-3-3-4.5-8-4.5Z"/></svg>Supervisor
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.supervisor_name }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.email %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm0 2v.5l8 5 8-5V8H4Zm16 0h-0.5l-7.5 4.7a1 1 0 0 1-1 0L4.5 8H4v8h16V8Z"/></svg>Email
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.email }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.service_type %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M3 11h2v2H3v-2Zm16 0h2v2h-2v-2ZM11 3h2v2h-2V3Zm0 16h2v2h-2v-2Zm6.5-12.5L20.3 7.3 18.9 8.7 17.5 7.3l-1.4 1.4-1.4-1.4 1.4-1.4-1.4-1.4 1.4-1.4ZM6.5 15.5 7.9 16.9 6.5 18.3 5.1 16.9 3.7 18.3 2.3 16.9l1.4-1.4-1.4-1.4 1.4-1.4 1.4 1.4ZM20 20a1 1 0 0 1-1-1v-2h-2v2a3 3 0 0 1-3 3h-4v-2h4a1 1 0 0 0 1-1v-2h2v2a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3h4v2H7a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-4V2h4a3 3 0 0 1 3 3v14Z"/></svg>Servicio
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.service_type }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.work_zone %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M12 2C8.1 2 5 5.1 5 9c0 3.1 2.5 6.6 6.1 9.6.6.5 1.2.5 1.8 0C16.5 15.6 19 12.1 19 9c0-3.9-3.1-7-7-7Zm0 4.5A2.5 2.5 0 1 1 12 11.5 2.5 2.5 0 0 1 12 6.5Z"/></svg>Zona
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.work_zone }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+  <footer style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 32px 22px;border-top:1px solid #eef2f7;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);color:#475569;font-size:0.82rem;">
+    <div style="display:flex;align-items:center;gap:10px;font-weight:500;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,0.14);"></span>Emitido: <strong style="color:#0f172a;">{{ today or '' }}</strong>
+    </div>
+    <div style="text-align:right;font-weight:500;">{% if technician.region %}Región <strong style="color:#0f172a;">{{ technician.region }}</strong> · {% endif %}Documento confidencial de uso interno y presentación al cliente.</div>
+  </footer>
+</article>
+</div>
+
+<div style="max-width:1080px;margin:24px auto;padding:0 16px;">
+    <div style="margin-bottom:18px;">
+        {% if is_technician %}
+        <a class="button button-secondary" href="{{ url_for('main.technician_orders') }}" style="background:#f8fafc;">← Volver a Mis Órdenes</a>
+        {% else %}
+        <a class="button button-secondary" href="{{ url_for('main.technician_orders') }}" style="background:#f8fafc;">← Volver al buscador de Órdenes</a>
+        {% endif %}
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div style="margin-bottom:16px;display:flex;flex-direction:column;gap:8px;">
+        {% for cat, msg in messages %}
+        <div class="toast toast-{{ cat }}" style="border-radius:14px;padding:12px 16px;">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="ot-header-wrap" style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);color:#f8fafc;border-radius:22px;padding:26px 28px;margin-bottom:22px;">
+        <div class="ot-header-grid" style="display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:center;">
+            <div class="ot-header-icon" style="width:64px;height:64px;border-radius:16px;background:#0ea5e9;color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;">📋</div>
+            <div class="ot-header-main">
+                <div class="ot-header-meta" style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#94a3b8;">Orden Técnica · Creada {{ order.created_at|ar_dt }}</div>
+                <h1 class="ot-header-ot" style="margin:4px 0 0;font-size:26px;color:#f8fafc;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word;">N° OT: {{ order.ot_number }}</h1>
+                {% if technician %}
+                <div class="ot-header-tech" style="margin-top:6px;color:#cbd5e1;font-size:14px;">Técnico asignado: <b>{{ technician.name }}</b> · Legajo {{ technician.employee_code }}</div>
+                {% endif %}
+            </div>
+            <div style="text-align:right;display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+                <div class="ot-header-status-desk">
+                    {% set has_p1 = (order.photo_1_path or '')|trim != '' %}
+                    {% set has_p2 = (order.photo_2_path or '')|trim != '' %}
+                    {% set has_pdf = (order.edoc_pdf_path or '')|trim != '' %}
+                    {% set complete = has_p1 and has_p2 and has_pdf %}
+                    {% if complete %}
+                    <span class="ot-chip ot-chip-complete" style="display:inline-block;background:#10b981;color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;">✓ Completa</span>
+                    {% else %}
+                    <span class="ot-chip ot-chip-incomplete" style="display:inline-block;background:#f59e0b;color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;">⏳ Incompleta</span>
+                    {% endif %}
+                </div>
+                <button type="button" id="btnToggleEditData" style="padding:8px 14px;border-radius:12px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#e2e8f0;font-weight:700;font-size:13px;cursor:pointer;">
+                    ✏️ Editar datos
+                </button>
+            </div>
+        </div>
+        <div class="ot-header-status-mob" style="display:none;margin-top:14px;">
+            {% if complete %}
+            <span class="ot-chip ot-chip-complete" style="display:block;text-align:center;background:#10b981;color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;">✓ Completa</span>
+            {% else %}
+            <span class="ot-chip ot-chip-incomplete" style="display:block;text-align:center;background:#f59e0b;color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;">⏳ Incompleta</span>
+            {% endif %}
+        </div>
+
+        <!-- Panel inline de edición de datos (oculto por defecto) -->
+        <div id="panelEditData" style="display:none;margin-top:20px;background:rgba(255,255,255,.96);border:1px solid #cbd5e1;border-radius:16px;padding:18px 20px;color:#0f172a;">
+            <form method="POST" action="{{ url_for('main.technician_order_update_data', order_id=order.id) }}" style="display:flex;flex-direction:column;gap:12px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#1e40af;font-weight:800;margin-bottom:4px;">Modificar datos de la OT</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+                    <div>
+                        <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">Nombre Cliente</label>
+                        <input type="text" name="client_name" value="{{ order.client_name or '' }}" placeholder="Ej: Daniel Olate" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;font-weight:600;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">Dirección / Obra</label>
+                        <input type="text" name="client_address" value="{{ order.client_address or '' }}" placeholder="Ej: Jose Hernandez 1485" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;font-weight:600;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">
+                            Teléfono Cliente <span style="color:#dc2626;">*</span>
+                        </label>
+                        <input type="tel" name="client_phone" required value="{{ order.client_phone or '' }}" placeholder="Ej: 261 500 0000" style="width:100%;padding:10px 12px;border-radius:10px;border:2px solid #f59e0b;font-weight:700;">
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">Notas internas</label>
+                    <textarea name="notes" rows="2" placeholder="Opcional: detalle de la orden" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;resize:vertical;">{{ order.notes or '' }}</textarea>
+                </div>
+                <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+                    <button type="button" id="btnCancelEditData" class="button button-secondary" style="padding:10px 16px;">Cancelar</button>
+                    <button type="submit" class="button button-primary" style="padding:10px 18px;font-weight:800;">💾 Guardar cambios</button>
+                </div>
+            </form>
+        </div>
+
+        <script>
+        (function () {
+            var btn = document.getElementById("btnToggleEditData");
+            var panel = document.getElementById("panelEditData");
+            var cancel = document.getElementById("btnCancelEditData");
+            if (btn && panel) {
+                btn.addEventListener("click", function () {
+                    panel.style.display = (panel.style.display === "none") ? "block" : "none";
+                });
+                if (cancel) cancel.addEventListener("click", function () {
+                    panel.style.display = "none";
+                });
+            }
+        })();
+        </script>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:22px;">
+            {% if order.client_name %}
+            <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 16px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;">Cliente</div>
+                <div style="font-weight:700;margin-top:4px;">{{ order.client_name }}</div>
+            </div>
+            {% endif %}
+            {% if order.client_address %}
+            <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 16px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;">Dirección / Obra</div>
+                <div style="font-weight:600;margin-top:4px;">📍 {{ order.client_address }}</div>
+            </div>
+            {% endif %}
+            {% if order.client_phone %}
+            <div style="background:rgba(14,165,233,.12);border:1px solid rgba(14,165,233,.45);border-radius:14px;padding:14px 16px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#7dd3fc;">Teléfono · WhatsApp</div>
+                <div style="font-weight:800;margin-top:4px;font-size:15px;">📞 +{{ order.client_phone }}</div>
+            </div>
+            {% else %}
+            <div style="background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.45);border-radius:14px;padding:14px 16px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#fca5a5;">⚠️ Falta teléfono</div>
+                <div style="font-weight:700;margin-top:4px;">Click en ✏️ Editar datos para cargar el celular del cliente.</div>
+            </div>
+            {% endif %}
+            {% if delivery and delivery.client_confirmed_at %}
+            <div style="background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);border-radius:14px;padding:14px 16px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#34d399;">Credencial — Confirmación cliente</div>
+                <div style="font-weight:700;margin-top:4px;">✅ {{ delivery.client_name or 'Cliente' }}</div>
+                <div style="font-size:12px;color:#a7f3d0;margin-top:2px;">{{ delivery.client_confirmed_at|ar_dt }}</div>
+            </div>
+            {% endif %}
+        </div>
+        {% if order.notes %}
+        <div style="margin-top:18px;background:rgba(255,255,255,.06);border-left:4px solid #38bdf8;border-radius:12px;padding:14px 16px;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:4px;">Notas internas</div>
+            <div style="font-size:14px;white-space:pre-wrap;line-height:1.5;">{{ order.notes }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="ot-block-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;align-items:start;">
+
+        <section style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px 22px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
+                <div>
+                    <h2 style="margin:0;font-size:18px;">1) Credencial · Compartir por WhatsApp y Confirmación Cliente</h2>
+                    <p style="margin:4px 0 0;color:#475569;font-size:13px;">El mensaje se envía DIRECTAMENTE al celular del cliente. Cuando el cliente confirma, los datos se completan solos.</p>
+                </div>
+            </div>
+            {% set has_delivery = (delivery is not none) %}
+            {% set has_confirm = delivery and delivery.client_confirmed_at %}
+            {% set has_sent = delivery and (delivery.share_confirmed_at or delivery.created_at) %}
+            {% set has_phone = (order.client_phone or '')|trim != '' %}
+
+            <div id="orderBadgeStatusWrap" style="border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px;{% if has_confirm %}background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border-color:#bbf7d0;{% elif has_sent %}background:linear-gradient(135deg,#eff6ff,#f8fafc);border-color:#bfdbfe;{% else %}background:#fafafa;{% endif %};">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:18px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <div id="statusSentIcon" style="width:42px;height:42px;border-radius:12px;background:{% if has_sent %}#2563eb{% else %}#94a3b8{% endif %};color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">
+                            📤
+                        </div>
+                        <div>
+                            <div style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;">1 · Compartida</div>
+                            <div id="statusSentBody">
+                            {% if has_sent %}
+                                <div style="font-weight:700;color:#0f172a;">Enviada OK ✅
+                                    {% if delivery and delivery.created_at %}
+                                    <span style="color:#475569;font-weight:400;font-size:12px;display:block;">{{ delivery.created_at|ar_dt }}</span>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <div style="font-weight:600;color:#475569;">Pendiente de compartir</div>
+                            {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <div id="statusConfirmIcon" style="width:42px;height:42px;border-radius:12px;background:{% if has_confirm %}#059669{% else %}#94a3b8{% endif %};color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">
+                            👥
+                        </div>
+                        <div>
+                            <div style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;">2 · Confirmación Cliente</div>
+                            <div id="statusConfirmBody">
+                            {% if has_confirm %}
+                                <div style="font-weight:700;color:#0f172a;">{{ delivery.client_name or 'Cliente' }} confirmó ✔
+                                    <span style="color:#475569;font-weight:400;font-size:12px;display:block;">{{ delivery.client_confirmed_at|ar_dt }}</span>
+                                    {% if delivery.client_company %}
+                                    <span style="font-size:12px;color:#475569;display:block;">📍 {{ delivery.client_company }}</span>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <div style="font-weight:600;color:#475569;">Cliente aún no confirmó</div>
+                            {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+                    <button id="btnRefreshOrderStatus" type="button" title="Consultar estado confirmación cliente ahora"
+                        style="padding:6px 12px;border-radius:999px;background:#f8fafc;border:1px solid #cbd5e1;color:#334155;font-size:12px;font-weight:600;cursor:pointer;">
+                        🔄 Actualizar estado
+                    </button>
+                </div>
+
+                {% if not has_phone %}
+                <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;margin-bottom:14px;color:#991b1b;font-weight:700;">
+                    ⚠️ Falta el teléfono del cliente. Hacé click en ✏️ Editar datos arriba, cargalo y volvé.
+                </div>
+                {% endif %}
+
+                {# =====  PASO 1: SALUDO / PRESENTACIÓN (ANTERIORMENTE "Chat directo WhatsApp", AHORA BOTÓN PRINCIPAL AZUL GRANDE)  ===== #}
+                <a id="btnOrderWhatsappManual"
+                    {% if not has_phone %}aria-disabled="true" tabindex="-1"{% endif %}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    {% if not has_phone %}href="#" style="pointer-events:none;"{% else %}href="#"{% endif %}
+                    style="width:100%;display:block;box-sizing:border-box;text-decoration:none;padding:16px 20px;border-radius:16px;border:1px solid #0284c7;background:{% if has_phone %}linear-gradient(135deg,#0284c7,#0ea5e9){% else %}#94a3b8{% endif %};color:#fff;font-weight:800;font-size:16px;cursor:{% if has_phone %}pointer{% else %}not-allowed{% endif %};box-shadow:0 6px 18px rgba(14,165,233,.25);display:flex;align-items:center;justify-content:center;gap:10px;flex-direction:column;margin-bottom:14px;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span style="font-size:22px;">👋</span>
+                        <span>
+                            {% if has_phone %}
+                                Paso 1 · Saludar y presentarse por WhatsApp (chat directo)
+                            {% else %}
+                                Cargá el teléfono del cliente primero
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;opacity:.9;">Abre el chat del cliente directamente con un mensaje de presentación pre-cargado — entablás la primera línea y luego volvés acá para compartir la credencial.</div>
+                </a>
+
+                {# =====  PASO 2: COMPARTIR CREDENCIAL (BOTÓN VERDE)  ===== #}
+                <button id="btnOrderShareBadge" type="button"
+                    {% if not has_phone %}disabled{% endif %}
+                    style="width:100%;padding:16px 20px;border-radius:16px;border:none;background:{% if has_phone %}linear-gradient(135deg,#16a34a,#22c55e){% else %}#94a3b8{% endif %};color:#fff;font-weight:800;font-size:16px;cursor:{% if has_phone %}pointer{% else %}not-allowed{% endif %};box-shadow:0 6px 18px rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;gap:10px;flex-direction:column;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span id="btnOrderShareBadgeIcon" style="font-size:22px;">💚</span>
+                        <span id="btnOrderShareBadgeText">
+                            {% if has_phone %}
+                                Paso 2 · Compartir credencial (imagen + texto + link)
+                            {% else %}
+                                Cargá el teléfono del cliente primero
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;opacity:.9;">Abre el selector nativo — elegís WhatsApp y al cliente le llega TODO junto: la foto de la credencial, los datos y el link con confirmación.</div>
+                </button>
+
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:12px;">
+                    <a id="btnOrderWhatsappFallbackFull" class="button button-secondary" style="justify-content:center;display:flex;padding:12px 14px;text-align:center;background:#f0f9ff;color:#0c4a6e;border-color:#bae6fd;font-weight:700;" href="#" target="_blank" rel="noopener noreferrer">💬 Enviar credencial (solo texto · fallback)</a>
+                    <a id="btnOrderCopyLink" class="button button-secondary" style="justify-content:center;display:flex;padding:12px 14px;text-align:center;font-weight:700;" href="#">🔗 Copiar link</a>
+                    <a id="btnOrderDownloadBadge" class="button button-secondary" style="justify-content:center;display:flex;padding:12px 14px;text-align:center;font-weight:700;" href="{{ url_for('main.technician_badge', technician_id=order.technician_id, download=1) }}">🖼 Descargar credencial JPG</a>
+                </div>
+
+                <div id="orderShareStatus" style="margin-top:14px;display:none;"></div>
+            </div>
+
+            <script>
+            (function () {
+                var ORDER_ID = {{ order.id|tojson }};
+                var token = {{ csrf_token|tojson }};
+                var btn = document.getElementById("btnOrderShareBadge");
+                var btnIcon = document.getElementById("btnOrderShareBadgeIcon");
+                var btnText = document.getElementById("btnOrderShareBadgeText");
+                var waBtn = document.getElementById("btnOrderWhatsappManual");
+                var waFallbackFullBtn = document.getElementById("btnOrderWhatsappFallbackFull");
+                var copyBtn = document.getElementById("btnOrderCopyLink");
+                var dlBtn = document.getElementById("btnOrderDownloadBadge");
+                var statusEl = document.getElementById("orderShareStatus");
+                if (!btn) return; // sin botón principal, no hay nada que hacer; evitamos null-attrib crash.
+                var lastPayload = null;
+                var cachedBadgeBlob = null;
+                var hasPhone = {{ 'true' if has_phone else 'false' }};
+
+                var STATUS_SUCCESS_ICON = "✅";
+                var STATUS_ERROR_ICON = "❌";
+                var STATUS_INFO_ICON = "ℹ️";
+                var LOADING_ICON = "⏳";
+                var MAIN_ICON = "💚";
+
+                function showStatus(msg, kind) {
+                    if (!statusEl) return;
+                    statusEl.style.display = "block";
+                    var bg = "#f8fafc", color = "#0f172a", border = "#e2e8f0", ico = STATUS_INFO_ICON;
+                    if (kind === "success") { bg = "#ecfdf5"; color = "#065f46"; border = "#a7f3d0"; ico = STATUS_SUCCESS_ICON; }
+                    if (kind === "error")   { bg = "#fef2f2"; color = "#991b1b"; border = "#fecaca"; ico = STATUS_ERROR_ICON; }
+                    if (kind === "info")    { bg = "#eff6ff"; color = "#1e40af"; border = "#bfdbfe"; ico = STATUS_INFO_ICON; }
+                    statusEl.style.cssText = "margin-top:14px;display:block;padding:12px 16px;border-radius:12px;border:1px solid " + border + ";background:" + bg + ";color:" + color + ";";
+                    statusEl.textContent = ico + " " + msg;
+                }
+
+                function setLoading(loading) {
+                    if (!btn) return;
+                    btn.disabled = !!loading;
+                    btn.style.opacity = loading ? "0.65" : "1";
+                    btn.style.cursor = loading ? "progress" : "pointer";
+                    if (typeof btn.__originalText === "undefined" && btnText) {
+                        btn.__originalText = btnText.textContent || "";
+                    }
+                    if (loading) {
+                        btnIcon.textContent = LOADING_ICON;
+                        if (btnText) btnText.textContent = "Preparando credencial (imagen + texto)...";
+                    } else {
+                        btnIcon.textContent = MAIN_ICON;
+                        if (btnText && btn.__originalText) btnText.textContent = btn.__originalText;
+                    }
+                }
+
+                function fetchShareData() {
+                    var url = "{{ url_for('main.technician_order_share_badge', order_id=order.id) }}";
+                    return fetch(url, {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            "X-CSRF-Token": token,
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ delivery_channel: "web_share_badge" }),
+                    }).then(function (r) { return r.json(); });
+                }
+
+                function blobToDataUrl(blob) {
+                    return new Promise(function (resolve, reject) {
+                        try {
+                            var r = new FileReader();
+                            r.onloadend = function () { resolve(r.result); };
+                            r.onerror = function () { reject(r.error); };
+                            r.readAsDataURL(blob);
+                        } catch (e) { reject(e); }
+                    });
+                }
+
+                function fetchBlobOne(url, opts) {
+                    return new Promise(function (resolve, reject) {
+                        try {
+                            var ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+                            var to = null;
+                            if (ctl) {
+                                to = setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 30000);
+                            }
+                            var reqOpts = Object.assign({}, opts || {});
+                            if (ctl) reqOpts.signal = ctl.signal;
+                            fetch(url, reqOpts).then(function (r) {
+                                if (!r.ok) return resolve(null);
+                                if (r.status === 204) return resolve(null);
+                                var ct = (r.headers.get("Content-Type") || "").toLowerCase();
+                                return r.blob().then(function (b) {
+                                    var bt = (b && b.type) ? b.type.toLowerCase() : "";
+                                    if (!bt && ct) {
+                                        try { Object.defineProperty(b, "type", { value: ct, configurable: true, writable: true }); } catch (e) {}
+                                    }
+                                    if (!b || b.size < 500) return resolve(null);
+                                    resolve(b);
+                                });
+                            }).catch(function (err) {
+                                resolve(null);
+                            }).finally(function () {
+                                if (to) clearTimeout(to);
+                            });
+                        } catch (e) {
+                            resolve(null);
+                        }
+                    });
+                }
+
+                var CANDIDATO_LABELS = {
+                    1: "HTML2Canvas descarga (ORIGEN VIEJO - 100% como antes)",
+                    2: "HTML2Canvas descarga (URL absoluta fallback)",
+                    3: "Pillow render nuevo /t/<token>/badge.jpg (relativo)",
+                    4: "Pillow render nuevo /t/<token>/badge.jpg (absoluta)",
+                    5: "Href botón Descargar credencial",
+                    6: "badge.jpg relativo armado a mano",
+                    7: "badge.jpg absoluto armado a mano",
+                    8: "FALLBACK LOCAL: html2canvas sobre la tarjeta en esta misma pagina (sin backend)",
+                };
+
+                var HTML2CANVAS_LOADED_P = null;
+                function ensureHtml2canvas() {
+                    if (typeof window.html2canvas === "function") return Promise.resolve(true);
+                    if (HTML2CANVAS_LOADED_P) return HTML2CANVAS_LOADED_P;
+                    HTML2CANVAS_LOADED_P = new Promise(function (resolve) {
+                        try {
+                            var s = document.createElement("script");
+                            s.src = {{ url_for('static', filename='vendor/html2canvas.min.js')|tojson }};
+                            s.onload = function () { resolve(typeof window.html2canvas === "function"); };
+                            s.onerror = function () {
+                                var s2 = document.createElement("script");
+                                s2.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+                                s2.onload = function () { resolve(typeof window.html2canvas === "function"); };
+                                s2.onerror = function () { resolve(false); };
+                                document.head.appendChild(s2);
+                            };
+                            document.head.appendChild(s);
+                        } catch (e) { resolve(false); }
+                    });
+                    return HTML2CANVAS_LOADED_P;
+                }
+
+                function findBadgeCardInPage() {
+                    try {
+                        var ids = ["technicianBadgeCardHidden", "technicianBadgeCard", "badgebuild", "badgeCard", "badge-card"];
+                        for (var i = 0; i < ids.length; i++) {
+                            var el = document.getElementById(ids[i]);
+                            if (el) return el;
+                        }
+                        var byClass = document.querySelector(".badge-card, .technician-badge, .credencial-card, [data-badge-card=\"true\"]");
+                        if (byClass) return byClass;
+                        var iframes = document.querySelectorAll("iframe[src*=\"/badge\"]");
+                        if (iframes && iframes.length > 0) {
+                            try {
+                                var idoc = (iframes[0].contentDocument || iframes[0].contentWindow && iframes[0].contentWindow.document);
+                                if (idoc) {
+                                    var inner = idoc.getElementById("technicianBadgeCard") || idoc.getElementById("badgebuild") || idoc.getElementById("technicianBadgeCardHidden") || idoc.querySelector(".badge-card, .technician-badge, .credencial-card, [data-badge-card=\"true\"]");
+                                    if (inner) return inner;
+                                }
+                            } catch (e) {}
+                        }
+                    } catch (e) {}
+                    return null;
+                }
+
+                function canvasToJpegBlob(canvas, quality) {
+                    var q = (typeof quality === "number") ? quality : 0.92;
+                    return new Promise(function (resolve, reject) {
+                        try {
+                            if (typeof canvas.toBlob === "function") {
+                                canvas.toBlob(function (b) { resolve(b || null); }, "image/jpeg", q);
+                                return;
+                            }
+                            var dataurl = canvas.toDataURL ? canvas.toDataURL("image/jpeg", q) : "";
+                            if (!dataurl) return resolve(null);
+                            var comma = dataurl.indexOf(",");
+                            if (comma < 0) return resolve(null);
+                            var byteStr = atob(dataurl.substring(comma + 1));
+                            var u8 = new Uint8Array(byteStr.length);
+                            for (var k = 0; k < byteStr.length; k++) u8[k] = byteStr.charCodeAt(k);
+                            resolve(new Blob([u8], { type: "image/jpeg" }));
+                        } catch (e) { reject(e); }
+                    });
+                }
+
+                function generateBadgeBlobHtml2CanvasLocal() {
+                    return ensureHtml2canvas().then(function (ok) {
+                        if (!ok) {
+                            dbgLog("[LOCAL FALLBACK 8] html2canvas no se pudo cargar");
+                            return null;
+                        }
+                        var card = findBadgeCardInPage();
+                        if (!card) {
+                            dbgLog("[LOCAL FALLBACK 8] No se encontró tarjeta de credencial en el DOM");
+                            return null;
+                        }
+                        dbgLog("[LOCAL FALLBACK 8] Iniciando html2canvas sobre tarjeta del DOM. tag=" + (card.tagName || "") + " cls=" + (card.className || "") + " id=" + (card.id || ""));
+                        var scale = Math.min(2, (window.devicePixelRatio && window.devicePixelRatio > 1 ? 2 : 1.5));
+                        return window.html2canvas(card, {
+                            backgroundColor: "#ffffff",
+                            scale: scale,
+                            useCORS: true,
+                            allowTaint: true,
+                            logging: false,
+                            removeContainer: true,
+                            ignoreElements: function () { return false; },
+                            onclone: function (clonedDoc, clonedCard) {
+                                try {
+                                    if (clonedCard) {
+                                        clonedCard.style.setProperty("position", "static", "important");
+                                        clonedCard.style.setProperty("left", "0px", "important");
+                                        clonedCard.style.setProperty("top", "0px", "important");
+                                        clonedCard.style.setProperty("visibility", "visible", "important");
+                                        clonedCard.style.setProperty("display", "block", "important");
+                                        clonedCard.style.setProperty("overflow", "hidden", "important");
+                                        clonedCard.style.setProperty("height", "auto", "important");
+                                        clonedCard.style.setProperty("min-height", "0px", "important");
+                                        clonedCard.style.setProperty("max-height", "none", "important");
+                                        clonedCard.style.setProperty("width", "1100px", "important");
+                                        clonedCard.style.setProperty("margin", "0px", "important");
+                                        clonedCard.style.setProperty("padding", "0px", "important");
+                                        clonedCard.style.setProperty("border", "1px solid rgba(29,78,216,0.12)", "important");
+                                        var allChildren = clonedCard.querySelectorAll("*");
+                                        for (var i = 0; i < allChildren.length; i++) {
+                                            try {
+                                                allChildren[i].style.setProperty("visibility", "visible", "important");
+                                                allChildren[i].style.setProperty("display", allChildren[i].style.display || "");
+                                                if (allChildren[i].tagName === "IMG") {
+                                                    allChildren[i].style.setProperty("visibility", "visible", "important");
+                                                    allChildren[i].style.setProperty("display", "block", "important");
+                                                }
+                                            } catch (e) {}
+                                        }
+                                    }
+                                    if (clonedDoc && clonedDoc.body) {
+                                        clonedDoc.body.style.setProperty("visibility", "visible", "important");
+                                        clonedDoc.body.style.setProperty("overflow", "hidden", "important");
+                                        clonedDoc.body.style.setProperty("background", "#ffffff", "important");
+                                        clonedDoc.body.style.setProperty("margin", "0", "important");
+                                        clonedDoc.body.style.setProperty("padding", "0", "important");
+                                    }
+                                } catch (e) {
+                                    dbgLog("[LOCAL FALLBACK 8] onclone exception minor: " + (e && e.message ? e.message : "err"));
+                                }
+                            },
+                        }).then(function (canvas) {
+                            if (!canvas) {
+                                dbgLog("[LOCAL FALLBACK 8] canvas nulo");
+                                return null;
+                            }
+                            dbgLog("[LOCAL FALLBACK 8] canvas listo: W=" + canvas.width + " H=" + canvas.height);
+                            return canvasToJpegBlob(canvas, 0.95).then(function (blob) {
+                                if (!blob || blob.size < 5000) {
+                                    dbgLog("[LOCAL FALLBACK 8] blob muy chico size=" + (blob && blob.size ? blob.size : 0));
+                                    return null;
+                                }
+                                dbgLog("[LOCAL FALLBACK 8] JPG generado OK size=" + blob.size + " W=" + canvas.width + " H=" + canvas.height);
+                                return blob;
+                            });
+                        }).catch(function (err) {
+                            dbgLog("[LOCAL FALLBACK 8] html2canvas exception=" + (err && err.message ? err.message : "err"));
+                            return null;
+                        });
+                    });
+                }
+
+                var DEBUG_LOG = [];
+                function dbgLog(line) {
+                    try { DEBUG_LOG.push(line); } catch (e) {}
+                }
+                function dbgText() {
+                    try { return DEBUG_LOG.slice(-20).join("\n"); } catch (e) { return ""; }
+                }
+
+                function bytesMatchHeader(bytes, header) {
+                    try {
+                        if (!bytes || !header || bytes.length < header.length) return false;
+                        for (var i = 0; i < header.length; i++) if (bytes[i] !== header[i]) return false;
+                        return true;
+                    } catch (e) { return false; }
+                }
+
+                function validateJpgBlob(blob) {
+                    if (!blob) return { ok: false, reason: "no-blob", size: 0, soi: false, eoi: false };
+                    var sz = blob.size || 0;
+                    if (sz < 2000) return { ok: false, reason: "small-size:" + sz, size: sz, soi: false, eoi: false };
+                    return new Promise(function (resolve) {
+                        try {
+                            var file = blob;
+                            var firstPromise = (sz >= 4) ? file.slice(0, 4).arrayBuffer().then(function (ab) { return new Uint8Array(ab); }) : Promise.resolve(new Uint8Array(0));
+                            var lastPromise = (sz >= 4) ? file.slice(sz - 4, sz).arrayBuffer().then(function (ab) { return new Uint8Array(ab); }) : Promise.resolve(new Uint8Array(0));
+                            Promise.all([firstPromise, lastPromise]).then(function (arr) {
+                                var first = arr[0]; var last = arr[1];
+                                var soi = bytesMatchHeader(first, [0xff, 0xd8]);
+                                var eoi = (last && last.length >= 2) ? (last[last.length - 2] === 0xff && last[last.length - 1] === 0xd9) : false;
+                                if (soi && eoi) return resolve({ ok: true, reason: "ok", size: sz, soi: true, eoi: true });
+                                var reason = [];
+                                if (!soi) reason.push("no-soi");
+                                if (!eoi) reason.push("no-eoi");
+                                resolve({ ok: false, reason: reason.join(","), size: sz, soi: soi, eoi: eoi });
+                            }).catch(function () { resolve({ ok: false, reason: "read-err", size: sz, soi: false, eoi: false }); });
+                        } catch (e) {
+                            resolve({ ok: false, reason: "exception", size: sz, soi: false, eoi: false });
+                        }
+                    });
+                }
+
+                function forceJpegBlobFromBytes(oldBlob) {
+                    if (!oldBlob) return Promise.resolve(null);
+                    return oldBlob.arrayBuffer().then(function (ab) {
+                        try {
+                            var u8 = new Uint8Array(ab);
+                            if (u8.length < 2000) return null;
+                            var soi = u8[0] === 0xff && u8[1] === 0xd8;
+                            var eoi = u8[u8.length - 2] === 0xff && u8[u8.length - 1] === 0xd9;
+                            if (!(soi && eoi)) return null;
+                            return new Blob([u8], { type: "image/jpeg" });
+                        } catch (e) { return null; }
+                    }).catch(function () { return null; });
+                }
+
+                function fetchBlobOneValid(url, opts) {
+                    return fetchBlobOne(url, opts).then(function (b) {
+                        if (!b) return { blob: null, validated: null, rawType: "", rawSize: 0 };
+                        var rawType = (b && b.type) ? b.type : "";
+                        var rawSize = (b && b.size) ? b.size : 0;
+                        return validateJpgBlob(b).then(function (v) {
+                            if (v.ok) {
+                                var fixedTypeBlob = (rawType && rawType.toLowerCase().indexOf("image/jpeg") >= 0) ? b : new Blob([b], { type: "image/jpeg" });
+                                return { blob: fixedTypeBlob, validated: v, rawType: rawType, rawSize: rawSize, via: "direct" };
+                            }
+                            return forceJpegBlobFromBytes(b).then(function (rebuilt) {
+                                if (!rebuilt) return { blob: null, validated: v, rawType: rawType, rawSize: rawSize };
+                                return { blob: rebuilt, validated: { ok: true, reason: "rebuilt-bytes", size: rebuilt.size, soi: true, eoi: true }, rawType: rawType, rawSize: rawSize, via: "rebuilt" };
+                            });
+                        });
+                    });
+                }
+
+                function generateBadgeBlobWithDebug() {
+                    DEBUG_LOG = [];
+                    if (cachedBadgeBlob) return Promise.resolve({ blob: cachedBadgeBlob, usedIndex: cachedBadgeBlob._srcIdx || 0, url: cachedBadgeBlob._srcUrl || "", log: dbgText() });
+                    var candidates = [];
+                    if (lastPayload && lastPayload.badge_download_jpg_rel) candidates.push({ url: lastPayload.badge_download_jpg_rel, idx: 1 });
+                    if (lastPayload && lastPayload.badge_download_jpg)     candidates.push({ url: lastPayload.badge_download_jpg,     idx: 2 });
+                    if (lastPayload && lastPayload.public_image_url_rel) candidates.push({ url: lastPayload.public_image_url_rel, idx: 3 });
+                    if (lastPayload && lastPayload.public_image_url)     candidates.push({ url: lastPayload.public_image_url,     idx: 4 });
+                    if (dlBtn && dlBtn.getAttribute("href"))              candidates.push({ url: dlBtn.getAttribute("href"),              idx: 5 });
+                    if (lastPayload && lastPayload.public_url_rel)        candidates.push({ url: lastPayload.public_url_rel + "/badge.jpg", idx: 6 });
+                    if (lastPayload && lastPayload.public_url)            candidates.push({ url: lastPayload.public_url + "/badge.jpg",     idx: 7 });
+                    if (!candidates.length) {
+                        dbgLog("[NO-CANDIDATES] no URLs");
+                        return Promise.resolve({ blob: null, usedIndex: 0, url: "", error: "no-candidates", log: dbgText() });
+                    }
+                    function tryAt(i) {
+                        if (i >= candidates.length) {
+                            dbgLog("[ALL-FAILED backend] Intentando candidato 8 = html2canvas LOCAL en el DOM (sin backend)");
+                            return generateBadgeBlobHtml2CanvasLocal().then(function (b) {
+                                if (!b) {
+                                    dbgLog("[ALL-FAILED FINAL] html2canvas local también falló");
+                                    return Promise.resolve({ blob: null, usedIndex: 0, url: candidates[candidates.length - 1].url, error: "all-failed", log: dbgText() });
+                                }
+                                return validateJpgBlob(b).then(function (v) {
+                                    var finalBlob = b;
+                                    if (v && v.ok) {
+                                        var rt = (b && b.type) ? b.type : "";
+                                        if (!rt || rt.toLowerCase().indexOf("image/jpeg") < 0) finalBlob = new Blob([b], { type: "image/jpeg" });
+                                    } else {
+                                        return forceJpegBlobFromBytes(b).then(function (rebuilt) {
+                                            if (!rebuilt) {
+                                                dbgLog("[FAIL 8] el JPG generado por html2canvas no es válido reason=" + (v && v.reason ? v.reason : "no-blob") + " size=" + (b && b.size ? b.size : 0));
+                                                return Promise.resolve({ blob: null, usedIndex: 0, url: "", error: "all-failed", log: dbgText() });
+                                            }
+                                            finalBlob = rebuilt;
+                                            v = { ok: true, reason: "rebuilt-local", size: rebuilt.size, soi: true, eoi: true };
+                                        });
+                                    }
+                                    dbgLog("[OK  8] via=html2canvas-local size=" + ((v && v.size) || finalBlob.size) + " SOI/EOI=" + ((v && v.soi) ? "Y" : "N") + "/" + ((v && v.eoi) ? "Y" : "N") + " reason=" + (v && v.reason ? v.reason : ""));
+                                    try { finalBlob._srcIdx = 8; finalBlob._srcUrl = "local://html2canvas"; } catch (e) {}
+                                    cachedBadgeBlob = finalBlob;
+                                    return Promise.resolve({ blob: finalBlob, usedIndex: 8, url: "local://html2canvas", log: dbgText() });
+                                });
+                            });
+                        }
+                        var c = candidates[i];
+                        var lab = (CANDIDATO_LABELS && CANDIDATO_LABELS[c.idx]) ? CANDIDATO_LABELS[c.idx] : ("cand-" + c.idx);
+                        var sameOrigin = (c.url || "").indexOf("://") < 0 || (c.url || "").indexOf(window.location.origin) === 0;
+                        var opts = { credentials: sameOrigin ? "same-origin" : "omit", cache: "no-store" };
+                        dbgLog("[TRY " + c.idx + "] " + lab + " — url=" + c.url);
+                        return fetchBlobOneValid(c.url, opts).then(function (r) {
+                            var b = r.blob;
+                            var v = r.validated;
+                            var rt = r.rawType;
+                            var rs = r.rawSize;
+                            var via = r.via || "-";
+                            if (b && v && v.ok) {
+                                dbgLog("[OK  " + c.idx + "] via=" + via + ", size=" + (v.size || rs) + ", mime=" + (rt || "(none)") + ", SOI/EOI=" + (v.soi ? "Y" : "N") + "/" + (v.eoi ? "Y" : "N") + " reason=" + (v.reason || ""));
+                                try { b._srcIdx = c.idx; b._srcUrl = c.url; } catch (e) {}
+                                cachedBadgeBlob = b;
+                                return { blob: b, usedIndex: c.idx, url: c.url, log: dbgText() };
+                            }
+                            dbgLog("[FAIL " + c.idx + "] reason=" + (v && v.reason ? v.reason : "no-blob") + " size=" + rs + " mime=" + rt + " SOI=" + (v ? (v.soi ? "Y" : "N") : "?") + " EOI=" + (v ? (v.eoi ? "Y" : "N") : "?"));
+                            return tryAt(i + 1);
+                        }).catch(function (e) {
+                            dbgLog("[FAIL " + c.idx + "] exception=" + (e && e.message ? e.message : "err"));
+                            return tryAt(i + 1);
+                        });
+                    }
+                    return tryAt(0);
+                }
+
+                function generateBadgeBlob() {
+                    return generateBadgeBlobWithDebug().then(function (r) { return r.blob || null; });
+                }
+
+                function applyPayload(p) {
+                    lastPayload = p;
+                    if (waBtn && p && p.whatsapp_greeting_url) waBtn.setAttribute("href", p.whatsapp_greeting_url);
+                    if (waFallbackFullBtn && p && p.whatsapp_share_full_url) waFallbackFullBtn.setAttribute("href", p.whatsapp_share_full_url);
+                    if (copyBtn && p) {
+                        var targetUrl = p.public_url_with_delivery || p.public_url || "";
+                        if (targetUrl) copyBtn.setAttribute("data-url", targetUrl);
+                    }
+                }
+
+                function confirmShareBackend(deliveryId, channel) {
+                    if (!deliveryId) return Promise.resolve({ ok: false });
+                    var cUrl = "{{ url_for('main.api_badge_delivery_confirm', delivery_id=0) }}".replace("/0/", "/" + deliveryId + "/");
+                    var bodyObj = {};
+                    if (channel) bodyObj.channel = String(channel).slice(0, 80);
+                    return fetch(cUrl, {
+                        method: "POST", credentials: "same-origin",
+                        headers: { "X-CSRF-Token": token, "Accept": "application/json", "Content-Type": "application/json" },
+                        body: JSON.stringify(bodyObj),
+                    }).then(function (r) {
+                        try { return r.json(); } catch (e) { return { ok: true }; }
+                    }).catch(function () { return { ok: false }; });
+                }
+
+                var ICON_CLIPBOARD = "📋";
+                var ICON_PERSON = "👤";
+                var ICON_CALENDAR = "📅";
+                var ICON_RECEIPT = "🧾";
+                var ICON_RIGHT = "👉";
+                var ICON_PIN = "📍";
+                var MIDDLE_DOT = "·";
+                var EM_DASH = "—";
+
+                function buildShareText(shareLinkPlain) {
+                    var tName = {{ (technician.name or '')|tojson }};
+                    var tLeg = {{ (technician.employee_code or '')|tojson }};
+                    var tCompany = {{ (technician.company_name or 'Soft Berardi')|tojson }} || "Soft Berardi";
+                    var d = new Date();
+                    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+                    var today = pad(d.getDate()) + "/" + pad(d.getMonth()+1) + "/" + d.getFullYear();
+                    var parts = [];
+                    parts.push(ICON_CLIPBOARD + " Presentación Técnica " + MIDDLE_DOT + " " + tCompany);
+                    if (tName) parts.push(ICON_PERSON + " Técnico: " + tName + (tLeg ? (" " + EM_DASH + " Leg. " + tLeg) : ""));
+                    parts.push(ICON_CALENDAR + " Fecha: " + today);
+                    {% if order.ot_number %}parts.push(ICON_RECEIPT + " Orden de trabajo: " + {{ order.ot_number|tojson }});{% endif %}
+                    {% if order.client_name %}parts.push(ICON_RIGHT + " Cliente: " + {{ order.client_name|tojson }});{% endif %}
+                    {% if order.client_address %}parts.push(ICON_PIN + " Domicilio / Obra: " + {{ order.client_address|tojson }});{% endif %}
+                    parts.push("");
+                    parts.push("(*) Incluye grupo sanguíneo, ART y contacto de emergencia.");
+                    if (shareLinkPlain && typeof shareLinkPlain === "string" && shareLinkPlain.length) {
+                        parts.push(shareLinkPlain);
+                    }
+                    return parts.join("\n");
+                }
+
+                function buildShareTitle(techName) {
+                    return "Presentación Técnica " + MIDDLE_DOT + " " + (techName || "Credencial");
+                }
+
+                function shareBadgeWebShare(p) {
+                    if (!("share" in navigator)) return Promise.reject(new Error("no-webshare"));
+                    return generateBadgeBlobWithDebug().then(function (dbg) {
+                        var blob = (dbg && dbg.blob) || null;
+                        var srcIdx = (dbg && dbg.usedIndex) || 0;
+                        var srcUrl = (dbg && dbg.url) || "";
+                        var err = (dbg && dbg.error) || "";
+                        var shareLog = (dbg && dbg.log) ? dbg.log : "";
+                        var blobType = (blob && blob.type) || "";
+                        var blobSize = (blob && blob.size) || 0;
+                        var files = [];
+                        var finalFileName = "";
+                        var finalFileType = "";
+                        if (blob) {
+                            try {
+                                var base = "Credencial";
+                                if (p && p.technician_name) base = "Credencial-" + String(p.technician_name).replace(/[^A-Za-z0-9_-]+/g, "_");
+                                base = base.replace(/\.(jpe?g|png|webp|gif|bmp)$/i, "");
+                                var FORCE_TYPE = "image/jpeg";
+                                var FORCE_EXT  = ".jpg";
+                                finalFileName = base + FORCE_EXT;
+                                finalFileType = FORCE_TYPE;
+                                try {
+                                    Object.defineProperty(blob, "type", { value: FORCE_TYPE, configurable: true, writable: true });
+                                } catch (e) {}
+                                var file = new File([blob], finalFileName, { type: FORCE_TYPE, lastModified: Date.now() });
+                                files = [file];
+                            } catch (e) { files = []; finalFileName = ""; finalFileType = ""; }
+                        }
+                        var canShareFiles = !!(files && files.length && ("canShare" in navigator) && navigator.canShare({ files: files }));
+                        var shareUrl = (p && (p.public_url_with_delivery || p.public_url)) || "";
+                        var shareTextBody = buildShareText(shareUrl);
+                        var shareData = {
+                            title: buildShareTitle(p && p.technician_name),
+                            text: shareTextBody,
+                        };
+                        if (canShareFiles) shareData.files = files;
+                        return Promise.resolve({
+                            shareData: shareData,
+                            files: files,
+                            canShareFiles: canShareFiles,
+                            blobType: blobType,
+                            blobSize: blobSize,
+                            srcIdx: srcIdx,
+                            srcUrl: srcUrl,
+                            err: err,
+                            finalFileName: finalFileName,
+                            finalFileType: finalFileType,
+                            shareLog: shareLog,
+                        }).then(function (ctx) {
+                            try { console.log("[SHARE STEP 4] Abriendo navigator.share. canShareFiles=" + ctx.canShareFiles + " title=" + ctx.shareData.title + " text.length=" + String(ctx.shareData.text || "").length); } catch(e){}
+                            var sharePromise = null;
+                            try {
+                                sharePromise = navigator.share(ctx.shareData);
+                            } catch (syncErr) {
+                                sharePromise = Promise.reject(syncErr || new Error("navigator.share sync error"));
+                            }
+                            // Timeout 30s para cuando la app (ej WhatsApp Desktop Windows) NO DEVUELVE la Promise (queda pending forever).
+                            var timeoutMs = 30000;
+                            var timeoutPromise = new Promise(function (resolve) {
+                                setTimeout(function () { resolve({ __webshare_timeout: true, ms: timeoutMs }); }, timeoutMs);
+                            });
+                            return Promise.race([sharePromise, timeoutPromise]).then(function (res) {
+                                ctx.__webshare_timeout = !!(res && res.__webshare_timeout);
+                                try { console.log("[SHARE STEP 5] Web Share resolvió. timeout?=" + (ctx.__webshare_timeout ? "YES" : "NO")); } catch(e){}
+                                return ctx;
+                            });
+                        });
+                    });
+                }
+
+                function clearStatusDebug() {
+                    if (!statusEl) return;
+                    while (statusEl.firstChild) statusEl.removeChild(statusEl.firstChild);
+                    statusEl.style.display = "none";
+                }
+
+                function copyTextToClipboard(text) {
+                    if (!text) return false;
+                    var ok = false;
+                    try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(text).then(function () { ok = true; }).catch(function () { ok = false; });
+                        }
+                    } catch (e) { ok = false; }
+                    if (!ok) {
+                        try {
+                            var ta = document.createElement("textarea");
+                            ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+                            document.body.appendChild(ta); ta.select();
+                            ok = !!document.execCommand("copy");
+                            document.body.removeChild(ta);
+                        } catch (e) { ok = false; }
+                    }
+                    return ok;
+                }
+
+                function buildDebugStatus(ctx) {
+                    var lines = [];
+                    lines.push("--- DEBUG IMAGEN (copiar esto y enviar al desarrollador) ---");
+                    if (ctx && ctx.shareLog) lines.push(ctx.shareLog);
+                    if (ctx && ctx.srcIdx) {
+                        var lab = (CANDIDATO_LABELS && CANDIDATO_LABELS[ctx.srcIdx]) ? CANDIDATO_LABELS[ctx.srcIdx] : ("cand-" + ctx.srcIdx);
+                        lines.push("canShare files=" + (ctx.canShareFiles ? "YES" : "NO"));
+                        lines.push("File name=" + (ctx.finalFileName || "") + "  type=" + (ctx.finalFileType || "") + "  size=" + (ctx.blobSize || 0));
+                        lines.push("Origen=(" + ctx.srcIdx + ") " + lab);
+                    }
+                    if (window && window.navigator && window.navigator.userAgent) {
+                        lines.push("UA=" + window.navigator.userAgent);
+                    }
+                    return lines.join("\n");
+                }
+
+                function showStatusWithDebug(kind, msg, ctx) {
+                    if (!statusEl) return;
+                    showStatus(msg, kind);
+                    var debugText = buildDebugStatus(ctx);
+                    if (!debugText) return;
+                    var wrap = document.createElement("div");
+                    wrap.style.cssText = "margin-top:10px;padding:12px 14px;border-radius:12px;border:1px dashed #475569;background:#0f172a;color:#e2e8f0;";
+                    var tools = document.createElement("div");
+                    tools.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin-bottom:0;align-items:center;";
+                    var btnToggle = document.createElement("button");
+                    btnToggle.type = "button";
+                    btnToggle.textContent = "ℹ️ Ver detalles técnicos";
+                    btnToggle.style.cssText = "cursor:pointer;border:1px solid #475569;border-radius:10px;background:#1e293b;color:#cbd5e1;font-weight:600;padding:8px 12px;font-size:12px;";
+                    var btnCopy = document.createElement("button");
+                    btnCopy.type = "button";
+                    btnCopy.textContent = "Copiar DEBUG";
+                    btnCopy.style.cssText = "cursor:pointer;border:0;border-radius:10px;background:#0ea5e9;color:#fff;font-weight:700;padding:8px 12px;font-size:12px;display:none;";
+                    btnCopy.addEventListener("click", function () {
+                        var ok = copyTextToClipboard(debugText);
+                        showStatus(ok ? "DEBUG copiado al portapapeles." : "No se pudo copiar. Abrí los detalles, selecciona el texto y copialo manualmente.", ok ? "success" : "error");
+                    });
+                    var btnClose = document.createElement("button");
+                    btnClose.type = "button";
+                    btnClose.textContent = "Cerrar";
+                    btnClose.style.cssText = "cursor:pointer;border:1px solid #64748b;border-radius:10px;background:#1e293b;color:#e2e8f0;font-weight:600;padding:8px 12px;font-size:12px;display:none;margin-left:auto;";
+                    btnClose.addEventListener("click", function () { clearStatusDebug(); showStatus(msg, kind); });
+                    var btnReload = document.createElement("button");
+                    btnReload.type = "button";
+                    btnReload.textContent = "Refrescar pagina";
+                    btnReload.style.cssText = "cursor:pointer;border:0;border-radius:10px;background:#10b981;color:#fff;font-weight:700;padding:8px 12px;font-size:12px;display:none;";
+                    btnReload.addEventListener("click", function () { window.location.reload(); });
+                    var pre = document.createElement("pre");
+                    pre.style.cssText = "display:none;margin:10px 0 0 0;padding:12px 14px;border-radius:10px;background:#020617;color:#e2e8f0;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto;user-select:all;border:1px solid #334155;";
+                    pre.textContent = debugText;
+                    var open = false;
+                    function setOpen(v) {
+                        open = !!v;
+                        btnToggle.textContent = open ? "🙈 Ocultar detalles técnicos" : "ℹ️ Ver detalles técnicos";
+                        pre.style.display = open ? "block" : "none";
+                        btnCopy.style.display = open ? "inline-block" : "none";
+                        btnClose.style.display = open ? "inline-block" : "none";
+                        btnReload.style.display = open ? "inline-block" : "none";
+                    }
+                    btnToggle.addEventListener("click", function () { setOpen(!open); });
+                    tools.appendChild(btnToggle);
+                    tools.appendChild(btnCopy);
+                    tools.appendChild(btnReload);
+                    tools.appendChild(btnClose);
+                    wrap.appendChild(tools);
+                    wrap.appendChild(pre);
+                    statusEl.appendChild(wrap);
+                }
+
+                // BOTÓN PRINCIPAL VERDE = ÚNICAMENTE Web Share (imagen + texto + url juntos)
+                if (btn) {
+                    btn.addEventListener("click", function () {
+                        try { console.log("[SHARE STEP 0] Click botón verde. hasPhone=" + hasPhone + " navigator.share=" + ("share" in navigator ? "YES" : "NO")); } catch(e){}
+                        if (!hasPhone) {
+                            showStatus("Primero cargá el teléfono del cliente en ✏️ Editar datos.", "error");
+                            return;
+                        }
+                        if (!("share" in navigator)) {
+                            showStatus("Tu navegador / dispositivo no soporta Web Share nativo. En Android/iOS con Chrome/Safari sí funciona. Usá el botón 👋 Paso 1 Saludo o 💬 Enviar credencial (solo texto · fallback) o 🖼 Descargar credencial JPG.", "info");
+                            return;
+                        }
+                        setLoading(true);
+                        fetchShareData().then(function (p) {
+                            if (!p || !p.ok) {
+                                try { console.log("[SHARE STEP 1] fetchShareData ERROR. p=", p ? p : null); } catch(e){}
+                                showStatus((p && p.error) ? "Error: " + p.error : "No se pudo generar la credencial.", "error");
+                                return Promise.resolve(null);
+                            }
+                            try { console.log("[SHARE STEP 1] fetchShareData OK. delivery_id=" + (p && p.delivery_id ? p.delivery_id : "none") + " public_url_wd=" + (p && p.public_url_with_delivery ? p.public_url_with_delivery : "")); } catch(e){}
+                            applyPayload(p);
+                            // ==================================================================
+                            // AHORA MARCAMOS "ENVIADA OK" INMEDIATAMENTE (NO ESPERAMOS NAV.SHARE)
+                            // Ya que WhatsApp Desktop Windows deja la Promise pending forever.
+                            // ==================================================================
+                            try { console.log("[SHARE STEP 2] confirmShareBackend + refreshOrderStatus INMEDIATO (antes de abrir selector). delivery_id=" + p.delivery_id); } catch(e){}
+                            confirmShareBackend(p.delivery_id, "web_share_selector_opened").then(function () {
+                                try { if (typeof window.__orderRefreshStatus === "function") window.__orderRefreshStatus(true); } catch (ex) {}
+                            }).catch(function () {});
+                            setLoading(false);
+                            showStatus("ℹ️ Abriendo selector nativo... Elegí WhatsApp o la app que quieras usar. Si la ventana queda abierta más de 30 segundos, continuamos automáticamente como compartido ✅.", "info");
+                            return shareBadgeWebShare(p).then(function (ctx) {
+                                try { console.log("[SHARE STEP 6] shareBadgeWebShare terminado. timeout?=" + ((ctx && ctx.__webshare_timeout) ? "YES" : "NO")); } catch(e){}
+                                return confirmShareBackend(p.delivery_id, ctx && ctx.__webshare_timeout ? "web_share_api_timeout_30s" : "web_share_api_success").then(function (bd) {
+                                    if (lastPayload && lastPayload.delivery_id === p.delivery_id) {
+                                        lastPayload.shared = true;
+                                    }
+                                    var hasImage = (ctx && ctx.canShareFiles && ctx.files && ctx.files.length > 0);
+                                    var idx = (ctx && ctx.srcIdx) || 0;
+                                    var sz = (ctx && ctx.blobSize) || 0;
+                                    var tp = (ctx && ctx.finalFileType) || "";
+                                    var fn = (ctx && ctx.finalFileName) || "";
+                                    var reg = (bd && bd.ok) ? " ✅ y registrado en la base de datos." : ".";
+                                    var timeoutHint = (ctx && ctx.__webshare_timeout) ? " ⏱️ (Time-out del selector después de 30s, pero ya marcamos la OT como compartida.)" : "";
+                                    var msg = "";
+                                    if (hasImage) {
+                                        var lab = (CANDIDATO_LABELS && CANDIDATO_LABELS[idx]) ? CANDIDATO_LABELS[idx] : ("candidato " + idx);
+                                        msg = "✅ Credencial compartida exitosamente — FOTO + TEXTO + LINK enviados correctamente. Ya está registrada como 'Enviada OK' en la orden." + reg + timeoutHint;
+                                        showStatusWithDebug("success", msg, ctx);
+                                        if (typeof window.__orderRefreshStatus === "function") { try { window.__orderRefreshStatus(true); } catch (ex) {} }
+                                    } else {
+                                        var extra = "";
+                                        if (ctx && ctx.err === "no-candidates") extra = " — no hay URL disponible para la credencial.";
+                                        else if (ctx && ctx.err === "all-failed") extra = " — TODOS los candidatos de descarga fallaron (HTML2Canvas viejo + Pillow nuevo, ambos devolvieron error/timeout/archivo vacío).";
+                                        else if (!ctx || !ctx.files || !ctx.files.length) extra = " — el navegador no aceptó adjuntar el archivo (tal vez no soporta canShare con files).";
+                                        msg = "Compartido exitosamente ✅ (texto + link)" + reg + timeoutHint + " ⚠️ No se pudo adjuntar la FOTO DE LA CREDENCIAL como imagen" + extra + ". Alternativa: usá 🖼 Descargar credencial JPG y adjuntala manualmente como FOTO, o usá 💬 Enviar credencial (solo texto · fallback).";
+                                        showStatusWithDebug("info", msg, ctx);
+                                        if (typeof window.__orderRefreshStatus === "function") { try { window.__orderRefreshStatus(true); } catch (ex) {} }
+                                    }
+                                });
+                            })
+                            .catch(function (err) {
+                                try { console.error("[SHARE STEP 6] catch shareBadgeWebShare. err.name=" + (err && err.name) + " msg=" + (err && err.message)); } catch(e){}
+                                if (err && (err.name === "AbortError" || (err.message || "").toLowerCase().indexOf("abort") >= 0)) {
+                                    showStatus("Cancelaste el selector. Podés volver a intentar.", "info");
+                                } else {
+                                    showStatus("Web Share falló: " + (err && err.message ? err.message : "error genérico") + ". Usá 👋 Paso 1 Saludo, 💬 Enviar credencial (solo texto · fallback) o 🖼 Descargar credencial JPG como alternativa. Igual ya marcamos la OT como enviada.", "error");
+                                }
+                            });
+                        }).catch(function (e) {
+                            try { console.error("[SHARE STEP 1] fetchShareData catch exception:", e); } catch(ex){}
+                            setLoading(false);
+                            showStatus("Error de conexión al preparar la credencial. Volvé a intentar.", "error");
+                        }).finally(function () {
+                            try { setLoading(false); } catch(e){}
+                            // Safety timer: Si el selector Web Share deja la promise colgada
+                            // (WhatsApp Desktop UWP a veces hace eso), apagamos el loading
+                            // garantizadamente después de 2,5s para que el botón no se quede
+                            // tildado en "Preparando credencial..." para siempre.
+                            try {
+                                setTimeout(function () {
+                                    try { setLoading(false); } catch(_e){}
+                                }, 2500);
+                            } catch(e){}
+                        });
+                    });
+                }
+
+                // Pre-cargar payload INICIAL usando datos Jinja (URL del técnico + badge_delivery_id de la order) SIN hacer POST
+                // Esto evita que al cargar la página se AUTOMÁTICAMENTE cree una delivery nueva y aparezca "Enviada OK" sin clickear nada.
+                // Sólo si hasPhone y tenemos badge_share_token.
+                var _jinjaPayload = null;
+                try {
+                    (function () {
+                        var jinja_badge_token = {{ (technician.badge_share_token or '')|tojson }};
+                        var jinja_bdid = null;
+                        try { jinja_bdid = ({{ (order.badge_delivery_id or 'null')|tojson }}) ? parseInt({{ (order.badge_delivery_id or 0)|tojson }}, 10) || null : null; } catch (e) { jinja_bdid = null; }
+                        var jinja_tech_name = {{ (technician.name or '')|tojson }};
+                        var jinja_client_phone_e164 = {{ (order.client_phone or '')|tojson }};
+                        var jinja_ot_number = {{ (order.ot_number or '')|tojson }};
+                        var jinja_client_name = {{ (order.client_name or '')|tojson }};
+                        var jinja_client_address = {{ (order.client_address or '')|tojson }};
+                        if (!jinja_badge_token) return;
+                        var token_up = String(jinja_badge_token || "").trim().toUpperCase();
+                        var pub_url_base = "{{ url_for('main.technician_public_badge', token='__TOKEN__', _external=True) }}".replace("__TOKEN__", encodeURIComponent(token_up));
+                        var pub_url_rel_base = "{{ url_for('main.technician_public_badge', token='__TOKEN__') }}".replace("__TOKEN__", encodeURIComponent(token_up));
+                        var pub_jpg_url_base = "{{ url_for('main.technician_public_badge_jpg', token='__TOKEN__', _external=True) }}".replace("__TOKEN__", encodeURIComponent(token_up));
+                        var pub_jpg_url_rel_base = "{{ url_for('main.technician_public_badge_jpg', token='__TOKEN__') }}".replace("__TOKEN__", encodeURIComponent(token_up));
+                        var bdl_jpg_abs = "{{ url_for('main.technician_badge', technician_id=0, download=1, _external=True) }}".replace("/0/", "/" + {{ (technician.id or 0)|tojson }} + "/");
+                        var bdl_jpg_rel = "{{ url_for('main.technician_badge', technician_id=0, download=1) }}".replace("/0/", "/" + {{ (technician.id or 0)|tojson }} + "/");
+                        var q_d = (jinja_bdid && jinja_bdid > 0) ? ("?d=" + String(jinja_bdid)) : "";
+                        var pub_url_wd = pub_url_base + q_d;
+                        var pub_url_wd_rel = pub_url_rel_base + q_d;
+                        // Construir wa_url igual que en backend _wa_make_share_link
+                        var ICON_CLIPB = "📋";
+                        var ICON_P = "👤";
+                        var ICON_CAL = "📅";
+                        var ICON_R = "🧾";
+                        var ICON_R2 = "👉";
+                        var ICON_PIN = "📍";
+                        var MDOT = "·";
+                        var EMD = "—";
+                        function _pad(n) { return (n < 10 ? "0" : "") + n; }
+                        var _d = new Date();
+                        var today_str = _pad(_d.getDate()) + "/" + _pad(_d.getMonth() + 1) + "/" + _d.getFullYear();
+                        var tcompany = {{ (technician.company_name or 'Soft Berardi')|tojson }} || "Soft Berardi";
+
+                        // ========================================
+                        // (A) TEXTO COMPLETO DE CREDENCIAL = mensaje para el botón 💚 VERDE (Web Share) + fallback
+                        //     INCLUYE: link ?d= al final, datos técnicos, presentación detallada.
+                        // ========================================
+                        var parts_w = [];
+                        parts_w.push(ICON_CLIPB + " Presentación Técnica " + MDOT + " " + tcompany);
+                        if (jinja_tech_name) parts_w.push(ICON_P + " Técnico: " + jinja_tech_name + ({{ (technician.employee_code or '')|tojson }} ? (" " + EMD + " Leg. " + {{ (technician.employee_code or '')|tojson }}) : ""));
+                        parts_w.push(ICON_CAL + " Fecha: " + today_str);
+                        if (jinja_ot_number) parts_w.push(ICON_R + " Orden de trabajo: " + jinja_ot_number);
+                        if (jinja_client_name) parts_w.push(ICON_R2 + " Cliente: " + jinja_client_name);
+                        if (jinja_client_address) parts_w.push(ICON_PIN + " Domicilio / Obra: " + jinja_client_address);
+                        parts_w.push("");
+                        parts_w.push("(*) Incluye grupo sanguíneo, ART y contacto de emergencia.");
+                        if (pub_url_wd) parts_w.push(pub_url_wd);
+                        var text_msg_share = parts_w.join("\n");
+
+                        // ========================================
+                        // (B) TEXTO DE SALUDO / PRESENTACIÓN INICIAL = mensaje para el botón 👋 AZUL GRANDE (Paso 1)
+                        //     SOLO presentación amigable, SIN LINK A CREDENCIAL, SIN ?d= (NO es la credencial aún).
+                        //     Luego el técnico vuelve a la app y usa el Paso 2 para compartir la real.
+                        // ========================================
+                        var parts_g = [];
+                        parts_g.push("👋 Hola! Soy " + (jinja_tech_name ? jinja_tech_name : "el técnico asignado") + ({{ (technician.employee_code or '')|tojson }} ? (" - Leg. " + {{ (technician.employee_code or '')|tojson }}) : "") + " de " + tcompany + '. "PERSONAL FLOW"');
+                        if (jinja_ot_number) parts_g.push("🧾 Orden de trabajo N° " + jinja_ot_number + ".");
+                        parts_g.push("");
+                        parts_g.push("Paso a saludarte para entablar el contacto. Para agilizar la visita técnica de hoy, te solicitamos que nos envíes tu ubicación actual por Google Maps. En el próximo mensaje te comparto la credencial de entrega oficial de la orden, que incluye mis datos, ART, grupo sanguíneo y link de confirmación.");
+                        parts_g.push("");
+                        parts_g.push("Quedo atento/a cualquier consulta! Saludos cordiales.");
+                        var text_msg_greeting = parts_g.join("\n");
+
+                        // ========================================
+                        // Construir 2 URLs wa.me DISTINTAS
+                        // ========================================
+                        var dest = String(jinja_client_phone_e164 || "").trim();
+                        function _buildWaUrl(textPlain) {
+                            try {
+                                var txtenc = encodeURIComponent(textPlain);
+                                if (dest && /^\d+$/.test(dest) && dest.length >= 10) return "https://wa.me/" + dest + "?text=" + txtenc;
+                                return "https://wa.me/?text=" + txtenc;
+                            } catch (e) { return ""; }
+                        }
+                        var wa_greeting_url = _buildWaUrl(text_msg_greeting);
+                        var wa_share_full_url = _buildWaUrl(text_msg_share);
+
+                        _jinjaPayload = {
+                            ok: true,
+                            order_id: parseInt({{ (order.id)|tojson }}, 10),
+                            delivery_id: (jinja_bdid && jinja_bdid > 0) ? jinja_bdid : null,
+                            technician_id: parseInt({{ (technician.id or 0)|tojson }}, 10),
+                            badge_share_token: token_up,
+                            public_url: pub_url_base,
+                            public_url_rel: pub_url_rel_base,
+                            public_url_with_delivery: pub_url_wd,
+                            public_url_with_delivery_rel: pub_url_wd_rel,
+                            public_image_url: pub_jpg_url_base,
+                            public_image_url_rel: pub_jpg_url_rel_base,
+                            share_text: text_msg_share,
+                            greeting_text: text_msg_greeting,
+                            whatsapp_greeting_url: wa_greeting_url,
+                            whatsapp_share_full_url: wa_share_full_url,
+                            whatsapp_url: wa_share_full_url,
+                            client_phone_e164: (dest || null),
+                            badge_download_jpg: bdl_jpg_abs,
+                            badge_download_jpg_rel: bdl_jpg_rel,
+                            technician_name: (jinja_tech_name || null),
+                            __from_jinja_onload: true,
+                        };
+                    })();
+                } catch (e) {
+                    try { console.warn("[JINJA PAYLOAD init failed:", e && e.message ? e.message : e); } catch (_) {}
+                    _jinjaPayload = null;
+                }
+                if (_jinjaPayload) {
+                    applyPayload(_jinjaPayload);
+                }
+                // Si la OT YA TIENE delivery_id (badge_delivery_id) → aplicar UI "Enviada OK" inmediatamente
+                try {
+                    if (_jinjaPayload && _jinjaPayload.delivery_id) {
+                        try {
+                            var dCreatedAt = {{ (delivery.created_at or 'null')|tojson }};
+                            var dConfAt = {{ (delivery.client_confirmed_at or 'null')|tojson }};
+                            var dClientName = {{ (delivery.client_name or 'null')|tojson }};
+                            var dClientCompany = {{ (delivery.client_company or 'null')|tojson }};
+                            var mockStatus = {
+                                ok: true,
+                                order_id: _jinjaPayload.order_id,
+                                has_sent: !!dCreatedAt,
+                                has_confirm: !!dConfAt,
+                                delivery: {
+                                    id: _jinjaPayload.delivery_id,
+                                    created_at: dCreatedAt || null,
+                                    created_at_ar: "",
+                                    client_confirmed_at: dConfAt || null,
+                                    client_confirmed_at_ar: "",
+                                    client_name: dClientName || null,
+                                    client_company: dClientCompany || null,
+                                },
+                                order: {
+                                    client_name: {{ (order.client_name or 'null')|tojson }},
+                                    client_address: {{ (order.client_address or 'null')|tojson }},
+                                    client_phone: {{ (order.client_phone or 'null')|tojson }},
+                                    badge_delivery_id: _jinjaPayload.delivery_id,
+                                }
+                            };
+                            try { applyStatusUI(mockStatus); } catch (e) {}
+                        } catch (e) {}
+                    }
+                } catch (e) {}
+
+                // ==============================================
+                // YA NO HACEMOS fetchShareData() al cargar la página!!!!!
+                // Antes onload hacía POST /share-badge => creaba delivery AUTO => "Enviada OK" aparecía sola sin click.
+                // Ahora sólo se hace fetchShareData EXPLÍCITO cuando el usuario CLICKÉA 💚 botón.
+                // ==============================================
+
+                if (copyBtn) copyBtn.addEventListener("click", function (e) {
+                    e.preventDefault();
+                    var url = copyBtn.getAttribute("data-url") || copyBtn.getAttribute("href");
+                    if (!url || url === "#") {
+                        showStatus("Aún no hay link generado. Click en 'Enviar credencial' primero.", "info");
+                        return;
+                    }
+                    var ok = false;
+                    try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(url).then(function () { ok = true; }).catch(function () { ok = false; });
+                        }
+                    } catch (e) { ok = false; }
+                    if (!ok) {
+                        try {
+                            var ta = document.createElement("textarea");
+                            ta.value = url; ta.style.position = "fixed"; ta.style.left = "-9999px";
+                            document.body.appendChild(ta); ta.select();
+                            ok = !!document.execCommand("copy");
+                            document.body.removeChild(ta);
+                        } catch (e) { ok = false; }
+                    }
+                    showStatus(ok ? ("Link copiado: " + url) : "No se pudo copiar al portapapeles.", ok ? "success" : "error");
+                });
+
+                // ==============================
+                // LIVE STATUS: actualiza tarjeta "1 Compartida" y "2 Confirmación Cliente"
+                // ==============================
+                var ORDER_ID = {{ order.id | tojson }};
+                var STATUS_URL = {{ url_for('main.technician_order_status_json', order_id=order.id) | tojson }};
+                var lastStatusConfirmSeen = false;
+                var statusPollTimer = null;
+                var STATUS_LAST_S = null;
+                function escapeHtml(str) {
+                    if (str == null) return "";
+                    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+                }
+                function applyStatusUI(s) {
+                    STATUS_LAST_S = s;
+                    var wrap = document.getElementById("orderBadgeStatusWrap");
+                    var sentIcon = document.getElementById("statusSentIcon");
+                    var sentBody = document.getElementById("statusSentBody");
+                    var confIcon = document.getElementById("statusConfirmIcon");
+                    var confBody = document.getElementById("statusConfirmBody");
+                    if (!wrap || !sentBody || !confBody || !sentIcon || !confIcon) return;
+                    var d = (s && s.delivery) ? s.delivery : null;
+                    var has_sent = !!(s && s.has_sent);
+                    var has_confirm = !!(s && s.has_confirm);
+                    // fallback: si el JSON no trae has_sent PERO la delivery tiene created_at, marcar como enviada
+                    if (!has_sent && d && d.created_at) has_sent = true;
+                    wrap.style.background = has_confirm
+                        ? "linear-gradient(135deg,#ecfdf5,#f0fdf4)"
+                        : (has_sent ? "linear-gradient(135deg,#eff6ff,#f8fafc)" : "#fafafa");
+                    wrap.style.borderColor = has_confirm
+                        ? "#bbf7d0"
+                        : (has_sent ? "#bfdbfe" : "#e2e8f0");
+                    sentIcon.style.background = has_sent ? "#2563eb" : "#94a3b8";
+                    confIcon.style.background = has_confirm ? "#059669" : "#94a3b8";
+                    if (has_sent) {
+                        var createdAt = (d && (d.created_at_ar || d.created_at)) ? (d.created_at_ar || d.created_at) : "";
+                        sentBody.innerHTML = '<div style="font-weight:700;color:#0f172a;">Enviada OK ✅' + (createdAt ? ('<span style="color:#475569;font-weight:400;font-size:12px;display:block;">' + escapeHtml(createdAt) + '</span>') : "") + '</div>';
+                    } else {
+                        sentBody.innerHTML = '<div style="font-weight:600;color:#475569;">Pendiente de compartir</div>';
+                    }
+                    if (has_confirm) {
+                        var confAt = (d && (d.client_confirmed_at_ar || d.client_confirmed_at)) ? (d.client_confirmed_at_ar || d.client_confirmed_at) : "";
+                        var clientName = (d && d.client_name) ? d.client_name : "Cliente";
+                        var ccLine = (d && d.client_company) ? ('<span style="font-size:12px;color:#475569;display:block;">📍 ' + escapeHtml(d.client_company) + '</span>') : "";
+                        confBody.innerHTML = '<div style="font-weight:700;color:#0f172a;">' + escapeHtml(clientName) + ' confirmó ✔' + (confAt ? ('<span style="color:#475569;font-weight:400;font-size:12px;display:block;">' + escapeHtml(confAt) + '</span>') : "") + ccLine + '</div>';
+                    } else {
+                        confBody.innerHTML = '<div style="font-weight:600;color:#475569;">Cliente aún no confirmó</div>';
+                    }
+                }
+                function refreshOrderStatus(once) {
+                    try {
+                        var xhr = new XMLHttpRequest();
+                        xhr.open("GET", STATUS_URL, true);
+                        xhr.setRequestHeader("Accept", "application/json");
+                        xhr.onreadystatechange = function () {
+                            if (xhr.readyState !== 4) return;
+                            var s = null;
+                            try { s = JSON.parse(xhr.responseText); } catch (e) { s = null; }
+                            if (s && s.ok) {
+                                applyStatusUI(s);
+                                if (s.has_confirm && !lastStatusConfirmSeen) {
+                                    lastStatusConfirmSeen = true;
+                                    try { showStatus("✅ El cliente acaba de confirmar recepción. Datos autocompletados en la OT.", "success"); } catch (e) {}
+                                }
+                            } else if (window.console && console.warn) {
+                                console.warn("[refreshOrderStatus] ERROR xhr status=" + xhr.status + " | url=" + STATUS_URL + " | body=" + (String(xhr.responseText || "").slice(0, 200)));
+                                try { showStatus("⚠️ No se pudo actualizar el estado. Presioná F5.", "info"); } catch (e) {}
+                            }
+                        };
+                        xhr.send();
+                    } catch (e) {
+                        if (window.console) console.error("[refreshOrderStatus] exception:", e);
+                    }
+                    if (!once && !statusPollTimer) {
+                        statusPollTimer = setInterval(function () {
+                            try { refreshOrderStatus(true); } catch (e) {}
+                        }, 10000);
+                    }
+                }
+                function debugPrintStatusSetup() {
+                    if (!window.console) return;
+                    console.log("[STATUS_INIT] ORDER_ID=" + ORDER_ID + " | STATUS_URL=" + STATUS_URL);
+                    var wrap = document.getElementById("orderBadgeStatusWrap");
+                    var btn = document.getElementById("btnRefreshOrderStatus");
+                    console.log("[STATUS_INIT] wrap exists=" + !!wrap + ", btnRefreshOrderStatus exists=" + !!btn);
+                    if (wrap) {
+                        var ids = ["statusSentIcon","statusSentBody","statusConfirmIcon","statusConfirmBody","orderBadgeStatusWrap","btnRefreshOrderStatus"];
+                        for (var i = 0; i < ids.length; i++) {
+                            console.log("[STATUS_INIT] getElementById('" + ids[i] + "') exists=" + !!document.getElementById(ids[i]));
+                        }
+                    }
+                }
+                // ==============================
+                // Confirmación backend si usuario abrió wa.me manual (también marcamos share enviado)
+                // ==============================
+                if (waBtn) {
+                    waBtn.addEventListener("click", function () {
+                        if (lastPayload && lastPayload.delivery_id) {
+                            confirmShareBackend(lastPayload.delivery_id);
+                            setTimeout(function () { try { refreshOrderStatus(true); } catch (e) {} }, 1200);
+                        }
+                    });
+                }
+
+                var btnRefreshStatus = document.getElementById("btnRefreshOrderStatus");
+                if (btnRefreshStatus) {
+                    btnRefreshStatus.addEventListener("click", function () {
+                        debugPrintStatusSetup();
+                        try { refreshOrderStatus(true); } catch (e) { console.error(e); showStatus("⚠️ Error actualizar estado. Presioná F5.", "error"); }
+                    });
+                }
+                // Exponer para usar en el then del share
+                window.__orderRefreshStatus = refreshOrderStatus;
+                debugPrintStatusSetup();
+                // Levantar polling enseguida (solo lectura, sin efectos)
+                try { refreshOrderStatus(false); } catch (e) { console.error(e); }
+            })();
+            </script>
+        </section>
+
+        <section style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px 22px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
+                <div>
+                    <h2 style="margin:0;font-size:18px;">2) Fotografías (2 obligatorias)</h2>
+                    <p style="margin:4px 0 0;color:#475569;font-size:13px;">Adjunta las fotos clave de la orden (PNG/JPG/WEBP, hasta 50MB)</p>
+                </div>
+            </div>
+
+            {% for slot in (1,2) %}
+            {% set has = (order['photo_' ~ slot ~ '_path'] or '')|trim != '' %}
+            <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;margin-bottom:14px;background:{% if has %}#ecfdf5{% else %}#fafafa{% endif %};">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+                    <div style="font-weight:700;color:#0f172a;">📸 Foto #{{ slot }}</div>
+                    <div>
+                        {% if has %}
+                        <span class="chip chip-success" style="background:#dcfce7;color:#166534;">Adjuntada ✓</span>
+                        {% else %}
+                        <span class="chip chip-warning" style="background:#fef3c7;color:#92400e;">Pendiente</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if has %}
+                <div style="border:1px solid #cbd5e1;border-radius:12px;background:#f8fafc;padding:8px;overflow:hidden;">
+                    <a href="{{ url_for('main.technician_order_download', order_id=order.id, asset='photo' ~ slot, download=1) }}" style="display:block;">
+                        <img src="{{ url_for('main.technician_order_download', order_id=order.id, asset='photo' ~ slot) }}" alt="Foto {{ slot }}" style="width:100%;max-height:260px;object-fit:contain;display:block;background:#f8fafc;">
+                    </a>
+                </div>
+                <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <a class="button button-secondary" style="font-size:13px;padding:6px 12px;" target="_blank" href="{{ url_for('main.technician_order_download', order_id=order.id, asset='photo' ~ slot) }}">Abrir en nueva pestaña</a>
+                    <a class="button button-secondary" style="font-size:13px;padding:6px 12px;background:#dbeafe;color:#1e40af;border-color:#bfdbfe;" href="{{ url_for('main.technician_order_download', order_id=order.id, asset='photo' ~ slot, download=1) }}">⬇ Descargar</a>
+                </div>
+                {% endif %}
+                <form method="POST" enctype="multipart/form-data" action="{{ url_for('main.technician_order_upload_photo', order_id=order.id, slot=slot) }}" style="margin-top:12px;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <input type="file" accept="image/png,image/jpeg,image/webp" name="photo_{{ slot }}" style="flex:1;min-width:200px;padding:10px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;">
+                        <button type="submit" class="button button-primary" style="padding:10px 16px;">{% if has %}Reemplazar foto{% else %}Subir foto{% endif %}</button>
+                    </div>
+                </form>
+            </div>
+            {% endfor %}
+        </section>
+
+        <section style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px 22px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
+                <div>
+                    <h2 style="margin:0;font-size:18px;">3) Documento E-DOC (PDF)</h2>
+                    <p style="margin:4px 0 0;color:#475569;font-size:13px;">Adjunta el E-DOC oficial de la orden</p>
+                </div>
+            </div>
+
+            {% set has_pdf = (order.edoc_pdf_path or '')|trim != '' %}
+            <div style="border:1px solid #e2e8f0;border-radius:14px;padding:16px;background:{% if has_pdf %}#eff6ff{% else %}#fafafa{% endif %};">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+                    <div style="display:flex;gap:12px;align-items:center;">
+                        <div style="width:48px;height:48px;border-radius:10px;background:{% if has_pdf %}#2563eb{% else %}#cbd5e1{% endif %};color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">📄</div>
+                        <div>
+                            <div style="font-weight:700;">E-DOC PDF</div>
+                            <div style="font-size:13px;color:#475569;">
+                                {% if has_pdf %}Adjuntado ✓ — Nombre: OT_{{ order.ot_number }}_EDOC.pdf{% else %}Pendiente de subida{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% if has_pdf %}
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <a class="button button-primary" style="padding:8px 14px;" target="_blank" href="{{ url_for('main.technician_order_download', order_id=order.id, asset='edoc', inline=1) }}">👁 Ver PDF</a>
+                        <a class="button button-secondary" style="padding:8px 14px;" href="{{ url_for('main.technician_order_download', order_id=order.id, asset='edoc') }}">⬇ Descargar</a>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if has_pdf %}
+                <div style="border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;overflow:hidden;margin-bottom:10px;">
+                    <iframe src="{{ url_for('main.technician_order_download', order_id=order.id, asset='edoc', inline=1) }}" style="width:100%;height:360px;border:none;background:#fff;display:block;" onload="this.style.background='#fff'" onerror="this.style.display='none'"></iframe>
+                </div>
+                {% endif %}
+                <form method="POST" enctype="multipart/form-data" action="{{ url_for('main.technician_order_upload_edoc', order_id=order.id) }}" style="margin-top:14px;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <input type="file" accept="application/pdf,.pdf" name="edoc_pdf" style="flex:1;min-width:200px;padding:10px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;">
+                        <button type="submit" class="button button-primary" style="padding:10px 16px;">{% if has_pdf %}Reemplazar PDF{% else %}Subir E-DOC{% endif %}</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+    </div>
+</div>
+{% endblock %}

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Auditoría Técnica{% endblock %}</title>
+    {% block extra_head %}{% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <script>
         (function () {
@@ -61,7 +62,7 @@
     </script>
 </head>
 <body{% if page_class %} class="{{ page_class }}"{% endif %}>
-    {% if page_class != "page-auth" %}
+    {% if page_class != "page-auth" and not (is_public_view and public_view_context and public_view_context == "technician_badge") %}
         <header class="topbar">
             <div class="topbar-row">
                 <div class="brand">
@@ -70,40 +71,47 @@
                 </div>
                 <nav class="nav" id="main_nav">
                     {% if current_user %}
-                        <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
-                        {% if can_create_audit %}
-                            <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
-                        {% endif %}
-                        <a href="{{ url_for('main.audit_list') }}">Historial</a>
-                        {% if can_view_findings %}
-                            <a href="{{ url_for('main.findings_list') }}">{% if is_supervisor %}Mi bandeja{% else %}Hallazgos{% endif %}</a>
-                        {% endif %}
-                        {% if can_view_supply_requests %}
-                            <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
-                        {% endif %}
-                        {% if not is_supervisor %}
-                            <a href="{{ url_for('main.tnps') }}">tNPS</a>
-                        {% endif %}
-                        <a href="{{ url_for('main.qc_sessions') }}">QC Instalaciones</a>
-                        {% if can_view_service %}
-                            <a href="{{ url_for('main.service_sessions') }}">Auditoría Service</a>
-                        {% endif %}
-                        {% if can_view_reports %}
-                            <a href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
-                        {% endif %}
-                        {% if can_view_reports %}
-                            <a href="{{ url_for('main.technician_list') }}">Perfiles Técnicos</a>
-                        {% endif %}
-                        {% if can_view_reports %}
-                            <a href="{{ url_for('main.reports') }}">Reportes</a>
-                        {% endif %}
-                        {% if not is_supervisor %}
-                            <a href="{{ url_for('main.equipment') }}">Equipos</a>
-                            <a href="{{ url_for('main.materials_stock') }}">Stock</a>
-                            <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
-                        {% endif %}
-                        {% if can_import %}
-                            <a href="{{ url_for('main.imports') }}">Importar datos</a>
+                        {% if is_technician %}
+                            <a href="{{ url_for('main.technician_dashboard') }}">Mi Perfil</a>
+                            <a href="{{ url_for('main.technician_orders') }}">Mis Órdenes</a>
+                            <a href="{{ url_for('main.technician_badge', technician_id=current_technician_id) }}" target="_blank">Mi Credencial</a>
+                        {% else %}
+                            <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+                            {% if can_create_audit %}
+                                <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
+                            {% endif %}
+                            <a href="{{ url_for('main.audit_list') }}">Historial</a>
+                            {% if can_view_findings %}
+                                <a href="{{ url_for('main.findings_list') }}">{% if is_supervisor %}Mi bandeja{% else %}Hallazgos{% endif %}</a>
+                            {% endif %}
+                            {% if can_view_supply_requests %}
+                                <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
+                            {% endif %}
+                            {% if not is_supervisor %}
+                                <a href="{{ url_for('main.tnps') }}">tNPS</a>
+                            {% endif %}
+                            <a href="{{ url_for('main.qc_sessions') }}">QC Instalaciones</a>
+                            {% if can_view_service %}
+                                <a href="{{ url_for('main.service_sessions') }}">Auditoría Service</a>
+                            {% endif %}
+                            {% if can_view_reports %}
+                                <a href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
+                            {% endif %}
+                            {% if can_view_technician_profiles %}
+                                <a href="{{ url_for('main.technician_list') }}">Perfiles Técnicos</a>
+                                <a href="{{ url_for('main.technician_orders') }}">Órdenes Técnicos</a>
+                            {% endif %}
+                            {% if can_view_reports %}
+                                <a href="{{ url_for('main.reports') }}">Reportes</a>
+                            {% endif %}
+                            {% if not is_supervisor %}
+                                <a href="{{ url_for('main.equipment') }}">Equipos</a>
+                                <a href="{{ url_for('main.materials_stock') }}">Stock</a>
+                                <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
+                            {% endif %}
+                            {% if can_import %}
+                                <a href="{{ url_for('main.imports') }}">Importar datos</a>
+                            {% endif %}
                         {% endif %}
                     {% else %}
                         <a href="{{ url_for('main.login') }}">Ingresar</a>
@@ -116,6 +124,7 @@
                             <summary class="user-menu-toggle" aria-label="Cuenta"></summary>
                             <div class="user-menu-panel" role="menu">
                                 <div class="user-menu-meta">{{ current_user["username"] }}</div>
+                                <a role="menuitem" href="{{ url_for('main.technician_change_password') }}">Cambiar contraseña</a>
                                 {% if can_view_users %}
                                     <a role="menuitem" href="{{ url_for('main.users_list') }}">Usuarios</a>
                                 {% endif %}
@@ -147,6 +156,17 @@
                 </section>
             {% endif %}
         {% endwith %}
+
+        {% if supervisor_has_empty_scope %}
+            <section class="flash-stack" style="margin-top:0;">
+                <article class="flash flash-error" style="border-left-color:#F59E0B;background:#FFF7ED;color:#1F2937;">
+                    <strong style="font-weight:700;">⚠ Alcance de supervisor sin configurar</strong><br>
+                    Tu cuenta de supervisor no tiene asignado ningún alcance. Actualmente no podrás ver órdenes técnicas, auditorías, ni perfiles de técnicos.
+                    <br>Por favor, pedile al <strong>administrador</strong> que configure tu alcance desde:
+                    <span style="font-family:monospace;background:#F3F4F6;padding:2px 6px;border-radius:4px;">Usuarios → editar → Alcance Supervisor</span>.
+                </article>
+            </section>
+        {% endif %}
 
         {% include "findings_alerts_modal.html" %}
 

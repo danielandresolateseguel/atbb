@@ -18,6 +18,7 @@
         {% endif %}
         <a class="button button-secondary" href="{{ url_for('main.audit_report', audit_id=audit['id']) }}">Ver informe ejecutivo</a>
         <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
+        {% if not is_technician %}
         <a class="button button-secondary" href="{{ url_for('main.tnps', audit_id=audit['id']) }}">
             {% if tnps_response %}
                 Editar tNPS
@@ -25,6 +26,7 @@
                 Registrar tNPS
             {% endif %}
         </a>
+        {% endif %}
         {% if is_admin %}
             <form method="post" action="{{ url_for('main.audit_record_scope_update', audit_id=audit['id']) }}">
                 {% if audit["record_scope"] == "pruebas" %}
@@ -370,6 +372,7 @@
     </section>
 {% endfor %}
 
+{% if not is_technician %}
 <section class="card signature-display-card">
     <div class="section-heading">
         <div>
@@ -411,4 +414,5 @@
         <p class="empty-state">Esta auditoría no tiene firma de técnico registrada.</p>
     {% endif %}
 </section>
+{% endif %}
 {% endblock %}

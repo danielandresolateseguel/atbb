@@ -1,0 +1,681 @@
+{% extends "base.html" %}
+
+{% block title %}Mi Perfil — {{ technician["name"] or "Técnico" }}{% endblock %}
+
+{% block content %}
+<section class="technician-home">
+    <header class="technician-home-hero">
+        <div class="technician-home-photo">
+            {% set photo_url = technician["profile_photo_path"] | technician_photo_url %}
+            {% if photo_url %}
+                <img src="{{ photo_url }}" alt="Foto de {{ technician['name'] }}">
+            {% else %}
+                <div class="photo-placeholder" aria-hidden="true">
+                    <span>
+                        {% set names = (technician["name"] or "").strip().split() %}
+                        {% if names | length >= 2 %}
+                            {{ (names[0] | first) ~ (names[-1] | first) }}
+                        {% elif names | length == 1 %}
+                            {{ names[0][:2] }}
+                        {% else %}
+                            SB
+                        {% endif %}
+                    </span>
+                </div>
+            {% endif %}
+        </div>
+        <div class="technician-home-headline">
+            <p class="eyebrow">Mi perfil · {{ today }}</p>
+            <h1>{{ technician["name"] }}</h1>
+            <div class="technician-home-meta">
+                {% if technician["employee_code"] %}<span class="chip chip-primary">Legajo {{ technician["employee_code"] }}</span>{% endif %}
+                {% if technician["company_name"] %}<span class="chip">{{ technician["company_name"] }}</span>{% endif %}
+                {% if technician["region"] %}<span class="chip">{{ technician["region"] }}</span>{% endif %}
+                {% if technician["center_name"] %}<span class="chip">{{ technician["center_name"] }}</span>{% endif %}
+            </div>
+        </div>
+    </header>
+
+    <section class="technician-home-actions">
+        <a class="big-cta cta-primary" href="{{ url_for('main.technician_badge', technician_id=technician['id']) }}" target="_blank" rel="noopener">
+            <div class="big-cta-ico" aria-hidden="true">💳</div>
+            <div class="big-cta-copy">
+                <h2>Ver mi credencial</h2>
+                <p>Abre tu tarjeta de presentación en pantalla completa.</p>
+            </div>
+            <span class="big-cta-arrow" aria-hidden="true">→</span>
+        </a>
+
+        <a class="big-cta cta-ghost" href="{{ url_for('main.technician_profile', technician_id=technician['id']) }}">
+            <div class="big-cta-ico" aria-hidden="true">📊</div>
+            <div class="big-cta-copy">
+                <h2>Ver estadísticas</h2>
+                <p>Mis entregas de credencial, OTs del mes y KPIs últimos 30 días.</p>
+            </div>
+            <span class="big-cta-arrow" aria-hidden="true">→</span>
+        </a>
+
+        <a class="big-cta cta-ghost" href="{{ url_for('main.technician_change_password') }}">
+            <div class="big-cta-ico" aria-hidden="true">🔐</div>
+            <div class="big-cta-copy">
+                <h2>Cambiar contraseña</h2>
+                <p>Actualizá tu clave regularmente para proteger tu cuenta.</p>
+            </div>
+            <span class="big-cta-arrow" aria-hidden="true">→</span>
+        </a>
+    </section>
+
+    {% set stats = badge_stats or {'deliveries':0,'client_confirmed':0,'views':0,'confirmed_last_7d':0,'views_last_7d':0} %}
+    <section class="tech-stat-grid" style="margin-bottom:22px;">
+        <a class="stat-card stat-card-views" href="{{ url_for('main.technician_badge', technician_id=technician['id']) }}">
+            <div class="stat-card-num">{{ stats.views or 0 }}</div>
+            <div class="stat-card-label">👁 Vistas credencial</div>
+            {% if stats.views_last_7d %}<div class="stat-card-sub">+{{ stats.views_last_7d }} últimos 7 días</div>{% endif %}
+        </a>
+        <div class="stat-card stat-card-del">
+            <div class="stat-card-num">{{ stats.deliveries or 0 }}</div>
+            <div class="stat-card-label">📤 Credenciales enviadas</div>
+        </div>
+        <div class="stat-card stat-card-conf">
+            <div class="stat-card-num">{{ stats.client_confirmed or 0 }}</div>
+            <div class="stat-card-label">✅ Confirmadas por cliente</div>
+            {% if stats.confirmed_last_7d %}<div class="stat-card-sub">+{{ stats.confirmed_last_7d }} últimos 7 días</div>{% endif %}
+        </div>
+    </section>
+
+    {# ------ ÓRDENES TÉCNICAS (OTs) HOY ------ #}
+    <section class="card" style="margin-bottom:22px;">
+        <header class="card-head" style="background:linear-gradient(135deg,#0f172a,#1e293b);border-top-left-radius:14px;border-top-right-radius:14px;border-bottom:2px solid #475569;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+                <div>
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#93c5fd;letter-spacing:.05em;text-transform:uppercase;">📋 Órdenes Técnicas · HOY {{ today }}</p>
+                    <h2 style="margin:0;font-size:18px;font-weight:800;color:#ffffff;">Seguimiento de mis OTs cargadas hoy</h2>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <a class="button button-secondary" style="background:#ffffff;color:#0f172a;border-color:#cbd5e1;font-weight:700;" href="{{ url_for('main.technician_orders', technician_id=technician['id']) }}">🔍 Ver todas</a>
+                    <a class="button button-primary" style="background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_orders_new') }}">+ Nueva OT</a>
+                </div>
+            </div>
+        </header>
+        {% set ots = orders_today_summary or {'total_orders':0,'total_completed':0,'total_incomplete':0} %}
+        <div class="ot-kpi-row">
+            <div class="ot-kpi ot-kpi-total">
+                <div class="ot-kpi-num">{{ ots.total_orders or 0 }}</div>
+                <div class="ot-kpi-label">Cargadas hoy</div>
+            </div>
+            <div class="ot-kpi ot-kpi-ok">
+                <div class="ot-kpi-num">{{ ots.total_completed or 0 }}</div>
+                <div class="ot-kpi-label">✅ Completas</div>
+                <div class="ot-kpi-sub">2 fotos + E-DOC</div>
+            </div>
+            <div class="ot-kpi ot-kpi-warn">
+                <div class="ot-kpi-num">{{ ots.total_incomplete or 0 }}</div>
+                <div class="ot-kpi-label">⏳ Pendientes</div>
+                <div class="ot-kpi-sub">Faltan subir datos</div>
+            </div>
+        </div>
+
+        {% if orders_today %}
+        {% set ot_limit = 6 %}
+        {% set ot_total = orders_today|length %}
+        <ul class="recent-audits">
+            {% for order in orders_today %}
+                {% set has_p1 = order.get('photo_1_path') not in (none, '', 0) %}
+                {% set has_p2 = order.get('photo_2_path') not in (none, '', 0) %}
+                {% set has_edoc = order.get('edoc_pdf_path') not in (none, '', 0) %}
+                {% set is_complete = has_p1 and has_p2 and has_edoc %}
+                {% set _show_ot = loop.index0 < ot_limit or ot_total <= ot_limit %}
+                <li class="recent-audit-row ot-row{% if not _show_ot %} ot-hidden-row{% endif %}" {% if not _show_ot %}style="display:none;"{% endif %}>
+                    <div>
+                        <div class="recent-audit-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                            <span class="ot-num-pill">#{{ order.ot_number or order.id }}</span>
+                            {% if order.client_name %}<strong style="color:#0f172a;">{{ order.client_name }}</strong>{% endif %}
+                            {% if is_complete %}
+                                <span class="chip" style="background:#d1fae5;color:#065f46;border-color:#6ee7b7;font-weight:800;">COMPLETA</span>
+                            {% else %}
+                                <span class="chip" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;font-weight:800;">PENDIENTE</span>
+                            {% endif %}
+                        </div>
+                        <div class="recent-audit-meta">
+                            <span style="font-weight:600;">Subida: {{ order.created_at or '-' }}</span>
+                            {% if order.client_address %} · 📍 {{ order.client_address }}{% endif %}
+                            {% if order.client_phone %} · 📞 {{ order.client_phone }}{% endif %}
+                            <div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
+                                <span class="ot-doc-chip {% if has_p1 %}ot-doc-ok{% else %}ot-doc-miss{% endif %}">📸 Foto 1 {% if has_p1 %}✓{% else %}—{% endif %}</span>
+                                <span class="ot-doc-chip {% if has_p2 %}ot-doc-ok{% else %}ot-doc-miss{% endif %}">📸 Foto 2 {% if has_p2 %}✓{% else %}—{% endif %}</span>
+                                <span class="ot-doc-chip {% if has_edoc %}ot-doc-ok{% else %}ot-doc-miss{% endif %}">📄 E-DOC {% if has_edoc %}✓{% else %}—{% endif %}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <a class="button button-ghost" style="font-weight:700;" href="{{ url_for('main.technician_order_detail', order_id=order.id) }}">{{ 'Completar' if not is_complete else 'Ver' }}</a>
+                </li>
+            {% endfor %}
+        </ul>
+        {% if ot_total > ot_limit %}
+        <div class="today-expand-row">
+            <button type="button" class="today-expand-btn" id="btn-expand-ots" data-total="{{ ot_total }}" data-limit="{{ ot_limit }}">
+                Ver {{ ot_total - ot_limit }} OT{{ '' if (ot_total - ot_limit) == 1 else 's' }} más de hoy ▾
+            </button>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="empty-day-box" style="border-top:2px solid #e2e8f0;">
+            <p style="margin:0;color:#0f172a;font-weight:800;">Sin Órdenes Técnicas cargadas hoy</p>
+            <p style="margin:4px 0 0;color:#475569;font-size:13px;">Crea una nueva OT para empezar a registrar el trabajo de hoy.</p>
+            <a class="button button-primary" style="margin-top:12px;background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_orders_new') }}">+ Cargar primera OT de hoy</a>
+        </div>
+        {% endif %}
+    </section>
+
+    {# ------ FEED DE NOVEDADES RECIENTES (unificado) ------ #}
+    {% if recent_feed %}
+    <section class="card" style="margin-bottom:22px;">
+        <header class="card-head" style="background:linear-gradient(135deg,#1e3a8a,#3730a3);border-top-left-radius:14px;border-top-right-radius:14px;border-bottom:2px solid #6366f1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+                <div>
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#c7d2fe;letter-spacing:.05em;text-transform:uppercase;">📰 Actividad reciente</p>
+                    <h2 style="margin:0;font-size:18px;font-weight:800;color:#ffffff;">Tus últimas novedades</h2>
+                </div>
+                <a class="button button-secondary" style="background:#ffffff;color:#1e3a8a;border-color:#c7d2fe;font-weight:800;" href="{{ url_for('main.technician_profile', technician_id=technician['id']) }}">📊 Ver perfil completo</a>
+            </div>
+        </header>
+        <ul class="feed-list">
+            {% set feed_limit = 6 %}
+            {% set feed_total = recent_feed|length %}
+            {% for item in recent_feed %}
+                {% set _show_f = loop.index0 < feed_limit or feed_total <= feed_limit %}
+                <li class="feed-item feed-{{ item.color }}{% if not _show_f %} feed-hidden-row{% endif %}" {% if not _show_f %}style="display:none;"{% endif %}>
+                    <div class="feed-ico">{{ item.icon }}</div>
+                    <div class="feed-main">
+                        <div class="feed-title">
+                            <strong>{{ item.title }}</strong>
+                            {% if item.subtitle %}
+                                <span class="feed-sub"> · {{ item.subtitle }}</span>
+                            {% endif %}
+                        </div>
+                        {% if item.extra %}<div class="feed-extra">{{ item.extra }}</div>{% endif %}
+                        <div class="feed-date">{{ item.ts }}</div>
+                    </div>
+                    {% if item.link %}
+                        <a class="button button-ghost feed-cta" href="{{ item.link }}"{% if item.link_target %} target="{{ item.link_target }}" rel="noopener"{% endif %} style="font-weight:800;">{{ item.link_label if item.link_label else '🔗 Ver' }}</a>
+                    {% else %}
+                        <span class="feed-cta feed-cta-muted" title="Sin detalle asociado" style="color:#94a3b8;font-weight:700;padding:6px 10px;border:1px dashed #cbd5e1;border-radius:10px;font-size:12px;">— Sin detalle</span>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+        {% if feed_total > feed_limit %}
+        <div class="today-expand-row">
+            <button type="button" class="today-expand-btn" id="btn-expand-feed" data-total="{{ feed_total }}" data-limit="{{ feed_limit }}">
+                Ver {{ feed_total - feed_limit }} novedad{{ '' if (feed_total - feed_limit) == 1 else 'es' }} más ▾
+            </button>
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% if recent_audits %}
+    <section class="card">
+        <header class="card-head">
+            <h2>Mis auditorías recientes</h2>
+        </header>
+        <ul class="recent-audits">
+            {% for audit in recent_audits %}
+                <li class="recent-audit-row">
+                    <div>
+                        <div class="recent-audit-title">
+                            {{ audit.get("audit_date") or "-" }} · {{ audit.get("location_label") or audit.get("address") or "N/D" }}
+                        </div>
+                        <div class="recent-audit-meta">
+                            {% if audit.get("score") is not none %}<span>Score {{ audit["score"] }}</span> · {% endif %}
+                            {% if audit.get("status") %}<span>{{ audit["status"] }}</span>{% endif %}
+                        </div>
+                    </div>
+                    <a class="button button-ghost" target="_blank" rel="noopener" href="{{ url_for('main.audit_detail', audit_id=audit['id']) }}" style="font-weight:800;background:#eff6ff;color:#1e40af;border-color:#bfdbfe;text-decoration:none;">🔍 Ver Auditoría</a>
+                </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+</section>
+
+<style>
+    .tech-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+    .tech-stat-grid .stat-card {
+        padding: 16px 16px 18px; border-radius: 16px;
+        box-shadow: 0 8px 20px rgba(15,23,42,0.05); text-decoration: none; color: inherit;
+        border: 1px solid #e2e8f0; background:#fff; display:block; transition: transform .15s ease;
+    }
+    .tech-stat-grid .stat-card:hover { transform: translateY(-1px); }
+    .tech-stat-grid .stat-card-num { font-size: 34px; font-weight: 800; color: #0f172a; line-height: 1; margin-bottom: 6px; }
+    .tech-stat-grid .stat-card-label { font-weight: 700; color:#334155; font-size: 14px; }
+    .tech-stat-grid .stat-card-sub { margin-top:4px; color: #475569; font-size:12px; opacity:.9;}
+    .tech-stat-grid .stat-card-views { background:linear-gradient(145deg,#eff6ff,#dbeafe); border-color:#bfdbfe; }
+    .tech-stat-grid .stat-card-del { background:linear-gradient(145deg,#fff7ed,#ffedd5); border-color:#fed7aa; }
+    .tech-stat-grid .stat-card-conf { background:linear-gradient(145deg,#ecfdf5,#d1fae5); border-color:#6ee7b7; }
+    .technician-home { max-width: 860px; margin: 0 auto; padding: 20px 16px 80px; }
+    .technician-home-hero {
+        display: flex; gap: 18px; align-items: center;
+        padding: 22px 20px; border-radius: 18px;
+        background: linear-gradient(135deg, #EEF2FF 0%, #F0FDFA 60%, #FEF3C7 100%);
+        box-shadow: 0 10px 30px rgba(15,23,42,0.06); margin-bottom: 24px;
+    }
+    .technician-home-photo {
+        width: 112px; height: 112px; border-radius: 22px; overflow: hidden;
+        flex-shrink: 0; background: #1e293b; box-shadow: 0 8px 20px rgba(15,23,42,0.18);
+        display:flex; align-items:center; justify-content:center; color:#fff;
+    }
+    .technician-home-photo img { width: 100%; height: 100%; object-fit: cover; }
+    .photo-placeholder span {
+        font-weight: 800; font-size: 40px; letter-spacing: 0.05em; color: #e2e8f0;
+    }
+    .technician-home-headline { min-width: 0; flex: 1; }
+    .technician-home-headline .eyebrow {
+        margin: 0 0 6px; color: #4338ca; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.08em; font-size: 12px;
+    }
+    .technician-home-headline h1 { margin: 0 0 10px; font-size: 26px; line-height: 1.15; color: #0f172a; }
+    .technician-home-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+        display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px;
+        background: #ffffff; color: #334155; font-weight: 600; font-size: 13px;
+        box-shadow: 0 2px 6px rgba(15,23,42,0.05);
+    }
+    .chip-primary { background: #1e293b; color: #f8fafc; }
+    .technician-home-actions { display: grid; gap: 14px; margin-bottom: 28px; }
+    .big-cta {
+        display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
+        text-align: left; width: 100%; padding: 18px 18px; border: none; border-radius: 18px;
+        background: #fff; box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+        cursor: pointer; color: #0f172a; text-decoration: none; transition: transform .12s ease, box-shadow .12s ease;
+    }
+    .big-cta:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(15,23,42,0.08); text-decoration: none; }
+    .big-cta-ico {
+        width: 56px; height: 56px; border-radius: 16px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 26px; flex-shrink: 0;
+    }
+    .cta-primary .big-cta-ico { background: #4f46e5; color: #fff; }
+    .cta-accent .big-cta-ico { background: #f97316; color: #fff; }
+    .cta-ghost .big-cta-ico { background: #e2e8f0; color: #0f172a; }
+    .cta-primary { border: 2px solid #4f46e5; }
+    .cta-accent { border: 2px solid #f97316; }
+    .big-cta-copy h2 { margin: 0 0 4px; font-size: 17px; }
+    .big-cta-copy p { margin: 0; color: #475569; font-size: 13.5px; line-height: 1.35; }
+    .big-cta-arrow { font-size: 22px; color: #64748b; flex-shrink: 0; }
+    .card-head { padding: 18px 20px; border-bottom: 1px solid #e2e8f0; }
+    .card-head h2 { margin: 0; font-size: 17px; color: #0f172a; }
+    .recent-audits { list-style: none; padding: 12px 20px 20px; margin: 0; display: grid; gap: 10px; }
+    .recent-audit-row {
+        display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center;
+        padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff;
+    }
+    .recent-audit-title { font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+    .recent-audit-meta { color: #475569; font-size: 13px; }
+
+    .delivery-today-card {
+        border-radius: 18px; overflow: hidden;
+        background: #fff; border: 1px solid #e2e8f0;
+        box-shadow: 0 10px 28px rgba(15,23,42,0.07);
+    }
+    .delivery-day-head { padding: 16px 18px; }
+    .delivery-today-head {
+        background: linear-gradient(135deg, #0B1020 0%, #1e293b 50%, #334155 100%);
+        border-bottom: 2px solid #475569;
+    }
+    .empty-day-box {
+        padding: 20px 20px 22px; text-align: center;
+        background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+        border-bottom-left-radius: 18px; border-bottom-right-radius: 18px;
+    }
+    .delivery-groups { padding: 8px 10px 14px; display: grid; gap: 10px; }
+    .day-group {
+        border: 1px solid #e2e8f0; border-radius: 14px;
+        background: #fafbfc; overflow: hidden;
+    }
+    .day-group[open] { background: #fff; border-color: #cbd5e1; }
+    .day-summary {
+        list-style: none; cursor: pointer; padding: 12px 14px;
+        display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+        user-select: none; transition: background .15s ease;
+    }
+    .day-summary:hover { background: #eef2ff; }
+    .day-summary::-webkit-details-marker { display: none; }
+    .day-summary-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .day-date-label { font-weight: 800; color: #0f172a; font-size: 14.5px; }
+    .day-count-pill {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 28px; height: 24px; padding: 0 8px;
+        border-radius: 999px; background: #1e293b; color: #f8fafc;
+        font-weight: 800; font-size: 12px;
+    }
+    .day-chevron {
+        color: #475569; font-size: 18px; font-weight: 700;
+        transition: transform .2s ease;
+    }
+    .day-group[open] .day-chevron { transform: rotate(180deg); }
+
+    .today-expand-row { padding: 0 20px 18px; }
+    .today-expand-btn {
+        width: 100%; padding: 12px 16px;
+        border: 2px dashed #93c5fd; border-radius: 14px;
+        background: linear-gradient(180deg, #eff6ff, #dbeafe);
+        color: #1e3a8a; font-weight: 800; font-size: 14px;
+        cursor: pointer; transition: all .15s ease;
+    }
+    .today-expand-btn:hover { background: linear-gradient(180deg, #dbeafe, #bfdbfe); border-color: #3b82f6; }
+    .today-expand-row.is-open .today-expand-btn {
+        background: linear-gradient(180deg, #fee2e2, #fecaca);
+        border-color: #fca5a5; color: #991b1b;
+    }
+
+    .ot-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        padding: 14px 20px 0;
+    }
+    .ot-kpi {
+        border-radius: 14px;
+        padding: 14px 14px 16px;
+        text-align: center;
+        border: 1.5px solid;
+    }
+    .ot-kpi-num { font-size: 28px; font-weight: 900; line-height: 1; margin-bottom: 6px; }
+    .ot-kpi-label { font-weight: 800; font-size: 13.5px; }
+    .ot-kpi-sub { margin-top: 3px; font-size: 11.5px; opacity: .85; font-weight: 600; }
+    .ot-kpi-total { background: linear-gradient(180deg,#eff6ff,#dbeafe); border-color:#bfdbfe; color:#1e3a8a; }
+    .ot-kpi-ok    { background: linear-gradient(180deg,#ecfdf5,#d1fae5); border-color:#6ee7b7; color:#065f46; }
+    .ot-kpi-warn  { background: linear-gradient(180deg,#fffbeb,#fef3c7); border-color:#fcd34d; color:#92400e; }
+    .ot-num-pill {
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 3px 10px; border-radius: 10px;
+        background: #0f172a; color: #f8fafc;
+        font-weight: 800; font-size: 12.5px;
+        letter-spacing: 0.02em;
+    }
+    .ot-doc-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 4px 10px; border-radius: 999px;
+        font-size: 12px; font-weight: 700;
+        border: 1px solid;
+    }
+    .ot-doc-ok   { background:#ecfdf5; color:#065f46; border-color:#6ee7b7; }
+    .ot-doc-miss { background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+
+    .feed-list {
+        list-style: none; padding: 14px 20px 6px;
+        margin: 0; display: grid; gap: 10px;
+    }
+    .feed-item {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 12px; align-items: start;
+        padding: 12px 14px;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #94a3b8;
+        border-radius: 12px;
+        background: #fff;
+    }
+    .feed-item.feed-ok     { border-left-color: #10b981; background: linear-gradient(180deg,#ecfdf5,#ffffff); }
+    .feed-item.feed-danger { border-left-color: #ef4444; background: linear-gradient(180deg,#fef2f2,#ffffff); }
+    .feed-item.feed-warn   { border-left-color: #f59e0b; background: linear-gradient(180deg,#fffbeb,#ffffff); }
+    .feed-item.feed-info   { border-left-color: #3b82f6; background: linear-gradient(180deg,#eff6ff,#ffffff); }
+    .feed-item.feed-muted  { border-left-color: #94a3b8; }
+    .feed-ico {
+        width: 38px; height: 38px; flex-shrink: 0;
+        border-radius: 12px;
+        background: #f1f5f9;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px;
+    }
+    .feed-main { min-width: 0; }
+    .feed-title { color: #0f172a; font-size: 14px; line-height: 1.3; }
+    .feed-title strong { font-weight: 800; }
+    .feed-sub { color: #334155; font-weight: 600; }
+    .feed-extra { margin-top: 3px; color: #475569; font-size: 12.5px; font-weight: 600; }
+    .feed-date  { margin-top: 4px; color: #64748b; font-size: 11.5px; font-weight: 700; letter-spacing: .01em; }
+    .feed-cta { padding: 6px 12px; font-size: 12.5px; flex-shrink: 0; }
+
+    @media (max-width: 520px) {
+        .ot-kpi-row { grid-template-columns: 1fr; }
+        .feed-item { grid-template-columns: auto 1fr; }
+        .feed-cta { grid-column: 1 / -1; justify-self: end; }
+    }
+
+    @media (max-width: 520px) {
+        .technician-home-hero { flex-direction: column; text-align: center; padding: 20px 16px; }
+        .technician-home-headline h1 { font-size: 22px; }
+        .technician-home-meta { justify-content: center; }
+        .big-cta { grid-template-columns: auto 1fr; }
+        .big-cta-arrow { display: none; }
+    }
+</style>
+
+<script>
+(function () {
+    function wireExpand(btnId, rowCls) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const wrap = btn.closest(".today-expand-row");
+        const total = parseInt(btn.getAttribute("data-total") || "0", 10);
+        const limit = parseInt(btn.getAttribute("data-limit") || "6", 10);
+        const rows = document.querySelectorAll("." + rowCls);
+        let expanded = false;
+        function labelFor(state) {
+            const rest = Math.max(0, total - limit);
+            let base = btnId === "btn-expand-feed" ? "novedad" : (btnId === "btn-expand-ots" ? "OT" : "entrega");
+            let pl = (rest === 1 ? "" : (base === "novedad" ? "es" : "s"));
+            return state
+                ? "Ocultar entradas anteriores ▴"
+                : "Ver " + rest + " " + base + pl + " más ▾";
+        }
+        btn.textContent = labelFor(false);
+        btn.addEventListener("click", function () {
+            expanded = !expanded;
+            rows.forEach(function (r) { r.style.display = expanded ? "" : "none"; });
+            if (wrap) wrap.classList.toggle("is-open", expanded);
+            btn.textContent = labelFor(expanded);
+        });
+    }
+    wireExpand("btn-expand-today", "today-hidden-row");
+    wireExpand("btn-expand-ots",   "ot-hidden-row");
+    wireExpand("btn-expand-feed",  "feed-hidden-row");
+})();
+(function () {
+    const toggleAllBtn = document.getElementById("toggle-all-days");
+    if (toggleAllBtn) {
+        const groups = document.querySelectorAll(".day-group");
+        let allOpen = false;
+        function _refreshLabel() {
+            const anyClosed = Array.from(groups).some(function (g) { return !g.open; });
+            allOpen = !anyClosed;
+            toggleAllBtn.textContent = allOpen ? "Contraer todos" : "Expandir todos";
+        }
+        _refreshLabel();
+        groups.forEach(function (g) {
+            g.addEventListener("toggle", _refreshLabel);
+        });
+        toggleAllBtn.addEventListener("click", function () {
+            const newState = !allOpen;
+            groups.forEach(function (g) { g.open = newState; });
+            allOpen = newState;
+            toggleAllBtn.textContent = allOpen ? "Contraer todos" : "Expandir todos";
+        });
+    }
+})();
+(function () {
+    const btn = document.getElementById("share_credential_button");
+    if (!btn) return;
+
+    const technicianId = btn.getAttribute("data-technician-id");
+    const csrf = btn.getAttribute("data-csrf");
+    const home = btn.closest(".technician-home");
+    const badgeLink = home ? home.querySelector('a[href*="/badge/"]') : null;
+    const badgeUrl = (badgeLink && badgeLink.getAttribute && badgeLink.getAttribute("href"))
+        || (btn.getAttribute && btn.getAttribute("href"))
+        || (btn.getAttribute && btn.getAttribute("data-badge-url"))
+        || "";
+    if (!badgeUrl) {
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+            alert("No se encontró el link de la credencial. Entrá a tu perfil y abrí la credencial desde el botón 'Ver Credencial' antes de compartir.");
+        });
+        return;
+    }
+
+    async function ensureBadgeLibs() {
+        if (typeof window.html2canvas === "function") return true;
+        await new Promise(function (resolve, reject) {
+            const s = document.createElement("script");
+            s.src = "{{ url_for('static', filename='vendor/html2canvas.min.js') }}";
+            s.onload = function () { resolve(true); };
+            s.onerror = function () { reject(new Error("No se cargó la librería.")); };
+            document.head.appendChild(s);
+        });
+        return typeof window.html2canvas === "function";
+    }
+
+    async function initApi(channel) {
+        const res = await fetch("{{ url_for('main.api_badge_delivery_init') }}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-Token": csrf,
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({ technician_id: Number(technicianId), delivery_channel: channel || "whatsapp_webshare" }),
+        });
+        if (!res.ok) throw new Error("No se pudo preparar la credencial.");
+        return res.json();
+    }
+
+    function buildShareText(publicUrl, technician) {
+        const name = (technician && technician["name"]) ? technician["name"].trim() : "";
+        const legajo = (technician && technician["employee_code"]) ? String(technician["employee_code"]).trim() : "";
+        const company = (technician && technician["company_name"]) ? String(technician["company_name"]).trim() : "Soft Berardi";
+        const today = new Date().toLocaleDateString("es-AR");
+        const parts = [];
+        parts.push("📋 Presentación Técnica · " + company);
+        if (name) parts.push("👤 Técnico: " + name + (legajo ? " — Leg. " + legajo : ""));
+        parts.push("📅 Fecha: " + today);
+        parts.push("");
+        parts.push("🔗 Ver credencial oficial (datos y foto actualizada):");
+        parts.push(publicUrl);
+        parts.push("");
+        parts.push("(*) Incluye grupo sanguíneo, ART y contacto de emergencia.");
+        return parts.join("\n");
+    }
+
+    async function captureBadgeImage() {
+        await ensureBadgeLibs();
+        const res = await fetch(badgeUrl, { credentials: "same-origin" });
+        if (!res.ok) throw new Error("No se pudo cargar la credencial.");
+        const htmlText = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, "text/html");
+        const card = doc.querySelector(".badge-card") || doc.querySelector(".page.page-badge") || doc.body;
+        if (!card) throw new Error("No se encontró la credencial.");
+        const wrap = document.createElement("div");
+        wrap.style.position = "fixed"; wrap.style.left = "-99999px"; wrap.style.top = "0";
+        wrap.style.background = "#0B1020";
+        wrap.innerHTML = card.outerHTML;
+        document.body.appendChild(wrap);
+        const realCard = wrap.firstElementChild;
+        try {
+            const canvas = await window.html2canvas(realCard, {
+                backgroundColor: "#0B1020", scale: 2, useCORS: true, logging: false,
+                onclone: function (clonedDoc) {
+                    const toolbar = clonedDoc.querySelector(".badge-toolbar");
+                    if (toolbar) toolbar.style.display = "none";
+                }
+            });
+            return await new Promise(function (resolve, reject) {
+                canvas.toBlob(function (blob) {
+                    if (blob) resolve(blob); else reject(new Error("No se generó la imagen."));
+                }, "image/jpeg", 0.92);
+            });
+        } finally {
+            document.body.removeChild(wrap);
+        }
+    }
+
+    function sanitizeFilename(name) {
+        return String(name || "credencial").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^A-Z0-9_\-]/gi, "_").toUpperCase().replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+    }
+
+    function whatsappWebLink(text, phone) {
+        const q = new URLSearchParams({ text: text });
+        return "https://wa.me/" + (phone ? phone.replace(/\D/g, "") : "") + "?" + q.toString();
+    }
+
+    async function handleShare(event) {
+        event.preventDefault();
+        const originalText = btn.querySelector("h2") ? btn.querySelector("h2").textContent : "Compartir credencial";
+        const originalDesc = btn.querySelector("p") ? btn.querySelector("p").textContent : "";
+        const h2El = btn.querySelector(".big-cta-copy h2");
+        const pEl = btn.querySelector(".big-cta-copy p");
+        if (h2El) h2El.textContent = "Preparando credencial...";
+        if (pEl) pEl.textContent = "Generando la imagen de tu tarjeta.";
+        btn.disabled = true; btn.style.cursor = "wait";
+
+        let deliveryId = null;
+        try {
+            const init = await initApi("whatsapp_webshare");
+            deliveryId = init.delivery_id;
+            const publicUrl = init.public_url;
+            const tech = {{ technician | tojson }} || {};
+            const blob = await captureBadgeImage();
+            const legajo = (tech["employee_code"] || "").toString().trim() || "LEG";
+            const nombre = tech["name"] || "TECNICO";
+            const filename = "Tarjeta_" + legajo + "_" + sanitizeFilename(nombre.split(/\s+/).slice(0, 2).join("_")) + ".jpg";
+            const file = new File([blob], filename, { type: "image/jpeg" });
+            const shareText = buildShareText(publicUrl, tech);
+            const canShareFiles = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+            const url = window.location.origin + badgeUrl;
+            if (canShareFiles) {
+                try {
+                    await navigator.share({
+                        title: "Credencial Técnico · " + (tech["name"] || ""),
+                        text: shareText,
+                        files: [file],
+                    });
+                    if (deliveryId) await fetch("{{ url_for('main.api_badge_delivery_confirm', delivery_id=0) }}".replace("/0/", "/" + deliveryId + "/"), {
+                        method: "POST", headers: { "X-CSRF-Token": csrf }, credentials: "same-origin"
+                    });
+                    alert("¡Gracias por compartir tu credencial!");
+                    return;
+                } catch (shareErr) {
+                    if (deliveryId) await fetch("{{ url_for('main.api_badge_delivery_cancel', delivery_id=0) }}".replace("/0/", "/" + deliveryId + "/"), {
+                        method: "POST", headers: { "X-CSRF-Token": csrf }, credentials: "same-origin"
+                    });
+                    if (shareErr && shareErr.name === "AbortError") return;
+                }
+            }
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 15000);
+            const phone = (prompt("Opcional: ingresa el número de WhatsApp del cliente (solo dígitos, con código de país sin +).\nSi lo dejas vacío, se abre un chat en blanco y vos elegís el contacto.") || "").trim();
+            window.open(whatsappWebLink(shareText + "\n\n🖼️ Credencial JPG adjunta recién descargada.", phone), "_blank", "noopener");
+        } catch (err) {
+            if (deliveryId) {
+                try { await fetch("{{ url_for('main.api_badge_delivery_cancel', delivery_id=0) }}".replace("/0/", "/" + deliveryId + "/"), {
+                    method: "POST", headers: { "X-CSRF-Token": csrf }, credentials: "same-origin" });
+                } catch (_) {}
+            }
+            alert("No se pudo compartir la credencial. Abrí tu credencial y usá el botón 'Descargar JPG' desde ahí. Detalle: " + (err && err.message ? err.message : err));
+        } finally {
+            btn.disabled = false; btn.style.cursor = "pointer";
+            if (h2El) h2El.textContent = originalText;
+            if (pEl) pEl.textContent = originalDesc;
+        }
+    }
+    btn.addEventListener("click", handleShare);
+}());
+</script>
+{% endblock %}

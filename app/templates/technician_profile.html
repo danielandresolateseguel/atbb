@@ -83,7 +83,9 @@
     <div class="hero-actions">
         <a class="button button-secondary" href="{{ url_for('main.technician_list') }}">Volver al listado</a>
         <a class="button button-secondary" href="{{ url_for('main.technician_reports', technician_id=technician.id, from_date=show_from, to_date=show_to) }}">Fallas QC</a>
+        <a class="button button-secondary" href="{{ url_for('main.master_technician_edit', technician_id=technician.id) }}">✏️ Editar datos</a>
         <button type="button" id="btn-copy-summary" class="button button-secondary" data-technician='{"name":{{ technician.name|tojson }},"employee_code":{{ (technician.employee_code or '-')|tojson }},"region":{{ (technician.region or '-')|tojson }},"supervisor_name":{{ (technician.supervisor_name or '-')|tojson }},"center_name":{{ (technician.center_name or '-')|tojson }},"company_name":{{ (technician.company_name or '-')|tojson }},"union_name":{{ (technician.union_name or '-')|tojson }},"is_active":{{ 1 if technician.is_active else 0 }}}'>Copiar resumen</button>
+        <a class="button button-secondary" target="_blank" rel="noopener" href="{{ url_for('main.technician_badge', technician_id=technician.id) }}">👤 Tarjeta</a>
         <a class="button button-secondary" target="_blank" rel="noopener" href="{{ url_for('main.technician_profile_pdf', technician_id=technician.id, from_date=filters.from_date, to_date=filters.to_date, all_time='1' if filters.all_time else '') }}">📄 PDF</a>
         <a class="button button-primary" href="{{ url_for('main.technician_list_export_csv', from_date='', to_date='') }}">Descargar CSV</a>
     </div></section>

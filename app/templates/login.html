@@ -16,12 +16,19 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ next or '' }}">
         <label>
-            <span>Usuario</span>
-            <input type="text" name="username" autocomplete="username" required>
+            <span>Usuario o Legajo</span>
+            <input type="text" name="username" autocomplete="username" required placeholder="Ej: 606">
+            <small style="color:#475569; display:block; margin-top:6px; line-height:1.4;">
+                <strong>Equipo de Gestión:</strong> usá tu nombre de usuario.<br>
+                <strong>Técnicos:</strong> usá tu número de legajo (ej: 606).
+            </small>
         </label>
         <label>
             <span>Contraseña</span>
             <input type="password" name="password" autocomplete="current-password" required>
+            <small style="color:#475569; display:block; margin-top:6px; line-height:1.4;">
+                Si sos técnico y es tu primer ingreso, usá la contraseña temporal proporcionada por tu supervisor.
+            </small>
         </label>
         <button class="button button-primary" type="submit">Ingresar</button>
     </form>

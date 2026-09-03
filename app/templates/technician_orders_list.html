@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    @media (max-width: 768px) {
+        .ot-search-grid {
+            grid-template-columns: 1fr !important;
+        }
+        .ot-stats-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+        }
+        .ot-stat-card {
+            padding: 14px 14px !important;
+        }
+        .ot-stat-num {
+            font-size: 22px !important;
+        }
+        .ot-group-header-title {
+            font-size: 15px !important;
+        }
+        .ot-group-chips-wrap { gap:6px !important; }
+        .ot-group-chip {
+            font-size: 12px !important;
+            padding: 5px 10px !important;
+        }
+        .ot-row-grid {
+            grid-template-columns: 1fr !important;
+            gap: 6px !important;
+        }
+    }
+    @media (max-width: 420px) {
+        .ot-stats-grid {
+            grid-template-columns: 1fr 1fr !important;
+        }
+        .ot-today-switch-wrap { width:100% !important; justify-content:space-between !important; }
+    }
+    .ot-contrast-input::placeholder {
+        color: #475569 !important;
+        opacity: 1 !important;
+        font-weight: 500 !important;
+    }
+    .ot-contrast-input::-ms-input-placeholder {
+        color: #475569 !important;
+        opacity: 1 !important;
+        font-weight: 500 !important;
+    }
+    .ot-contrast-input::-webkit-input-placeholder {
+        color: #475569 !important;
+        opacity: 1 !important;
+        font-weight: 500 !important;
+    }
+    .ot-contrast-input::-moz-placeholder {
+        color: #475569 !important;
+        opacity: 1 !important;
+        font-weight: 500 !important;
+    }
+</style>
+<div style="max-width:1100px;margin:24px auto;padding:0 14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;">
+        <div>
+            <div class="section-kicker" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;margin-bottom:6px;font-weight:700;">
+                {% if current_technician_view %}Mis órdenes{% elif target_technician %}Órdenes de {{ target_technician.name }}{% else %}Órdenes de técnicos{% endif %}
+            </div>
+            <h1 style="margin:0;font-size:26px;line-height:1.2;word-break:break-word;color:#ffffff;font-weight:800;">
+                {% if current_technician_view %}Mis órdenes de trabajo{% elif target_technician %}Órdenes — {{ target_technician.name }} ({{ target_technician.employee_code }}){% else %}Buscador de Órdenes Técnicas{% endif %}
+            </h1>
+            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">{% if current_technician_view %}Crea una orden por cada OT que recibas, adjuntá las 2 fotos obligatorias y el E-DOC PDF.{% else %}Por defecto: solo LO DEL DÍA (para comparar con la app madre). Lo archivado lo buscás por N° OT.{% endif %}</p>
+        </div>
+        {% if current_technician_view %}
+        <a class="button button-primary" href="{{ url_for('main.technician_orders_new') }}" style="padding:13px 18px;font-size:15px;border-radius:14px;">+ Nueva Orden</a>
+        {% endif %}
+    </div>
+
+    {% if current_technician_view and orders_stats %}
+    <div class="ot-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
+        <div class="ot-stat-card" style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border:1px solid #bfdbfe;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#1e40af;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Órdenes Totales</div>
+            <div class="ot-stat-num" style="font-size:26px;font-weight:800;color:#1e3a8a;margin-top:6px;">{{ orders_stats.total or 0 }}</div>
+            <div style="font-size:12px;color:#3b82f6;margin-top:2px;">+{{ orders_stats.last_30d or 0 }} últimos 30 días</div>
+        </div>
+        <div class="ot-stat-card" style="background:linear-gradient(135deg,#dcfce7,#f0fdf4);border:1px solid #bbf7d0;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Fotos 2/2</div>
+            <div class="ot-stat-num" style="font-size:26px;font-weight:800;color:#14532d;margin-top:6px;">{{ orders_stats.with_photos or 0 }}</div>
+            <div style="font-size:12px;color:#16a34a;margin-top:2px;">de {{ orders_stats.total or 0 }} órdenes</div>
+        </div>
+        <div class="ot-stat-card" style="background:linear-gradient(135deg,#fef3c7,#fffbeb);border:1px solid #fde68a;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#92400e;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">E-DOC adjuntado</div>
+            <div class="ot-stat-num" style="font-size:26px;font-weight:800;color:#78350f;margin-top:6px;">{{ orders_stats.with_edoc or 0 }}</div>
+            <div style="font-size:12px;color:#d97706;margin-top:2px;">falta en {{ ((orders_stats.total or 0) - (orders_stats.with_edoc or 0)) }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not is_tech_view and today_summary %}
+    <div class="ot-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px;">
+        <div class="ot-stat-card" style="background:linear-gradient(135deg,#0ea5e9,#2563eb);color:#fff;border-radius:14px;padding:16px 18px;">
+            <div style="font-size:12px;font-weight:700;opacity:1;text-transform:uppercase;letter-spacing:.06em;">Hoy · {{ today_summary.day or '' }}</div>
+            <div class="ot-stat-num" style="font-size:30px;font-weight:800;margin-top:6px;">{{ today_summary.total_orders or 0 }}</div>
+            <div style="font-size:12px;opacity:1;font-weight:600;">órdenes cargadas HOY</div>
+        </div>
+        <div class="ot-stat-card" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:14px;padding:16px 18px;">
+            <div style="font-size:12px;font-weight:700;opacity:1;text-transform:uppercase;letter-spacing:.06em;">Completadas HOY</div>
+            <div class="ot-stat-num" style="font-size:30px;font-weight:800;margin-top:6px;">{{ today_summary.total_completed or 0 }}</div>
+            <div style="font-size:12px;opacity:1;font-weight:600;">listas para cruzar con la app madre</div>
+        </div>
+        <div class="ot-stat-card" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border-radius:14px;padding:16px 18px;">
+            <div style="font-size:12px;font-weight:700;opacity:1;text-transform:uppercase;letter-spacing:.06em;">Incompletas HOY</div>
+            <div class="ot-stat-num" style="font-size:30px;font-weight:800;margin-top:6px;">{{ today_summary.total_incomplete or 0 }}</div>
+            <div style="font-size:12px;opacity:1;font-weight:600;">faltan fotos o E-DOC</div>
+        </div>
+        <div class="ot-stat-card" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border-radius:14px;padding:16px 18px;">
+            <div style="font-size:12px;font-weight:700;opacity:1;text-transform:uppercase;letter-spacing:.06em;">Técnicos activos HOY</div>
+            <div class="ot-stat-num" style="font-size:30px;font-weight:800;margin-top:6px;">{{ today_summary.active_technicians or 0 }}</div>
+            <div style="font-size:12px;opacity:1;font-weight:600;">cargaron al menos 1 orden</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="GET" action="{{ url_for('main.technician_orders') }}" class="ot-search-grid" style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr auto auto;gap:12px;margin-bottom:16px;align-items:end;">
+        <div>
+            <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Buscar (nombre / dirección / OT)</label>
+            <input type="search" name="q" value="{{ q or '' }}" placeholder="Ej: Jose Hernandez 1485" class="text-input ot-contrast-input" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+        </div>
+        <div>
+            <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">N° OT</label>
+            <input type="text" name="ot" value="{{ ot_number or '' }}" placeholder="Ej: 05625372SA6253891" class="text-input ot-contrast-input" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;text-transform:uppercase;">
+        </div>
+        {% if not is_tech_view %}
+        <div class="ot-today-switch-wrap" style="display:flex;align-items:center;gap:8px;justify-content:center;min-height:42px;">
+            <input type="hidden" name="day" value="{% if today_only %}1{% else %}0{% endif %}">
+            <a id="btnToggleToday"
+               href="{{ url_for('main.technician_orders', q=q, ot=ot_number, day=(0 if today_only else 1)) }}"
+               class="button button-secondary"
+               style="{% if today_only %}background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;{% else %}background:#f0fdf4;color:#166534;border-color:#bbf7d0;{% endif %}white-space:nowrap;font-size:13px;padding:11px 14px;">
+                {% if today_only %}⏳ Solo hoy{% else %}🗂 Ver historial{% endif %}
+            </a>
+        </div>
+        {% endif %}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="submit" class="button button-secondary" style="padding:11px 16px;">🔎 Buscar</button>
+            <a class="button button-secondary" style="padding:11px 16px;background:#f8fafc;" href="{{ url_for('main.technician_orders') }}">Limpiar</a>
+        </div>
+    </form>
+
+    {# ========== TECHNICIAN VIEW (PLANA): Mis órdenes, sin agrupar ========== #}
+    {% if is_tech_view %}
+        {% if orders %}
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f8fafc;">
+                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">N° OT</th>
+                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Cliente / Obra</th>
+                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Fecha</th>
+                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Estado</th>
+                            <th style="text-align:right;padding:11px 14px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in orders %}
+                        {% set has_p1 = (o.photo_1_path or '')|trim != '' %}
+                        {% set has_p2 = (o.photo_2_path or '')|trim != '' %}
+                        {% set has_pdf = (o.edoc_pdf_path or '')|trim != '' %}
+                        {% set complete = has_p1 and has_p2 and has_pdf %}
+                        <tr style="border-top:1px solid #f1f5f9;">
+                            <td style="padding:12px 14px;vertical-align:top;">
+                                <div style="font-weight:700;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;">{{ o.ot_number }}</div>
+                                {% if o.client_phone %}
+                                <div style="font-size:12px;color:#0f172a;margin-top:2px;font-weight:700;">📞 {{ o.client_phone }}</div>
+                                {% endif %}
+                            </td>
+                            <td style="padding:12px 14px;vertical-align:top;">
+                                <div style="font-weight:700;color:#0f172a;">{{ o.client_name or '—' }}</div>
+                                {% if o.client_address %}
+                                <div style="font-size:13px;color:#0f172a;margin-top:2px;font-weight:600;">📍 {{ o.client_address }}</div>
+                                {% endif %}
+                            </td>
+                            <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:700;">{{ o.created_at|ar_dt }}</td>
+                            <td style="padding:12px 14px;vertical-align:top;">
+                                {% if complete %}
+                                <span class="chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;font-weight:700;">✓ Completa</span>
+                                {% else %}
+                                <span class="chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;font-weight:700;">⏳ Incompleta</span>
+                                <div style="font-size:12px;color:#0f172a;margin-top:4px;font-weight:700;">
+                                    {% if not has_p1 %}📸 Falta foto 1. {% endif %}
+                                    {% if not has_p2 %}📸 Falta foto 2. {% endif %}
+                                    {% if not has_pdf %}📄 Falta E-DOC.{% endif %}
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td style="padding:12px 14px;text-align:right;vertical-align:top;">
+                                <a class="button button-secondary" style="padding:7px 12px;font-size:14px;" href="{{ url_for('main.technician_order_detail', order_id=o.id) }}">Abrir →</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if total_pages and total_pages > 1 %}
+        <div style="display:flex;gap:10px;justify-content:center;margin:20px 0;align-items:center;flex-wrap:wrap;">
+            {% if page > 1 %}
+            <a class="button button-secondary" href="{{ url_for('main.technician_orders', page=page-1, q=q, ot=ot_number) }}">← Pág. {{ page - 1 }}</a>
+            {% endif %}
+            <span style="font-size:14px;color:#1e293b;font-weight:600;">Página <b>{{ page }}</b> de {{ total_pages }} · {{ total }} órdenes</span>
+            {% if page < total_pages %}
+            <a class="button button-secondary" href="{{ url_for('main.technician_orders', page=page+1, q=q, ot=ot_number) }}">Pág. {{ page + 1 }} →</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:18px;padding:40px 20px;text-align:center;">
+            <div style="font-size:48px;margin-bottom:10px;">📋</div>
+            <div style="font-size:18px;font-weight:700;margin-bottom:6px;">Todavía no hay órdenes{% if q or ot_number %} que coincidan con la búsqueda{% endif %}</div>
+            {% if current_technician_view %}
+            <a class="button button-primary" href="{{ url_for('main.technician_orders_new') }}" style="margin-top:12px;">+ Crear mi primera orden</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+    {# ========== SUPERVISOR / ADMIN VIEW (GROUPED): por técnico + chips completas/incompletas ========== #}
+    {% else %}
+        {% if grouped and grouped.groups %}
+            {% if smart_archive_search %}
+            <div style="background:#ecfeff;border:1px solid #a5f3fc;color:#0e7490;padding:10px 14px;border-radius:12px;margin-bottom:14px;font-size:13px;font-weight:500;">
+                🧭 Búsqueda por <b>N° OT / cliente</b> archivada: mostrando resultados de otros días (no estaban en el listado de hoy).
+            </div>
+            {% elif (q or ot_number) and not today_only %}
+            <div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:10px 14px;border-radius:12px;margin-bottom:14px;font-size:13px;font-weight:500;">
+                🔍 Se encontraron resultados de días anteriores (desactivaste el filtro "Solo hoy" para la búsqueda).
+            </div>
+            {% endif %}
+
+            {% for group in grouped.groups %}
+            <div class="ot-group-card" style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:14px;overflow:hidden;">
+                <div class="ot-group-header" style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);padding:13px 16px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                    <div style="min-width:0;">
+                        <div class="ot-group-header-title" style="font-size:16px;font-weight:700;color:#0f172a;line-height:1.3;word-break:break-word;">
+                            {{ group.technician_name or 'Técnico sin asignar' }}
+                            {% if group.technician_employee_code %}
+                            <span style="font-weight:600;color:#1e293b;font-size:13px;">· Leg. {{ group.technician_employee_code|string|replace('.0', '') }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="ot-group-chips-wrap" style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <span class="ot-group-chip chip chip-info" style="background:#dbeafe;color:#0f172a;border-color:#93c5fd;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:800;">
+                            📋 {{ group.total_orders }} órdenes
+                        </span>
+                        <span class="ot-group-chip chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:800;">
+                            ✓ {{ group.completed_orders }} completadas
+                        </span>
+                        {% if group.incomplete_orders %}
+                        <span class="ot-group-chip chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:800;">
+                            ⏳ {{ group.incomplete_orders }} pendientes
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="padding:2px 0;">
+                    {% for o in group.rows %}
+                    {% set complete = o._is_complete %}
+                    <div class="ot-row-grid" style="display:grid;grid-template-columns:1.4fr 1.2fr .9fr 1.1fr auto;gap:10px;align-items:start;padding:12px 16px;border-top:1px solid #f1f5f9;">
+                        <div style="min-width:0;">
+                            <div style="font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-weight:800;color:#0f172a;line-height:1.3;word-break:break-word;">{{ o.ot_number }}</div>
+                            {% if o.client_phone %}
+                            <div style="font-size:12px;color:#0f172a;margin-top:2px;font-weight:700;">📞 {{ o.client_phone }}</div>
+                            {% endif %}
+                        </div>
+                        <div style="min-width:0;">
+                            <div style="font-weight:700;color:#0f172a;font-size:14px;">{{ o.client_name or '—' }}</div>
+                            {% if o.client_address %}
+                            <div style="font-size:12px;color:#0f172a;margin-top:2px;line-height:1.3;word-break:break-word;font-weight:700;">📍 {{ o.client_address }}</div>
+                            {% endif %}
+                        </div>
+                        <div style="font-size:13px;color:#0f172a;white-space:nowrap;font-weight:800;">{{ o.created_at|ar_dt }}</div>
+                        <div style="min-width:0;">
+                            {% if complete %}
+                            <span class="chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;font-weight:700;">✓ Completa</span>
+                            {% else %}
+                            <span class="chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;font-weight:700;">⏳ Incompleta</span>
+                            <div style="font-size:11px;color:#0f172a;margin-top:3px;line-height:1.3;font-weight:800;">
+                                {% if not o.photo_1_path %}📸 1 · {% endif %}
+                                {% if not o.photo_2_path %}📸 2 · {% endif %}
+                                {% if not o.edoc_pdf_path %}📄 E-DOC{% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <a class="button button-secondary" style="padding:7px 12px;font-size:14px;white-space:nowrap;" href="{{ url_for('main.technician_order_detail', order_id=o.id) }}">Abrir →</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            {# Summary footer supervisor #}
+            <div style="background:#0f172a;color:#fff;border-radius:14px;padding:14px 16px;margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
+                <div>
+                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.95;font-weight:700;">Total escaneado (scope)</div>
+                    <div style="font-size:20px;font-weight:800;margin-top:2px;">{{ grouped.total_orders or 0 }} órdenes</div>
+                </div>
+                <div>
+                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.95;font-weight:700;">Completadas (cruce OK)</div>
+                    <div style="font-size:20px;font-weight:800;margin-top:2px;color:#34d399;">✓ {{ grouped.total_completed or 0 }}</div>
+                </div>
+                <div>
+                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.95;font-weight:700;">Pendientes</div>
+                    <div style="font-size:20px;font-weight:800;margin-top:2px;color:#fbbf24;">⏳ {{ grouped.total_incomplete or 0 }}</div>
+                </div>
+                <div>
+                    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.95;font-weight:700;">Equipo activo hoy</div>
+                    <div style="font-size:20px;font-weight:800;margin-top:2px;">👥 {{ grouped.active_technicians or 0 }} técnicos</div>
+                </div>
+            </div>
+        {% else %}
+            <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:18px;padding:40px 20px;text-align:center;">
+                <div style="font-size:48px;margin-bottom:10px;">📋</div>
+                <div style="font-size:18px;font-weight:700;margin-bottom:6px;">
+                    {% if today_only %}Hoy no hay órdenes cargadas aún.{% else %}Todavía no hay órdenes{% if q or ot_number %} que coincidan con la búsqueda{% endif %}{% endif %}
+                </div>
+                <div style="font-size:13px;color:#1e293b;margin-top:4px;font-weight:600;">
+                    {% if today_only and not (q or ot_number) %}
+                    Cuando los técnicos carguen órdenes, aparecerán aquí agrupadas por técnico para que compares el número con la app madre.
+                    {% else %}
+                    {% if (q or ot_number) %}Probá limpiar la búsqueda o buscar por N° OT exacto.{% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

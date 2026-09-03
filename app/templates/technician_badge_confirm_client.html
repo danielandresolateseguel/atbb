@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}Confirmación cliente · {{ technician.name }}{% endblock %}
+{% block content %}
+{%- set safe_token = (technician.badge_share_token or '') | string | trim -%}
+{%- set raw_d = desired_delivery_id or (request.args.get('d') if request else '') -%}
+{%- set final_d = (raw_d | string | trim | default('', true)) -%}
+{%- set back_url = url_for('main.technician_public_badge', token=safe_token) if safe_token else '#' -%}
+{%- if safe_token and final_d and final_d != '' and final_d != 'None' -%}{%- set back_url = back_url + '?d=' ~ final_d -%}{%- endif -%}
+<section class="badge-toolbar">
+    <div class="badge-toolbar-left">
+        <a class="button button-secondary" href="{{ back_url }}">← Volver a la credencial</a>
+    </div>
+    <div class="badge-toolbar-right">
+    </div>
+</section>
+
+<section class="confirm-client-wrap no-print" style="max-width: 920px; margin: 24px auto;">
+    {% if success and confirm_data %}
+    <div class="confirm-card confirm-success" style="background:{% if already_confirmed %}#0369a1;border:1px solid #0ea5e9;{% else %}#0f766e;border:1px solid #14b8a6;{% endif %}border-radius:18px;padding:22px 26px;color:#f8fafc;box-shadow: 0 10px 30px rgba(15,118,110,.25);">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
+            <div style="width:48px;height:48px;border-radius:999px;background:#f8fafc;color:{% if already_confirmed %}#0369a1{% else %}#0f766e{% endif %};font-weight:800;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;">{% if already_confirmed %}👌{% else %}✓{% endif %}</div>
+            <div>
+                <h2 style="margin:0;color:#f8fafc;font-size:22px;">
+                    {% if already_confirmed %}Ya confirmaste esta credencial{% else %}¡Gracias! Confirmación registrada{% endif %}
+                </h2>
+                <div style="opacity:.9;margin-top:2px;">
+                    {% if already_confirmed %}Tú confirmación original fue registrada el{% else %}Comprobante #{{ confirm_data.delivery_id }} —{% endif %}
+                    {{ confirm_data.client_confirmed_at }}
+                </div>
+            </div>
+        </div>
+        <p style="margin: 10px 0 0 0; opacity:.95;">
+            {% if already_confirmed %}
+            No es necesario volver a confirmar — la recepción ya quedó registrada en el sistema. Podés cerrar esta página o volver a ver la credencial.
+            {% else %}
+            Quedará registrado que recibiste la credencial del técnico. Podés cerrar esta página o volver a la credencial para volver a verla.
+            {% endif %}
+        </p>
+        <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
+            {% if safe_token %}
+            {% set back_cred = url_for('main.technician_public_badge', token=safe_token) %}{% if final_d and final_d != '' and final_d != 'None' %}{% set back_cred = back_cred + '?d=' ~ final_d %}{% endif %}
+            <a class="button button-secondary" href="{{ back_cred }}" style="background:#f8fafc;color:{% if already_confirmed %}#0369a1{% else %}#0f766e{% endif %};border-color:#f8fafc;">↩️ Volver a ver credencial</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not success %}
+    <div class="confirm-card" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;padding:22px 26px;box-shadow: 0 10px 30px rgba(2,6,23,.06);">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+            <div style="width:52px;height:52px;border-radius:999px;background:linear-gradient(145deg,#0ea5e9,#6366f1);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;">📋</div>
+            <div>
+                <h2 style="margin:0;font-size:22px;color:#0f172a;">Confirmá recepción de credencial</h2>
+                <div style="margin-top:2px;color:#475569;">
+                    Por favor, completá tus datos para dejar constancia que recibiste la credencial del técnico
+                    <strong style="color:#0f172a;">{{ technician.name }}</strong>
+                    {% if technician.employee_code %}<span style="opacity:.8;">(Leg. {{ technician.employee_code }})</span>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if error %}
+        <div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:10px 14px;border-radius:12px;margin-bottom:14px;">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" class="confirm-client-form" autocomplete="on" style="display:flex;flex-direction:column;gap:14px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if desired_delivery_id %}<input type="hidden" name="d" value="{{ desired_delivery_id }}">{% endif %}
+
+            <div class="field-group">
+                <label class="field-label" for="client_name">Nombre completo <span style="color:#dc2626;">*</span></label>
+                <input type="text" name="client_name" id="client_name" required maxlength="200"
+                    class="field-input"
+                    placeholder="Ej: Juan Pérez"
+                    value="{% if request.method == 'POST' %}{{ request.form.get('client_name', '') }}{% endif %}">
+            </div>
+
+            <div class="field-group">
+                <label class="field-label" for="client_company">Empresa / Domicilio / Obra (opcional)</label>
+                <input type="text" name="client_company" id="client_company" maxlength="250"
+                    class="field-input"
+                    placeholder="Ej: Edificio Los Olivos · Mendoza 1234"
+                    value="{% if request.method == 'POST' %}{{ request.form.get('client_company', '') }}{% endif %}">
+            </div>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+                <button type="submit" class="button button-primary" style="padding:12px 18px;font-size:15px;">✅ Confirmar recepción de credencial</button>
+                {% if safe_token %}
+                <a class="button button-secondary" href="{{ url_for('main.technician_public_badge', token=safe_token) }}">Cancelar y volver a credencial</a>
+                {% endif %}
+            </div>
+            <div style="font-size:12px;color:#64748b;margin-top:-2px;">
+                (*) Campo obligatorio. Al confirmar aceptás que se registren tus datos como constancia de entrega de credencial.
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</section>
+
+<section class="badge-shell no-print" style="opacity:.92;">
+    <div style="max-width: 900px; margin: 18px auto; padding: 0 12px; color:#334155;">
+        <p style="margin:0;">
+            🔙 Previsualización de la credencial entregada (solo lectura):
+        </p>
+    </div>
+</section>
+
+<main class="badge-shell no-print">
+    <div style="max-width: 1140px; margin: 0 auto 48px auto; padding: 0 12px;">
+        <div style="border-radius: 28px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(15, 23, 42, 0.22), 0 8px 20px -10px rgba(29, 78, 216, 0.18); background:#ffffff;">
+            <div id="previewBadgeWrap" style="width:100%; overflow: hidden;">
+<article id="previewBadgeCard" style="display:block;position:relative;width:1100px;max-width:none;margin:0;height:auto;transform-origin: top left; background:linear-gradient(180deg,#ffffff 0%,#fcfdff 100%);">
+  <div style="position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(90deg,#1d4ed8 0%,#60a5fa 40%,#f59e0b 75%,#ef4444 100%);z-index:2;"></div>
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 32px 20px;background:radial-gradient(500px circle at 92% 0%,rgba(245,158,11,0.12),transparent 55%),radial-gradient(600px circle at 0% 0%,rgba(29,78,216,0.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);border-bottom:1px solid #eef2f7;">
+    <div style="display:flex;align-items:center;gap:16px;min-width:0;">
+      <div style="width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,#1d4ed8 0%,#1e40af 100%);color:#fff;font-weight:800;letter-spacing:0.08em;font-size:20px;box-shadow:0 10px 20px -8px rgba(29,78,216,0.55);flex:none;">SB</div>
+      <div style="min-width:0;">
+        <p style="margin:0;font-size:1.35rem;font-weight:800;letter-spacing:0.02em;color:#0f172a;">
+          {%- if technician.company_name and technician.company_name.strip() -%}
+            {{ technician.company_name | upper }}
+          {%- else -%}SOFT BERARDI{%- endif -%}
+        </p>
+        <p style="margin:4px 0 0;font-size:0.72rem;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#1d4ed8;">TARJETA DE PRESENTACIÓN · TÉCNICO</p>
+      </div>
+    </div>
+    <div style="text-align:right;padding:10px 16px;border-radius:999px;background:#eff6ff;border:1px solid #bfdbfe;line-height:1.1;flex:none;">
+      <span style="display:block;font-size:0.68rem;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#1d4ed8;">LEGAJO</span>
+      <strong style="display:block;font-size:1.3rem;color:#1e3a8a;font-variant-numeric:tabular-nums;">{{ technician.employee_code or '—' }}</strong>
+    </div>
+  </header>
+  <section style="display:grid;grid-template-columns:260px 1fr;gap:32px;padding:32px;align-items:start;">
+    <aside style="display:flex;flex-direction:column;align-items:stretch;gap:14px;">
+      <div style="width:100%;aspect-ratio:4 / 5;border-radius:22px;overflow:hidden;background:linear-gradient(160deg,#dbeafe 0%,#e0e7ff 50%,#fef3c7 100%);border:2px solid #ffffff;box-shadow:0 20px 40px -14px rgba(29,78,216,0.25),0 0 0 1px rgba(29,78,216,0.08);position:relative;">
+        {% set photo_url_preview = technician.profile_photo_path | technician_photo_url %}
+        {% if photo_url_preview %}
+        <img src="{{ photo_url_preview }}" alt="{{ technician.name or 'Tecnico' }}" crossorigin="anonymous" referrerpolicy="no-referrer-when-downgrade" decoding="async" loading="eager" style="width:100%;height:100%;object-fit:cover;display:block;">
+        {% else %}
+        <div style="width:100%;height:100%;display:grid;place-items:center;background:linear-gradient(160deg,rgba(29,78,216,0.12),rgba(245,158,11,0.12));">
+          {% set init_p = '' %}{% set parts_p = (technician.name or '').strip().split() %}{% for p in parts_p[:2] %}{% set init_p = init_p ~ (p[0] | upper if p else '') %}{% endfor %}<span style="font-size:4rem;font-weight:800;letter-spacing:0.06em;color:#1e3a8a;opacity:0.75;">{{ init_p or 'SB' }}</span>
+        </div>
+        {% endif %}
+      </div>
+      <div style="text-align:center;padding:10px 14px;border-radius:14px;background:#0f172a;color:#f8fafc;font-weight:600;font-size:0.9rem;letter-spacing:0.02em;">
+        {% if technician.center_name %}{{ technician.center_name }}{% elif technician.region %}{{ technician.region }}{% endif %}
+      </div>
+    </aside>
+    <div style="min-width:0;">
+      <div style="padding-bottom:18px;border-bottom:2px dashed #e5e7eb;margin-bottom:18px;">
+        <h1 style="margin:0;font-size:2.2rem;font-weight:800;line-height:1.1;color:#0f172a;letter-spacing:-0.01em;">{{ technician.name or '—' }}</h1>
+      </div>
+      <dl style="margin:0;display:grid;gap:14px;">
+        {% if technician.blood_group %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:linear-gradient(180deg,#fff1f2 0%,#ffe4e6 100%);border:1px solid #fecdd3;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#dc2626;"><path fill="currentColor" d="M12 2C10 6 7 9.5 7 13.5A5 5 0 0 0 12 21a5 5 0 0 0 5-7.5C17 9.5 14 6 12 2Zm0 16.5a3 3 0 0 1-3-4.5c0-2 1.5-4.6 3-6.9 1.5 2.3 3 4.9 3 6.9a3 3 0 0 1-3 4.5Z"/></svg>Grupo Sanguíneo
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.blood_group }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.art_provider %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M12 2L3 7v6c0 5 3.8 9.6 9 11 5.2-1.4 9-6 9-11V7l-9-5Zm0 5a2 2 0 0 1 2 2v2h2a1 1 0 1 1 0 2h-2v2a1 1 0 1 1-2 0v-2h-2a1 1 0 1 1 0-2h2V9a2 2 0 0 1 2-2Z"/></svg>ART
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.art_provider }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.emergency_number %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M6.6 10.8A15 15 0 0 0 13.2 17.4l2-2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.6 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11 11 0 0 0 .6 3.4 1 1 0 0 1-.25 1l-2.25 2.4Z"/></svg>Emergencia
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.emergency_number }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.phone %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm5 18a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4ZM7 4v12h10V4H7Z"/></svg>Teléfono
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.phone }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.allergies %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:linear-gradient(180deg,#fffbeb 0%,#fef3c7 100%);border:1px solid #fde68a;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#b45309;"><path fill="currentColor" d="M12 2L1 21h22L12 2Zm0 4l7.5 13h-15L12 6Zm-1 5v4h2v-4h-2Zm0 5v2h2v-2h-2Z"/></svg>Alergias / Preexistentes
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.allergies }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.supervisor_name %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#fafafa;border:1px solid #e5e7eb;border-radius:14px;opacity:0.9;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#475569;"><path fill="currentColor" d="M16 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 2c-3 0-6 1.5-6 4.5V20h12v-2.5C14 14.5 11 13 8 13Zm8 0c-.3 0-.6 0-.9.1 1.7 1.1 2.9 2.6 2.9 4.4V20h6v-2.5c0-3-3-4.5-8-4.5Z"/></svg>Supervisor
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.supervisor_name }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.email %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm0 2v.5l8 5 8-5V8H4Zm16 0h-0.5l-7.5 4.7a1 1 0 0 1-1 0L4.5 8H4v8h16V8Z"/></svg>Email
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.email }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.service_type %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M3 11h2v2H3v-2Zm16 0h2v2h-2v-2ZM11 3h2v2h-2V3Zm0 16h2v2h-2v-2Zm6.5-12.5L20.3 7.3 18.9 8.7 17.5 7.3l-1.4 1.4-1.4-1.4 1.4-1.4-1.4-1.4 1.4-1.4ZM6.5 15.5 7.9 16.9 6.5 18.3 5.1 16.9 3.7 18.3 2.3 16.9l1.4-1.4-1.4-1.4 1.4-1.4 1.4 1.4ZM20 20a1 1 0 0 1-1-1v-2h-2v2a3 3 0 0 1-3 3h-4v-2h4a1 1 0 0 0 1-1v-2h2v2a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3h4v2H7a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-4V2h4a3 3 0 0 1 3 3v14Z"/></svg>Servicio
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.service_type }}</dd>
+        </div>
+        {% endif %}
+        {% if technician.work_zone %}
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:flex-start;padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+          <dt style="display:flex;align-items:center;gap:10px;margin:0;font-weight:700;color:#334155;font-size:0.88rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="flex:none;color:#1d4ed8;"><path fill="currentColor" d="M12 2C8.1 2 5 5.1 5 9c0 3.1 2.5 6.6 6.1 9.6.6.5 1.2.5 1.8 0C16.5 15.6 19 12.1 19 9c0-3.9-3.1-7-7-7Zm0 4.5A2.5 2.5 0 1 1 12 11.5 2.5 2.5 0 0 1 12 6.5Z"/></svg>Zona
+          </dt>
+          <dd style="margin:0;color:#0f172a;font-weight:600;font-size:1rem;line-height:1.4;word-break:break-word;">{{ technician.work_zone }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+  <footer style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 32px 22px;border-top:1px solid #eef2f7;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);color:#475569;font-size:0.82rem;">
+    <div style="display:flex;align-items:center;gap:10px;font-weight:500;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,0.14);"></span>Emitido: <strong style="color:#0f172a;">{{ today or '' }}</strong>
+    </div>
+    <div style="text-align:right;font-weight:500;">{% if technician.region %}Región <strong style="color:#0f172a;">{{ technician.region }}</strong> · {% endif %}Documento confidencial de uso interno y presentación al cliente.</div>
+  </footer>
+</article>
+            </div>
+        </div>
+    </div>
+</main>
+<script>
+(function () {
+    var BASE_W = 1100;
+    function fit() {
+        var wrap = document.getElementById("previewBadgeWrap");
+        var card = document.getElementById("previewBadgeCard");
+        if (!wrap || !card) return;
+        try {
+            var avail = Math.max(280, wrap.getBoundingClientRect().width || 0);
+            var scale = Math.min(1, avail / BASE_W);
+            if (scale <= 0 || !isFinite(scale)) scale = 1;
+            card.style.transform = "scale(" + scale.toFixed(4) + ")";
+            var rect = card.getBoundingClientRect();
+            var scaledH = rect.height;
+            var naturalH = scaledH / scale;
+            wrap.style.height = (naturalH * scale).toFixed(0) + "px";
+        } catch (e) {}
+    }
+    window.addEventListener("load", function () { setTimeout(fit, 30); setTimeout(fit, 300); setTimeout(fit, 900); }, { once: true });
+    window.addEventListener("resize", function () { clearTimeout(window.__pbFitT); window.__pbFitT = setTimeout(fit, 120); });
+    try { fit(); } catch (e) {}
+})();
+</script>
+{% endblock %}

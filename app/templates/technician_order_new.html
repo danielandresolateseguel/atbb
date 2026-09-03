@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:780px;margin:28px auto;padding:0 16px;">
+    <div style="margin-bottom:18px;">
+        <a class="button button-secondary" href="{{ url_for('main.technician_orders') }}" style="background:#f8fafc;">← Volver a órdenes</a>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:32px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+            <div>
+                <div class="section-kicker" style="font-size:12px;text-transform:uppercase;color:#475569;letter-spacing:.08em;margin-bottom:6px;">Nueva Orden Técnica</div>
+                <h1 style="margin:0;font-size:26px;">Cargar datos de la OT</h1>
+            </div>
+        </div>
+        {% if error %}
+        <div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:14px;padding:14px 18px;margin-bottom:20px;">{{ error }}</div>
+        {% endif %}
+        <form method="POST" enctype="multipart/form-data" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if technician_id and not is_technician %}
+            <input type="hidden" name="technician_id" value="{{ technician_id }}">
+            {% endif %}
+
+            <div style="background:linear-gradient(135deg,#eff6ff,#ecfeff);border:1px solid #bfdbfe;border-radius:16px;padding:18px 20px;margin-bottom:20px;">
+                <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#1e40af;font-weight:700;margin-bottom:12px;">✅ Datos obligatorios</div>
+
+                <div style="margin-bottom:16px;">
+                    <label style="font-size:15px;font-weight:800;color:#0f172a;display:block;margin-bottom:10px;">
+                        Número de OT <span style="color:#ef4444;">*</span>
+                        <span style="font-weight:400;color:#64748b;font-size:12px;margin-left:6px;">(igual al de la plataforma madre)</span>
+                    </label>
+                    <input required name="ot_number" id="ot_number" type="text"
+                           value="{{ request.form.get('ot_number') if request.form else '' }}"
+                           style="width:100%;padding:16px 18px;border-radius:14px;border:2px solid #cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:19px;text-transform:uppercase;font-weight:700;background:#fff;"
+                           placeholder="05625372SA6253891">
+                </div>
+
+                <div>
+                    <label style="font-size:15px;font-weight:800;color:#0f172a;display:block;margin-bottom:10px;">
+                        Teléfono del Cliente (WhatsApp) <span style="color:#ef4444;">*</span>
+                        <span style="font-weight:400;color:#64748b;font-size:12px;margin-left:6px;">(el mensaje de credencial se envía directamente a este número)</span>
+                    </label>
+                    <input required name="client_phone" id="client_phone" type="tel"
+                           value="{{ request.form.get('client_phone') if request.form else '' }}"
+                           placeholder="Ej: 261 500 0000"
+                           style="width:100%;padding:16px 18px;border-radius:14px;border:2px solid #cbd5e1;font-size:19px;font-weight:700;background:#fff;">
+                    <p style="margin:8px 0 0;font-size:12px;color:#475569;">
+                        ℹ️ Solo necesitás el celular. El nombre, domicilio/obra los completa el cliente al recibir el mensaje.
+                    </p>
+                </div>
+            </div>
+
+            <div style="border:1px dashed #cbd5e1;border-radius:14px;padding:16px 18px;margin-bottom:20px;">
+                <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#475569;font-weight:700;margin-bottom:10px;">📝 Datos opcionales (los completa el cliente automáticamente)</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:14px;">
+                    <div>
+                        <label style="font-size:13px;font-weight:700;color:#0f172a;display:block;margin-bottom:6px;">Nombre Cliente (opcional)</label>
+                        <input name="client_name" type="text" value="{{ request.form.get('client_name') if request.form else '' }}" placeholder="Ej: Daniel Olate" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;">
+                    </div>
+                    <div>
+                        <label style="font-size:13px;font-weight:700;color:#0f172a;display:block;margin-bottom:6px;">Dirección / Obra (opcional)</label>
+                        <input name="client_address" type="text" value="{{ request.form.get('client_address') if request.form else '' }}" placeholder="Ej: Jose Hernandez 1485, Mendoza" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;">
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size:13px;font-weight:700;color:#0f172a;display:block;margin-bottom:6px;">Notas internas</label>
+                    <textarea name="notes" rows="3" placeholder="Opcional: detalle de la orden, materiales usados, etc." style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;resize:vertical;">{{ request.form.get('notes') if request.form else '' }}</textarea>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;">
+                <a class="button button-secondary" href="{{ url_for('main.technician_orders') }}" style="background:#f8fafc;">Cancelar</a>
+                <button class="button button-primary" type="submit" style="padding:15px 24px;font-size:17px;border-radius:14px;font-weight:800;">
+                    Crear Orden →
+                </button>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin-top:16px;text-align:right;">Después de crearla podés adjuntar las 2 fotos obligatorias y el PDF E-DOC.</p>
+        </form>
+    </div>
+</div>
+{% endblock %}

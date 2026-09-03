@@ -3,6 +3,8 @@ import unicodedata
 import json
 import csv
 import os
+import secrets
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 from flask import current_app, g
@@ -209,6 +211,45 @@ def append_audit_visibility_filters(where_clauses, params, include_pruebas=False
             params.append(official_from_date)
 
 
+def append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=None, audit_table_alias="audits", technician_alias=None):
+    if supervisor_scope_names is None:
+        return None
+    scope_names = normalize_supervisor_scope_names(supervisor_scope_names)
+    if not scope_names:
+        where_clauses.append("1 = 0")
+        return None
+    placeholder = "%s" if is_postgres() else "?"
+    placeholders = ", ".join([placeholder] * len(scope_names))
+    normalized_scopes = [(s or "").upper() for s in scope_names]
+    if audit_table_alias == "technicians":
+        alias_usar = technician_alias or "technicians"
+        if is_postgres():
+            where_clauses.append(f"COALESCE(UPPER({alias_usar}.supervisor_name), '') IN ({placeholders})")
+        else:
+            where_clauses.append(f"COALESCE(UPPER({alias_usar}.supervisor_name), '') IN ({placeholders})")
+    else:
+        tech_fk = "technician_id"
+        alias_usar = technician_alias or "technicians"
+        if is_postgres():
+            where_clauses.append(
+                f"""EXISTS (
+                    SELECT 1 FROM {alias_usar}
+                    WHERE {alias_usar}.id = {audit_table_alias}.{tech_fk}
+                      AND COALESCE(UPPER({alias_usar}.supervisor_name), '') IN ({placeholders})
+                )"""
+            )
+        else:
+            where_clauses.append(
+                f"""EXISTS (
+                    SELECT 1 FROM {alias_usar}
+                    WHERE {alias_usar}.id = {audit_table_alias}.{tech_fk}
+                      AND COALESCE(UPPER({alias_usar}.supervisor_name), '') IN ({placeholders})
+                )"""
+            )
+    params.extend(normalized_scopes)
+    return None
+
+
 def init_db():
     if is_postgres():
         init_db_postgres()
@@ -223,7 +264,9 @@ def init_db():
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'auditor',
-            is_active INTEGER NOT NULL DEFAULT 1
+            is_active INTEGER NOT NULL DEFAULT 1,
+            technician_id INTEGER,
+            must_change_password INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS user_supervisor_scopes (
@@ -235,6 +278,52 @@ def init_db():
             UNIQUE(user_id, supervisor_name),
             FOREIGN KEY (user_id) REFERENCES users (id)
         );
+
+        CREATE TABLE IF NOT EXISTS technician_badge_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            technician_id INTEGER NOT NULL,
+            badge_share_token TEXT,
+            initiated_by_user_id INTEGER,
+            client_phone TEXT,
+            delivery_channel TEXT NOT NULL,
+            share_confirmed_at TEXT,
+            share_cancelled_at TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (initiated_by_user_id) REFERENCES users (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS technician_badge_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            viewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            technician_id INTEGER,
+            badge_share_token TEXT,
+            ip_hash TEXT,
+            user_agent TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id)
+        );
+
+        CREATE TABLE IF NOT EXISTS technician_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            technician_id INTEGER NOT NULL,
+            ot_number TEXT NOT NULL,
+            client_name TEXT,
+            client_address TEXT,
+            client_phone TEXT,
+            notes TEXT,
+            badge_delivery_id INTEGER,
+            photo_1_path TEXT,
+            photo_2_path TEXT,
+            edoc_pdf_path TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (badge_delivery_id) REFERENCES technician_badge_deliveries (id),
+            UNIQUE(technician_id, ot_number)
+        );
+        CREATE INDEX IF NOT EXISTS idx_technician_orders_ot_number ON technician_orders (ot_number);
+        CREATE INDEX IF NOT EXISTS idx_technician_orders_technician_id ON technician_orders (technician_id);
+        CREATE INDEX IF NOT EXISTS idx_technician_orders_created_at ON technician_orders (created_at);
 
         CREATE TABLE IF NOT EXISTS technicians (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -248,7 +337,15 @@ def init_db():
             union_name TEXT,
             supervisor_name TEXT,
             center_name TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1
+            is_active INTEGER NOT NULL DEFAULT 1,
+            supervisor_id INTEGER,
+            blood_group TEXT,
+            allergies TEXT,
+            art_provider TEXT,
+            emergency_number TEXT,
+            profile_photo_path TEXT,
+            badge_share_token TEXT UNIQUE,
+            user_id INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS vehicles (
@@ -643,7 +740,9 @@ def init_db_postgres():
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'auditor',
-            is_active INTEGER NOT NULL DEFAULT 1
+            is_active INTEGER NOT NULL DEFAULT 1,
+            technician_id INTEGER,
+            must_change_password INTEGER NOT NULL DEFAULT 0
         )
         """
     )
@@ -663,6 +762,59 @@ def init_db_postgres():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS technician_badge_deliveries (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            technician_id INTEGER NOT NULL REFERENCES technicians (id),
+            badge_share_token TEXT,
+            initiated_by_user_id INTEGER REFERENCES users (id),
+            client_phone TEXT,
+            delivery_channel TEXT NOT NULL,
+            share_confirmed_at TIMESTAMPTZ,
+            share_cancelled_at TIMESTAMPTZ
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS technician_badge_views (
+            id SERIAL PRIMARY KEY,
+            viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            technician_id INTEGER REFERENCES technicians (id),
+            badge_share_token TEXT,
+            ip_hash TEXT,
+            user_agent TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS technician_orders (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            technician_id INTEGER NOT NULL REFERENCES technicians (id),
+            ot_number TEXT NOT NULL,
+            client_name TEXT,
+            client_address TEXT,
+            client_phone TEXT,
+            notes TEXT,
+            badge_delivery_id INTEGER REFERENCES technician_badge_deliveries (id),
+            photo_1_path TEXT,
+            photo_2_path TEXT,
+            edoc_pdf_path TEXT,
+            UNIQUE(technician_id, ot_number)
+        );
+        CREATE INDEX IF NOT EXISTS idx_technician_orders_ot_number ON technician_orders (ot_number);
+        CREATE INDEX IF NOT EXISTS idx_technician_orders_technician_id ON technician_orders (technician_id);
+        CREATE INDEX IF NOT EXISTS idx_technician_orders_created_at ON technician_orders (created_at);
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS technicians (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -675,7 +827,15 @@ def init_db_postgres():
             union_name TEXT,
             supervisor_name TEXT,
             center_name TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1
+            is_active INTEGER NOT NULL DEFAULT 1,
+            supervisor_id INTEGER REFERENCES supervisors (id),
+            blood_group TEXT,
+            allergies TEXT,
+            art_provider TEXT,
+            emergency_number TEXT,
+            profile_photo_path TEXT,
+            badge_share_token TEXT UNIQUE,
+            user_id INTEGER REFERENCES users (id)
         )
         """
     )
@@ -1117,6 +1277,8 @@ def init_db_postgres():
     ensure_audit_findings_columns_postgres(cursor)
     ensure_tnps_columns_postgres(cursor)
     ensure_qc_columns_postgres(cursor)
+    ensure_badge_deliveries_columns_postgres(cursor)
+    ensure_technician_orders_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
     connection.commit()
     connection.close()
@@ -1129,6 +1291,17 @@ def count_users():
     return row["user_count"] if isinstance(row, dict) else row[0]
 
 
+def count_active_admins():
+    placeholder = "%s" if is_postgres() else "?"
+    row = get_db().execute(
+        f"SELECT COUNT(*) AS cnt FROM users WHERE role = {placeholder} AND is_active = 1",
+        ("admin",),
+    ).fetchone()
+    if not row:
+        return 0
+    return int(row["cnt"] if isinstance(row, dict) else row[0] or 0)
+
+
 def fetch_user_by_id(user_id):
     row = get_db().execute(
         """
@@ -1138,6 +1311,8 @@ def fetch_user_by_id(user_id):
             users.password_hash,
             users.role,
             users.is_active,
+            users.technician_id,
+            users.must_change_password,
             COALESCE((
                 SELECT COUNT(*)
                 FROM user_supervisor_scopes
@@ -1164,6 +1339,8 @@ def fetch_user_by_username(username):
             users.password_hash,
             users.role,
             users.is_active,
+            users.technician_id,
+            users.must_change_password,
             COALESCE((
                 SELECT COUNT(*)
                 FROM user_supervisor_scopes
@@ -1187,6 +1364,8 @@ def fetch_users():
             users.username,
             users.role,
             users.is_active,
+            users.technician_id,
+            users.must_change_password,
             {created_at_expr} AS created_at,
             COALESCE((
                 SELECT COUNT(*)
@@ -1201,116 +1380,55 @@ def fetch_users():
     return [dict(row) for row in rows]
 
 
-def count_active_admins():
+def fetch_user_by_technician_id(technician_id):
     row = get_db().execute(
         """
-        SELECT COUNT(*) AS admin_count
-        FROM users
-        WHERE role = 'admin' AND is_active = 1
-        """
-    ).fetchone()
-    if not row:
-        return 0
-    return row["admin_count"] if isinstance(row, dict) else row[0]
-
-
-def fetch_user_supervisor_scopes(user_id, only_active=True):
-    where_clauses = ["user_id = ?"]
-    params = [user_id]
-    if only_active:
-        where_clauses.append("is_active = 1")
-
-    rows = get_db().execute(
-        f"""
         SELECT
-            id,
-            user_id,
-            supervisor_name,
-            is_active,
-            created_at
-        FROM user_supervisor_scopes
-        WHERE {' AND '.join(where_clauses)}
-        ORDER BY supervisor_name ASC
-        """,
-        tuple(params),
-    ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def fetch_user_supervisor_scope_names(user_id, only_active=True):
-    return [row["supervisor_name"] for row in fetch_user_supervisor_scopes(user_id, only_active=only_active)]
-
-
-def replace_user_supervisor_scopes(user_id, supervisor_names):
-    normalized_names = normalize_supervisor_scope_names(supervisor_names)
-    connection = get_db()
-    connection.execute("DELETE FROM user_supervisor_scopes WHERE user_id = ?", (user_id,))
-    if normalized_names:
-        connection.executemany(
-            """
-            INSERT INTO user_supervisor_scopes (user_id, supervisor_name, is_active)
-            VALUES (?, ?, 1)
-            """,
-            [(user_id, name) for name in normalized_names],
-        )
-    connection.commit()
-    return normalized_names
-
-
-def find_owner_user_id_by_supervisor_name(supervisor_name):
-    normalized_name = normalize_supervisor_scope_name(supervisor_name)
-    if not normalized_name:
-        return None
-
-    rows = get_db().execute(
-        """
-        SELECT users.id
+            users.id,
+            users.username,
+            users.password_hash,
+            users.role,
+            users.is_active,
+            users.technician_id,
+            users.must_change_password
         FROM users
-        INNER JOIN user_supervisor_scopes ON user_supervisor_scopes.user_id = users.id
-        WHERE users.role = 'supervisor'
-          AND users.is_active = 1
-          AND user_supervisor_scopes.is_active = 1
-          AND user_supervisor_scopes.supervisor_name = ?
-        ORDER BY users.username ASC
+        WHERE users.technician_id = ?
+        ORDER BY users.id ASC
+        LIMIT 1
         """,
-        (normalized_name,),
-    ).fetchall()
-    if len(rows) != 1:
+        (int(technician_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def generate_badge_share_token():
+    while True:
+        token = secrets.token_urlsafe(10).replace("-", "").replace("_", "")[:12].upper()
+        if len(token) < 10:
+            continue
+        existing = get_db().execute(
+            "SELECT 1 FROM technicians WHERE badge_share_token = ?",
+            (token,),
+        ).fetchone()
+        if not existing:
+            return token
+
+
+def hash_ip(value):
+    raw = str(value or "").strip()
+    if not raw:
         return None
-    row = rows[0]
-    return row["id"] if isinstance(row, dict) else row[0]
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
-def append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=None, audit_table_alias="audits"):
-    if supervisor_scope_names is None:
-        return
-
-    normalized_names = normalize_supervisor_scope_names(supervisor_scope_names)
-    if not normalized_names:
-        where_clauses.append("1 = 0")
-        return
-
-    placeholders = ", ".join(["?"] * len(normalized_names))
-    where_clauses.append(
-        f"""
-        (
-            UPPER(TRIM(COALESCE({audit_table_alias}.technician_supervisor_snapshot, ''))) IN ({placeholders})
-            OR (
-                COALESCE({audit_table_alias}.technician_supervisor_snapshot, '') = ''
-                AND {audit_table_alias}.technician_id IN (
-                    SELECT technicians.id
-                    FROM technicians
-                    WHERE UPPER(TRIM(COALESCE(technicians.supervisor_name, ''))) IN ({placeholders})
-                )
-            )
-        )
-        """
-    )
-    params.extend(normalized_names)
-    params.extend(normalized_names)
-
-
-def create_user(username, password, role="auditor", is_active=1):
+def create_user(
+    username,
+    password,
+    role="auditor",
+    is_active=1,
+    technician_id=None,
+    must_change_password=0,
+):
     normalized = (username or "").strip()
     if not normalized:
         raise ValueError("El usuario es obligatorio.")
@@ -1319,35 +1437,65 @@ def create_user(username, password, role="auditor", is_active=1):
         raise ValueError("La contraseña es obligatoria.")
 
     safe_role = (role or "auditor").strip().lower()
-    if safe_role not in {"admin", "auditor", "gerente", "supervisor"}:
+    if safe_role not in {"admin", "auditor", "gerente", "supervisor", "technician"}:
         safe_role = "auditor"
 
     password_hash = generate_password_hash(raw_password)
     connection = get_db()
     insert_sql = """
-        INSERT INTO users (username, password_hash, role, is_active)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO users (username, password_hash, role, is_active, technician_id, must_change_password)
+        VALUES (?, ?, ?, ?, ?, ?)
         """
-    insert_params = (normalized, password_hash, safe_role, 1 if is_active else 0)
+    insert_params = (
+        normalized,
+        password_hash,
+        safe_role,
+        1 if is_active else 0,
+        technician_id,
+        1 if must_change_password else 0,
+    )
 
+    user_id = None
     try:
         if is_postgres():
             cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
             row = cursor.fetchone()
-            connection.commit()
-            return (row["id"] if isinstance(row, dict) else row[0]) if row else None
-
-        cursor = connection.execute(insert_sql, insert_params)
-        connection.commit()
-        return cursor.lastrowid
+            user_id = (row["id"] if isinstance(row, dict) else row[0]) if row else None
+        else:
+            cursor = connection.execute(insert_sql, insert_params)
+            user_id = cursor.lastrowid
     except Exception as exc:
         message = str(exc).lower()
         if "unique" in message or "duplicate" in message:
             raise ValueError("El usuario ya existe.") from exc
         raise
 
+    try:
+        if safe_role == "technician" and technician_id is not None:
+            connection.execute(
+                "UPDATE technicians SET user_id = ? WHERE id = ?",
+                (user_id, int(technician_id)),
+            )
+            connection.execute(
+                "UPDATE technicians SET badge_share_token = ? WHERE id = ? AND badge_share_token IS NULL",
+                (generate_badge_share_token(), int(technician_id)),
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return user_id
 
-def update_user(user_id, username=None, password=None, role=None, is_active=None):
+
+def update_user(
+    user_id,
+    username=None,
+    password=None,
+    role=None,
+    is_active=None,
+    technician_id=None,
+    must_change_password=None,
+):
     existing = fetch_user_by_id(user_id)
     if not existing:
         return False
@@ -1357,10 +1505,18 @@ def update_user(user_id, username=None, password=None, role=None, is_active=None
         raise ValueError("El usuario es obligatorio.")
 
     safe_role = (role or existing["role"] or "auditor").strip().lower()
-    if safe_role not in {"admin", "auditor", "gerente", "supervisor"}:
+    if safe_role not in {"admin", "auditor", "gerente", "supervisor", "technician"}:
         safe_role = "auditor"
 
     active_value = existing["is_active"] if is_active is None else (1 if is_active else 0)
+    technician_id_value = (
+        existing.get("technician_id") if technician_id is None else technician_id
+    )
+    must_change_value = (
+        existing.get("must_change_password", 0)
+        if must_change_password is None
+        else (1 if must_change_password else 0)
+    )
 
     password_hash = existing["password_hash"]
     if password is not None:
@@ -1368,17 +1524,35 @@ def update_user(user_id, username=None, password=None, role=None, is_active=None
         if not raw_password:
             raise ValueError("La contraseña no puede estar vacía.")
         password_hash = generate_password_hash(raw_password)
+        must_change_value = 0
 
     connection = get_db()
     try:
         connection.execute(
             """
             UPDATE users
-            SET username = ?, password_hash = ?, role = ?, is_active = ?
+            SET username = ?, password_hash = ?, role = ?, is_active = ?, technician_id = ?, must_change_password = ?
             WHERE id = ?
             """,
-            (normalized_username, password_hash, safe_role, active_value, user_id),
+            (
+                normalized_username,
+                password_hash,
+                safe_role,
+                active_value,
+                technician_id_value,
+                must_change_value,
+                user_id,
+            ),
         )
+        if safe_role == "technician" and technician_id_value is not None:
+            connection.execute(
+                "UPDATE technicians SET user_id = ? WHERE id = ?",
+                (user_id, int(technician_id_value)),
+            )
+            connection.execute(
+                "UPDATE technicians SET badge_share_token = ? WHERE id = ? AND badge_share_token IS NULL",
+                (generate_badge_share_token(), int(technician_id_value)),
+            )
         connection.commit()
         return True
     except Exception as exc:
@@ -1386,6 +1560,255 @@ def update_user(user_id, username=None, password=None, role=None, is_active=None
         if "unique" in message or "duplicate" in message:
             raise ValueError("El usuario ya existe.") from exc
         raise
+
+
+def fetch_user_supervisor_scopes(user_id):
+    placeholder = "%s" if is_postgres() else "?"
+    rows = get_db().execute(
+        f"SELECT id, user_id, supervisor_name, is_active, created_at FROM user_supervisor_scopes WHERE user_id = {placeholder} ORDER BY supervisor_name ASC",
+        (int(user_id),),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def fetch_user_supervisor_scope_names(user_id):
+    scopes = fetch_user_supervisor_scopes(user_id)
+    return sorted(
+        {s.get("supervisor_name") for s in scopes if s and s.get("supervisor_name") and (s.get("is_active") in (1, True, None) or s.get("is_active") is None)}
+    )
+
+
+def replace_user_supervisor_scopes(user_id, scope_names):
+    user_id = int(user_id)
+    normalized_raw = []
+    seen = set()
+    for name in (scope_names or []):
+        n = normalize_supervisor_scope_name(name)
+        if not n:
+            continue
+        if n in seen:
+            continue
+        seen.add(n)
+        normalized_raw.append(n)
+    placeholder = "%s" if is_postgres() else "?"
+    connection = get_db()
+    connection.execute(
+        f"UPDATE user_supervisor_scopes SET is_active = 0 WHERE user_id = {placeholder}",
+        (user_id,),
+    )
+    for supervisor_name in normalized_raw:
+        if is_postgres():
+            connection.execute(
+                f"""
+                INSERT INTO user_supervisor_scopes (user_id, supervisor_name, is_active)
+                VALUES (%s, %s, 1)
+                ON CONFLICT (user_id, supervisor_name)
+                DO UPDATE SET is_active = EXCLUDED.is_active
+                """,
+                (user_id, supervisor_name),
+            )
+        else:
+            connection.execute(
+                f"""
+                INSERT INTO user_supervisor_scopes (user_id, supervisor_name, is_active)
+                VALUES ({placeholder}, {placeholder}, 1)
+                ON CONFLICT(user_id, supervisor_name)
+                DO UPDATE SET is_active = 1
+                """,
+                (user_id, supervisor_name),
+            )
+    connection.commit()
+    return normalized_raw
+
+
+def _cleanup_duplicate_badge_deliveries(connection):
+    """
+    Elimina entregas de credenciales DUPLICADAS en technician_badge_deliveries.
+
+    Se considera DUPLICADO cuando:
+      - Mismo technician_id
+      - Mismo delivery_channel
+      - Mismo teléfono (normalizado sin espacios/puntos) o ambos NULL
+      - Se crearon en la MISMA HORA (truncado a YYYY-MM-DD HH)
+      - Todas sin confirmación de cliente (client_confirmed_at NULL)
+
+    Regla de supervivencia: Nos quedamos con el registro MÁS RECIENTE (mayor id / created_at)
+    por cada grupo duplicado. También preservamos registros que tengan client_confirmed_at
+    (confirmaciones reales nunca se borran).
+    """
+    ph = "%s" if is_postgres() else "?"
+    if is_postgres():
+        date_trunc_expr = "to_char(date_trunc('hour', created_at::timestamp), 'YYYY-MM-DD HH24:MI')"
+    else:
+        date_trunc_expr = "strftime('%Y-%m-%d %H', created_at)"
+
+    if is_postgres():
+        tbl_check = "SELECT to_regclass('public.technician_badge_deliveries') IS NOT NULL AS ok"
+    else:
+        tbl_check = "SELECT name FROM sqlite_master WHERE type='table' AND name='technician_badge_deliveries'"
+    exists = connection.execute(tbl_check).fetchone()
+    if not exists or (isinstance(exists, dict) and not exists.get("ok") and not exists.get("name")):
+        return 0
+
+    phone_norm_expr = (
+        "UPPER(TRIM(REGEXP_REPLACE(COALESCE(client_phone, ''), '[^0-9]', '', 'g')))" if is_postgres()
+        else "UPPER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(client_phone, ''), ' ', ''), '.', ''), '-', ''), ',', ''), '+', '')))"
+    )
+
+    candidate_rows = connection.execute(
+        f"""
+        SELECT id,
+               technician_id,
+               delivery_channel,
+               {date_trunc_expr} AS hour_key,
+               {phone_norm_expr} AS phone_key,
+               created_at,
+               client_confirmed_at
+        FROM technician_badge_deliveries
+        """
+    ).fetchall()
+
+    groups = {}
+    for r in candidate_rows:
+        rr = dict(r) if isinstance(r, dict) else {k: r[k] for k in r.keys()}
+        if rr.get("client_confirmed_at"):
+            continue
+        key = (
+            int(rr.get("technician_id") or 0),
+            (rr.get("delivery_channel") or "").strip().lower(),
+            rr.get("hour_key") or "",
+            rr.get("phone_key") or "",
+        )
+        if all(v in (0, "", None) for v in key):
+            continue
+        groups.setdefault(key, []).append({
+            "id": int(rr.get("id") or 0),
+            "created_at": rr.get("created_at") or "",
+        })
+
+    ids_to_delete = []
+    for _k, entries in groups.items():
+        if len(entries) <= 1:
+            continue
+        entries.sort(key=lambda e: (e["created_at"] or "", e["id"]), reverse=True)
+        for e in entries[1:]:
+            ids_to_delete.append(e["id"])
+
+    if not ids_to_delete:
+        return 0
+
+    chunks = [ids_to_delete[i:i + 400] for i in range(0, len(ids_to_delete), 400)]
+    deleted = 0
+    for chunk in chunks:
+        placeholders = ",".join([ph for _ in chunk])
+        # Protección: NO borrar filas que SÍ tengan client_confirmed_at (confirmación real)
+        cur = connection.execute(
+            f"DELETE FROM technician_badge_deliveries WHERE id IN ({placeholders}) AND client_confirmed_at IS NULL",
+            tuple(chunk),
+        )
+        deleted += cur.rowcount if hasattr(cur, "rowcount") else 0
+    if hasattr(connection, "commit"):
+        try:
+            connection.commit()
+        except Exception:
+            pass
+    return deleted
+
+
+def _cleanup_invalid_order_badge_links(connection):
+    """
+    FIX de limpieza para datos contaminados por el bug "Caso B" de auto_link_client_confirmation_to_order
+    que asignaba badge_delivery_id de confirmaciones de OT viejas a OT nuevas sin verificar cliente/fecha.
+
+    Reglas para DESVINCULAR (setear badge_delivery_id = NULL):
+      1. La delivery tiene una confirmación (client_confirmed_at) ANTERIOR a la CREACIÓN de la OT
+         (imposible que sea válida: la confirmación no puede ser más vieja que la OT).
+      2. El nombre CLIENTE de la delivery NO coincide con el cliente de la OT
+         (normalizados: upper trim, sin nulos).
+      3. La dirección/domicilio delivery no coincide con la OT (normalizados).
+      4. El teléfono cliente no coincide con la OT (normalizados).
+
+    Devuelve la cantidad de filas actualizadas.
+    """
+    ph = "%s" if is_postgres() else "?"
+    table_exists = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='technician_orders'" if not is_postgres()
+        else "SELECT tablename FROM pg_tables WHERE tablename='technician_orders'"
+    ).fetchone()
+    if not table_exists:
+        return 0
+    rows = connection.execute(
+        f"""
+        SELECT o.id AS order_id,
+               o.created_at AS order_created_at,
+               o.client_name AS order_client,
+               o.client_address AS order_address,
+               o.client_phone AS order_phone,
+               d.id AS delivery_id,
+               d.created_at AS delivery_created_at,
+               d.client_confirmed_at AS delivery_confirmed_at,
+               d.client_name AS delivery_client,
+               d.client_company AS delivery_address,
+               d.client_phone AS delivery_phone,
+               d.technician_id AS delivery_tech,
+               o.technician_id AS order_tech
+        FROM technician_orders o
+        JOIN technician_badge_deliveries d ON d.id = o.badge_delivery_id
+        WHERE o.badge_delivery_id IS NOT NULL AND o.badge_delivery_id != 0
+        """
+    ).fetchall()
+    if not rows:
+        return 0
+    bad_ids = []
+    for r in rows:
+        rr = dict(r) if isinstance(r, dict) else {k: r[k] for k in r.keys()}
+        order_created = (rr.get("order_created_at") or "").strip()
+        delivery_created = (rr.get("delivery_created_at") or "").strip()
+        delivery_confirmed = (rr.get("delivery_confirmed_at") or "").strip()
+        # Técnico distinto: inválido
+        if int(rr.get("delivery_tech") or 0) != int(rr.get("order_tech") or 0):
+            bad_ids.append(int(rr["order_id"]))
+            continue
+        # BAD 1: Fecha en que se COMPARTIÓ/creó la delivery es ANTERIOR a creación de la OT → imposible
+        if delivery_created and order_created and delivery_created < order_created:
+            bad_ids.append(int(rr["order_id"]))
+            continue
+        # BAD 2: Confirmación cliente más vieja que la OT → imposible
+        if delivery_confirmed and order_created and delivery_confirmed < order_created:
+            bad_ids.append(int(rr["order_id"]))
+            continue
+        # Cliente name NO coincide (normalizado non-empty)
+        oc = (rr.get("order_client") or "").strip().upper()
+        dc = (rr.get("delivery_client") or "").strip().upper()
+        if oc and dc and oc != dc:
+            # Aceptar si delivery NO tiene cliente (era compartir sin datos cliente explicitos) — solo si todo el resto no tiene
+            oa = (rr.get("order_address") or "").strip().upper()
+            da = (rr.get("delivery_address") or "").strip().upper()
+            op = (rr.get("order_phone") or "").strip().upper()
+            dp = (rr.get("delivery_phone") or "").strip().upper()
+            # Si delivery TIENE address/phone y NO coincide: invalido
+            bad = False
+            if oa and da and oa != da:
+                bad = True
+            if op and dp and op != dp:
+                bad = True
+            if bad:
+                bad_ids.append(int(rr["order_id"]))
+                continue
+    if not bad_ids:
+        return 0
+    # Desvincular en lotes
+    placeholders = ",".join([ph] * len(bad_ids))
+    connection.execute(
+        f"UPDATE technician_orders SET badge_delivery_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+        tuple(bad_ids),
+    )
+    try:
+        connection.commit()
+    except Exception:
+        pass
+    return len(bad_ids)
+
 
 def ensure_legacy_columns(connection):
     connection.execute(
@@ -1472,6 +1895,92 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "technicians", "supervisor_name", "TEXT")
     add_column_if_missing(connection, "technicians", "center_name", "TEXT")
     add_column_if_missing(connection, "technicians", "is_active", "INTEGER NOT NULL DEFAULT 1")
+    add_column_if_missing(connection, "technicians", "supervisor_id", "INTEGER")
+    add_column_if_missing(connection, "technicians", "blood_group", "TEXT")
+    add_column_if_missing(connection, "technicians", "allergies", "TEXT")
+    add_column_if_missing(connection, "technicians", "art_provider", "TEXT")
+    add_column_if_missing(connection, "technicians", "emergency_number", "TEXT")
+    add_column_if_missing(connection, "technicians", "profile_photo_path", "TEXT")
+    add_column_if_missing(connection, "technicians", "badge_share_token", "TEXT")
+    add_column_if_missing(connection, "technicians", "user_id", "INTEGER")
+    add_column_if_missing(connection, "users", "technician_id", "INTEGER")
+    add_column_if_missing(connection, "users", "must_change_password", "INTEGER NOT NULL DEFAULT 0")
+    try:
+        _pg = False
+    except Exception:
+        _pg = False
+    if not is_postgres():
+        null_rows = connection.execute(
+            "SELECT id FROM technicians WHERE badge_share_token IS NULL OR TRIM(badge_share_token) = ''"
+        ).fetchall()
+        for r in null_rows:
+            tid = int(r["id"]) if isinstance(r, dict) else int(r[0])
+            token = generate_badge_share_token()
+            connection.execute(
+                "UPDATE technicians SET badge_share_token = ? WHERE id = ?",
+                (token, tid),
+            )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_technicians_badge_share_token ON technicians(badge_share_token)"
+        )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS technician_badge_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            technician_id INTEGER NOT NULL,
+            badge_share_token TEXT,
+            initiated_by_user_id INTEGER,
+            client_phone TEXT,
+            delivery_channel TEXT NOT NULL,
+            share_confirmed_at TEXT,
+            share_cancelled_at TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (initiated_by_user_id) REFERENCES users (id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS technician_badge_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            viewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            technician_id INTEGER,
+            badge_share_token TEXT,
+            ip_hash TEXT,
+            user_agent TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS technician_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            technician_id INTEGER NOT NULL,
+            ot_number TEXT NOT NULL,
+            client_name TEXT,
+            client_address TEXT,
+            client_phone TEXT,
+            notes TEXT,
+            badge_delivery_id INTEGER,
+            photo_1_path TEXT,
+            photo_2_path TEXT,
+            edoc_pdf_path TEXT,
+            FOREIGN KEY (technician_id) REFERENCES technicians (id),
+            FOREIGN KEY (badge_delivery_id) REFERENCES technician_badge_deliveries (id),
+            UNIQUE(technician_id, ot_number)
+        )
+        """
+    )
+    try:
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_ot_number ON technician_orders (ot_number)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_technician_id ON technician_orders (technician_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_created_at ON technician_orders (created_at)")
+    except Exception:
+        pass
     add_column_if_missing(connection, "vehicles", "year", "INTEGER")
     add_column_if_missing(connection, "vehicles", "status", "TEXT NOT NULL DEFAULT 'activo'")
     add_column_if_missing(connection, "vehicles", "unit_number", "TEXT")
@@ -1489,6 +1998,9 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "mobile_units", "warehouse_type", "TEXT")
     add_column_if_missing(connection, "mobile_units", "is_enabled", "INTEGER NOT NULL DEFAULT 1")
     add_column_if_missing(connection, "mobile_units", "notes", "TEXT")
+    add_column_if_missing(connection, "technician_badge_deliveries", "client_name", "TEXT")
+    add_column_if_missing(connection, "technician_badge_deliveries", "client_company", "TEXT")
+    add_column_if_missing(connection, "technician_badge_deliveries", "client_confirmed_at", "TEXT")
     add_column_if_missing(connection, "materials", "material_code", "TEXT")
     add_column_if_missing(connection, "audits", "mobile_unit_id", "INTEGER")
     add_column_if_missing(connection, "audits", "auditor_user_id", "INTEGER")
@@ -1621,6 +2133,14 @@ def ensure_legacy_columns(connection):
     )
     migrate_tnps_experience_scores_to_ten_scale(connection)
     ensure_audits_nullable_technician(connection)
+    try:
+        _cleanup_invalid_order_badge_links(connection)
+    except Exception:
+        pass
+    try:
+        _cleanup_duplicate_badge_deliveries(connection)
+    except Exception:
+        pass
 
 
 def migrate_tnps_experience_scores_to_ten_scale(connection):
@@ -1802,6 +2322,57 @@ def ensure_technicians_columns_postgres(cursor):
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS supervisor_name TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS center_name TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS supervisor_id INTEGER REFERENCES supervisors (id)")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS blood_group TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS allergies TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS art_provider TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS emergency_number TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS profile_photo_path TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS badge_share_token TEXT UNIQUE")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users (id)")
+
+
+def ensure_users_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS technician_id INTEGER REFERENCES technicians (id)")
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0")
+
+
+def ensure_badge_deliveries_columns_postgres(cursor):
+    cursor.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS client_name TEXT")
+    cursor.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS client_company TEXT")
+    cursor.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS client_confirmed_at TIMESTAMPTZ")
+
+
+def ensure_technician_orders_postgres(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS technician_orders (
+            id SERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            technician_id INTEGER NOT NULL REFERENCES technicians (id),
+            ot_number TEXT NOT NULL,
+            client_name TEXT,
+            client_address TEXT,
+            client_phone TEXT,
+            notes TEXT,
+            badge_delivery_id INTEGER REFERENCES technician_badge_deliveries (id),
+            photo_1_path TEXT,
+            photo_2_path TEXT,
+            edoc_pdf_path TEXT,
+            UNIQUE(technician_id, ot_number)
+        )
+        """
+    )
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_ot_number ON technician_orders (ot_number)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_technician_id ON technician_orders (technician_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_created_at ON technician_orders (created_at)")
+    except Exception:
+        pass
+    try:
+        _cleanup_invalid_order_badge_links(cursor)
+    except Exception:
+        pass
 
 
 def ensure_audits_columns_postgres(cursor):
@@ -10099,9 +10670,11 @@ def _build_technician_list_where_and_params(
             where_clauses.append("LOWER(COALESCE(technicians.company_name, '')) = ?")
             params.append(company.lower())
 
-    if supervisor_scope_names:
+    if supervisor_scope_names is not None:
         normalized = normalize_supervisor_scope_names(supervisor_scope_names)
-        if normalized:
+        if not normalized:
+            where_clauses.append("1 = 0")
+        else:
             placeholders = ", ".join(["?"] * len(normalized))
             if is_postgres():
                 where_clauses.append(
@@ -10365,7 +10938,9 @@ def fetch_technician_by_id(technician_id):
         """
         SELECT id, name, employee_code, region, phone, commune, team,
                company_name, union_name, supervisor_name, center_name,
-               is_active
+               is_active, blood_group, allergies, art_provider,
+               emergency_number, profile_photo_path,
+               supervisor_id, user_id, badge_share_token
         FROM technicians
         WHERE id = ?
         """,
@@ -12404,6 +12979,11 @@ def create_technician(
     supervisor_id=None,
     center_name=None,
     is_active=1,
+    blood_group=None,
+    allergies=None,
+    art_provider=None,
+    emergency_number=None,
+    profile_photo_path=None,
 ):
     safe_code = " ".join((employee_code or "").strip().split())
     if not safe_code:
@@ -12423,6 +13003,11 @@ def create_technician(
     safe_supervisor_name = " ".join((supervisor_name or "").strip().split()) or None
     safe_supervisor_id = int(supervisor_id) if supervisor_id not in (None, "") else None
     safe_active = 1 if _normalize_bool(is_active) else 0
+    safe_blood_group = (blood_group or "").strip() or None
+    safe_allergies = (allergies or "").strip() or None
+    safe_art_provider = (art_provider or "").strip() or None
+    safe_emergency_number = (emergency_number or "").strip() or None
+    safe_profile_photo = (profile_photo_path or "").strip() or None
     if safe_supervisor_id and not safe_supervisor_name:
         row = get_db().execute("SELECT name FROM supervisors WHERE id = ?", (safe_supervisor_id,)).fetchone()
         if row:
@@ -12437,13 +13022,15 @@ def create_technician(
                 INSERT INTO technicians (
                     employee_code, name, region, phone, commune, team,
                     company_name, union_name, supervisor_name, supervisor_id,
-                    center_name, is_active
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                    center_name, is_active, blood_group, allergies,
+                    art_provider, emergency_number, profile_photo_path
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
                 """,
                 (
                     safe_code, safe_name, safe_region, safe_phone, safe_commune, safe_team,
                     safe_company, safe_union, safe_supervisor_name, safe_supervisor_id,
-                    safe_center, safe_active,
+                    safe_center, safe_active, safe_blood_group, safe_allergies,
+                    safe_art_provider, safe_emergency_number, safe_profile_photo,
                 ),
             )
             row = cursor.fetchone()
@@ -12454,13 +13041,15 @@ def create_technician(
             INSERT INTO technicians (
                 employee_code, name, region, phone, commune, team,
                 company_name, union_name, supervisor_name, supervisor_id,
-                center_name, is_active
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                center_name, is_active, blood_group, allergies,
+                art_provider, emergency_number, profile_photo_path
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 safe_code, safe_name, safe_region, safe_phone, safe_commune, safe_team,
                 safe_company, safe_union, safe_supervisor_name, safe_supervisor_id,
-                safe_center, safe_active,
+                safe_center, safe_active, safe_blood_group, safe_allergies,
+                safe_art_provider, safe_emergency_number, safe_profile_photo,
             ),
         )
         connection.commit()
@@ -12486,6 +13075,12 @@ def update_technician(
     supervisor_id=None,
     center_name=None,
     is_active=None,
+    blood_group=None,
+    allergies=None,
+    art_provider=None,
+    emergency_number=None,
+    profile_photo_path=None,
+    clear_profile_photo=False,
 ):
     existing = fetch_technician_by_id(technician_id)
     if not existing:
@@ -12522,6 +13117,32 @@ def update_technician(
         safe_active = existing.get("is_active")
     else:
         safe_active = 1 if _normalize_bool(is_active) else 0
+    safe_blood_group = None
+    if blood_group is not None:
+        safe_blood_group = (blood_group or "").strip() or None
+    else:
+        safe_blood_group = existing.get("blood_group")
+    safe_allergies = None
+    if allergies is not None:
+        safe_allergies = (allergies or "").strip() or None
+    else:
+        safe_allergies = existing.get("allergies")
+    safe_art_provider = None
+    if art_provider is not None:
+        safe_art_provider = (art_provider or "").strip() or None
+    else:
+        safe_art_provider = existing.get("art_provider")
+    safe_emergency_number = None
+    if emergency_number is not None:
+        safe_emergency_number = (emergency_number or "").strip() or None
+    else:
+        safe_emergency_number = existing.get("emergency_number")
+    if clear_profile_photo:
+        safe_profile_photo = None
+    elif profile_photo_path is not None:
+        safe_profile_photo = (profile_photo_path or "").strip() or None
+    else:
+        safe_profile_photo = existing.get("profile_photo_path")
     connection = get_db()
     try:
         connection.execute(
@@ -12529,13 +13150,16 @@ def update_technician(
             UPDATE technicians
             SET employee_code=?, name=?, region=?, phone=?, commune=?, team=?,
                 company_name=?, union_name=?, supervisor_name=?, supervisor_id=?,
-                center_name=?, is_active=?
+                center_name=?, is_active=?, blood_group=?, allergies=?,
+                art_provider=?, emergency_number=?, profile_photo_path=?
             WHERE id=?
             """,
             (
                 safe_code, safe_name, safe_region, safe_phone, safe_commune, safe_team,
                 safe_company, safe_union, safe_supervisor_name, safe_supervisor_id,
-                safe_center, safe_active, int(technician_id),
+                safe_center, safe_active, safe_blood_group, safe_allergies,
+                safe_art_provider, safe_emergency_number, safe_profile_photo,
+                int(technician_id),
             ),
         )
         connection.commit()
@@ -12571,6 +13195,1152 @@ def toggle_technician_active(technician_id):
     connection.commit()
     return fetch_technician_by_id(technician_id)
 
+
+def ensure_technician_badge_token(technician_id):
+    existing = fetch_technician_by_id(technician_id)
+    if not existing:
+        return None
+    token = existing.get("badge_share_token")
+    if token:
+        return token
+    token = generate_badge_share_token()
+    connection = get_db()
+    connection.execute(
+        "UPDATE technicians SET badge_share_token = ? WHERE id = ?",
+        (token, int(technician_id)),
+    )
+    connection.commit()
+    return token
+
+
+def regenerate_technician_badge_token(technician_id):
+    token = generate_badge_share_token()
+    connection = get_db()
+    connection.execute(
+        "UPDATE technicians SET badge_share_token = ? WHERE id = ?",
+        (token, int(technician_id)),
+    )
+    connection.commit()
+    return token
+
+
+def fetch_technician_by_badge_share_token(token):
+    safe_token = str(token or "").strip().upper()
+    if not safe_token:
+        return None
+    row = get_db().execute(
+        "SELECT * FROM technicians WHERE badge_share_token = ?",
+        (safe_token,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_or_create_technician_user(technician, default_password, must_change=True):
+    if not technician:
+        return None
+    existing_user = fetch_user_by_technician_id(technician["id"])
+    if existing_user:
+        if not existing_user.get("is_active"):
+            return None
+        return existing_user
+
+    code = (technician.get("employee_code") or "").strip()
+    if not code:
+        return None
+    username = code
+    try:
+        user_id = create_user(
+            username=username,
+            password=default_password,
+            role="technician",
+            is_active=1,
+            technician_id=technician["id"],
+            must_change_password=1 if must_change else 0,
+        )
+    except ValueError:
+        return fetch_user_by_username(username)
+    return fetch_user_by_id(user_id)
+
+
+def create_badge_delivery(
+    technician_id,
+    initiated_by_user_id=None,
+    client_phone=None,
+    delivery_channel="whatsapp_webshare",
+):
+    technician = fetch_technician_by_id(technician_id)
+    token = technician.get("badge_share_token") if technician else None
+    if not token:
+        token = ensure_technician_badge_token(technician_id)
+
+    phone_norm = (client_phone or "").strip() or None
+    channel_norm = (delivery_channel or "unknown").strip().lower()
+
+    try:
+        tid = int(technician_id)
+        connection = get_db()
+        ph_pg = "%s" if is_postgres() else "?"
+        rows = connection.execute(
+            f"""
+            SELECT id, created_at
+            FROM technician_badge_deliveries
+            WHERE technician_id = {ph_pg}
+              AND delivery_channel = {ph_pg}
+              AND COALESCE(client_phone, '') = COALESCE({ph_pg}, COALESCE(client_phone, ''))
+              AND share_confirmed_at IS NULL
+              AND share_cancelled_at IS NULL
+              AND created_at >= datetime('now', '-120 seconds')
+            ORDER BY COALESCE(created_at, '1970-01-01') DESC
+            LIMIT 1
+            """,
+            (tid, channel_norm, phone_norm if phone_norm else None),
+        ).fetchall()
+        if rows:
+            r = rows[0] if isinstance(rows[0], dict) else dict(rows[0])
+            return {
+                "id": int(r.get("id")),
+                "technician_id": technician_id,
+                "badge_share_token": token,
+                "deduplicated": True,
+            }
+    except Exception:
+        pass
+
+    now_expr = "CURRENT_TIMESTAMP"
+    insert_sql = """
+        INSERT INTO technician_badge_deliveries
+            (technician_id, badge_share_token, initiated_by_user_id, client_phone, delivery_channel, share_confirmed_at, share_cancelled_at)
+        VALUES (?, ?, ?, ?, ?, NULL, NULL)
+    """
+    params = (
+        int(technician_id),
+        token,
+        initiated_by_user_id,
+        phone_norm,
+        channel_norm,
+    )
+    connection = get_db()
+    if is_postgres():
+        cursor = connection.execute(insert_sql + " RETURNING id", params)
+        row = cursor.fetchone()
+        delivery_id = (row["id"] if isinstance(row, dict) else row[0]) if row else None
+    else:
+        cursor = connection.execute(insert_sql, params)
+        delivery_id = cursor.lastrowid
+    connection.commit()
+    return {
+        "id": delivery_id,
+        "technician_id": technician_id,
+        "badge_share_token": token,
+    }
+
+
+def confirm_badge_delivery_share(delivery_id):
+    if not delivery_id:
+        return
+    now_expr = "CURRENT_TIMESTAMP"
+    get_db().execute(
+        f"UPDATE technician_badge_deliveries SET share_confirmed_at = {now_expr} WHERE id = ? AND share_confirmed_at IS NULL",
+        (int(delivery_id),),
+    ).connection.commit()
+
+
+def cancel_badge_delivery_share(delivery_id):
+    if not delivery_id:
+        return
+    now_expr = "CURRENT_TIMESTAMP"
+    get_db().execute(
+        f"UPDATE technician_badge_deliveries SET share_cancelled_at = {now_expr} WHERE id = ? AND share_cancelled_at IS NULL",
+        (int(delivery_id),),
+    ).connection.commit()
+
+
+def record_badge_view(technician_id=None, badge_share_token=None, ip=None, user_agent=None, view_type=None):
+    token = (badge_share_token or "").strip().upper() or None
+    ip_h = hash_ip(ip)
+    ua = str(user_agent or "")[:300] or None
+    vt = str(view_type or "")[:80] or None
+    db = get_db()
+    try:
+        db.execute(
+            """
+            INSERT INTO technician_badge_views (technician_id, badge_share_token, ip_hash, user_agent)
+            VALUES (?, ?, ?, ?)
+            """,
+            (technician_id, token, ip_h, ua),
+        )
+        db.commit()
+    except Exception:
+        try: db.rollback()
+        except Exception: pass
+        from flask import current_app
+        try:
+            current_app.logger.warning("record_badge_view INSERT falló (ignorando). tech=%s token=%s vt=%s", technician_id, (token or "")[:20], vt)
+        except Exception:
+            pass
+
+
+def _norm_str(s, max_len=None):
+    v = str(s or "").strip().lower()
+    while "  " in v:
+        v = v.replace("  ", " ")
+    v = v.replace(",", "").replace("-", "").replace(".", "")
+    if max_len:
+        v = v[:max_len]
+    return v or None
+
+
+def find_existing_client_confirmation(badge_share_token, client_name=None, client_phone=None, window_hours=24, exclude_delivery_id=None):
+    token = (badge_share_token or "").strip().upper() or None
+    if not token:
+        return None
+    name_norm = _norm_str(client_name, 200)
+    phone_norm = _norm_str(client_phone, 60)
+    if not name_norm and not phone_norm:
+        return None
+    cutoff = (datetime.utcnow() - timedelta(hours=window_hours)).strftime("%Y-%m-%d %H:%M:%S")
+    ph = "%s" if is_postgres() else "?"
+    where = [
+        f"badge_share_token = {ph}",
+        "delivery_channel = 'client_confirmation_public'",
+        f"client_confirmed_at >= {ph}",
+    ]
+    args = [token, cutoff]
+    or_terms = []
+    if name_norm:
+        or_terms.append(f"LOWER(TRIM(COALESCE(client_name, ''))) = {ph}")
+        args.append(name_norm)
+    if phone_norm:
+        or_terms.append(f"LOWER(TRIM(COALESCE(client_phone, ''))) = {ph}")
+        args.append(phone_norm)
+    if not or_terms:
+        return None
+    where.append("(" + " OR ".join(or_terms) + ")")
+    if exclude_delivery_id:
+        try:
+            where.append(f"id != {ph}")
+            args.append(int(exclude_delivery_id))
+        except (TypeError, ValueError):
+            pass
+    sql = f"""
+        SELECT id, technician_id, badge_share_token, client_name, client_company, client_phone, client_confirmed_at, created_at
+        FROM technician_badge_deliveries
+        WHERE {" AND ".join(where)}
+        ORDER BY client_confirmed_at DESC
+        LIMIT 1
+    """
+    try:
+        row = get_db().execute(sql, args).fetchone()
+    except Exception:
+        return None
+    return dict(row) if row else None
+
+
+def confirm_badge_client_for_token(badge_share_token, client_name, client_company=None, client_phone=None, ip=None, user_agent=None, desired_delivery_id=None):
+    token = (badge_share_token or "").strip().upper() or None
+    if not token:
+        return None
+    tech = fetch_technician_by_badge_share_token(token)
+    if not tech:
+        return None
+    tech_id = int(tech["id"])
+    already_confirmed = False
+    # Ensure columns en technician_badge_deliveries (evita SQL error "no such column")
+    try:
+        db = get_db()
+        if not is_postgres():
+            add_column_if_missing(db, "technician_badge_deliveries", "client_ip_hash", "TEXT")
+            add_column_if_missing(db, "technician_badge_deliveries", "client_user_agent", "TEXT")
+            add_column_if_missing(db, "technician_badge_deliveries", "share_confirmed_at", "TEXT")
+            add_column_if_missing(db, "technician_badge_deliveries", "share_cancelled_at", "TEXT")
+            add_column_if_missing(db, "technician_badge_deliveries", "delivery_channel", "TEXT")
+        else:
+            try: db.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS client_ip_hash TEXT")
+            except Exception: pass
+            try: db.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS client_user_agent TEXT")
+            except Exception: pass
+            try: db.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS share_confirmed_at TEXT")
+            except Exception: pass
+            try: db.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS share_cancelled_at TEXT")
+            except Exception: pass
+            try: db.execute("ALTER TABLE technician_badge_deliveries ADD COLUMN IF NOT EXISTS delivery_channel TEXT")
+            except Exception: pass
+        db.commit()
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception("ensure_columns technician_badge_deliveries falló")
+    name = str(client_name or "").strip()[:200] or None
+    company = str(client_company or "").strip()[:250] or None
+    phone = str(client_phone or "").strip()[:60] or None
+    if not name:
+        return None
+
+    desired_id_int = None
+    try:
+        desired_id_int = int(desired_delivery_id) if desired_delivery_id is not None else None
+    except (TypeError, ValueError):
+        desired_id_int = None
+
+    # Si viene delivery_id explícito, verificar primero si ESTA delivery ya está confirmada (más restrictivo)
+    if desired_id_int:
+        ph = "%s" if is_postgres() else "?"
+        try:
+            row = get_db().execute(
+                f"SELECT id, technician_id, client_confirmed_at FROM technician_badge_deliveries WHERE id = {ph}",
+                (desired_id_int,),
+            ).fetchone()
+            if row:
+                d_row = dict(row)
+                if int(d_row.get("technician_id") or 0) == tech_id and d_row.get("client_confirmed_at"):
+                    already_confirmed = True
+                    return {
+                        "delivery_id": desired_id_int,
+                        "client_confirmed_at": d_row["client_confirmed_at"],
+                        "technician_id": tech_id,
+                        "already_confirmed": True,
+                        "existing": d_row,
+                    }
+        except Exception:
+            pass
+
+    # ================================================================
+    # BUG 13 FIX: Buscar confirmación previa SÓLO si NO hay delivery explícita (legacy)
+    # Cuando desired_id_int viene por ?d=140 → queremos confirmar ESTA entrega exacta,
+    # aunque el cliente ya haya confirmado OTRA entrega (#107) hace horas.
+    # La otra entrega pertenece a otra OT y es irrelevante para la actual.
+    # ================================================================
+    if not desired_id_int:
+        existing = find_existing_client_confirmation(
+            token,
+            client_name=name,
+            client_phone=phone,
+            window_hours=24,
+            exclude_delivery_id=None,
+        )
+        if existing:
+            already_confirmed = True
+            from flask import current_app
+            current_app.logger.info(
+                "confirm_badge_client_for_token LEGACY_MODE (sin delivery_id): found existing id=%s tech=%s name=%s",
+                existing.get("id"), tech_id, (name or "")[:60],
+            )
+            return {
+                "delivery_id": int(existing["id"]),
+                "client_confirmed_at": existing["client_confirmed_at"],
+                "technician_id": tech_id,
+                "already_confirmed": True,
+                "existing": existing,
+            }
+    else:
+        # Modo explícito desired_id_int: SOLO usamos find_existing para info/log, NUNCA para early return.
+        # La confirmación de una entrega distinta NO cancela la necesidad de actualizar la delivery actual
+        desired_check_row = None
+        try:
+            ph = "%s" if is_postgres() else "?"
+            desired_check_row = dict(get_db().execute(
+                f"SELECT id, client_confirmed_at FROM technician_badge_deliveries WHERE id = {ph} AND technician_id = {ph}",
+                (desired_id_int, tech_id),
+            ).fetchone() or {})
+        except Exception:
+            desired_check_row = {}
+        if not desired_check_row:
+            # Delivery deseada no existe para este técnico → fallthrough a insert legacy
+            from flask import current_app
+            current_app.logger.warning(
+                "confirm_badge_client_for_token DELIVERY_DESADA_NO_EXISTE tech=%s desired_id=%s name=%s",
+                tech_id, desired_id_int, (name or "")[:60],
+            )
+        else:
+            existing_other = find_existing_client_confirmation(
+                token,
+                client_name=name,
+                client_phone=phone,
+                window_hours=24,
+                exclude_delivery_id=desired_id_int,
+            )
+            if existing_other:
+                from flask import current_app
+                current_app.logger.info(
+                    "confirm_badge_client_for_token MODO_DESIRED tech=%s desired=%s detectó confirmación OTRA entrega id=%s (%s) → CONTINUAMOS flujo normal para confirmar desired (NO early return BUG13 FIX)",
+                    tech_id, desired_id_int, existing_other.get("id"), existing_other.get("client_confirmed_at"),
+                )
+
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    db = get_db()
+    ph = "%s" if is_postgres() else "?"
+    ip_hash = hash_ip(ip) if ip else None
+    ua = (user_agent or "").strip() or None
+    delivery_id = None
+
+    # RUTA ESPECÍFICA (delivery_id informado): actualizar SOLAMENTE esa delivery, sin bulk update
+    if desired_id_int:
+        try:
+            cur = db.execute(
+                f"""
+                UPDATE technician_badge_deliveries
+                   SET client_name = {ph},
+                       client_company = {ph},
+                       client_confirmed_at = {ph},
+                       client_phone = COALESCE({ph}, client_phone),
+                       client_ip_hash = COALESCE({ph}, client_ip_hash),
+                       client_user_agent = COALESCE({ph}, client_user_agent),
+                       delivery_channel = CASE
+                           WHEN delivery_channel IS NULL OR delivery_channel = ''
+                           THEN 'client_confirmation_public'
+                           ELSE delivery_channel
+                       END
+                 WHERE id = {ph}
+                   AND technician_id = {ph}
+                """,
+                (name, company, now, phone, ip_hash, ua, desired_id_int, tech_id),
+            )
+            db.commit()
+            delivery_id = desired_id_int
+        except Exception:
+            db.rollback()
+            from flask import current_app
+            current_app.logger.exception("confirm_badge_client_for_token UPDATE delivery_id=%s falló", desired_id_int)
+            delivery_id = None
+
+    # RUTA RETROCOMPATIBLE (sin delivery_id): insert + bulk update 72h
+    if not delivery_id:
+        cur = db.execute(
+            f"""
+            INSERT INTO technician_badge_deliveries
+                (technician_id, badge_share_token, delivery_channel,
+                 client_phone, client_name, client_company, client_confirmed_at,
+                 client_ip_hash, client_user_agent)
+            VALUES ({ph}, {ph}, 'client_confirmation_public', {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+            """,
+            (tech_id, token, phone, name, company, now, ip_hash, ua),
+        )
+        delivery_id = cur.lastrowid
+        if is_postgres() and (not delivery_id or delivery_id == 0):
+            try:
+                delivery_id = (db.execute("SELECT LASTVAL() AS id").fetchone() or {}).get("id")
+            except Exception:
+                delivery_id = None
+        db.commit()
+
+        # Propagación bulk 72h solo si no había delivery_id
+        window = (datetime.utcnow() - timedelta(hours=72)).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            db.execute(
+                f"""
+                UPDATE technician_badge_deliveries
+                   SET client_name = {ph},
+                       client_company = {ph},
+                       client_confirmed_at = {ph},
+                       client_phone = COALESCE({ph}, client_phone),
+                       client_ip_hash = COALESCE({ph}, client_ip_hash),
+                       client_user_agent = COALESCE({ph}, client_user_agent)
+                 WHERE technician_id = {ph}
+                   AND COALESCE(created_at, '1970-01-01') >= {ph}
+                   AND (client_confirmed_at IS NULL OR client_confirmed_at = '')
+                   AND id != {ph}
+                """,
+                (name, company, now, phone, ip_hash, ua, tech_id, window, int(delivery_id or 0)),
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            from flask import current_app
+            current_app.logger.exception("confirm_badge_client_for_token UPDATE bulk falló tech=%s", tech_id)
+
+    try:
+        record_badge_view(
+            technician_id=tech_id,
+            badge_share_token=token,
+            ip=ip,
+            user_agent=user_agent,
+            view_type="client_confirmation",
+        )
+    except Exception:
+        try:
+            from flask import current_app
+            current_app.logger.exception("record_badge_view exception (non-fatal, continuing) tech=%s token=%s", tech_id, token)
+        except Exception:
+            pass
+    # ===== VINCULACIÓN CON LA OT (ESTE ERA EL BUG CRÍTICO: NUNCA SE LLAMABA A AUTO_LINK) =====
+    linked_order_id = None
+    try:
+        if delivery_id:
+            from flask import current_app
+            current_app.logger.info(
+                "confirm_badge_client_for_token tech=%s delivery=%s desired_id=%s: invocando auto_link (delivery_id_final=%s)",
+                tech_id, delivery_id, desired_id_int, delivery_id,
+            )
+            linked_order_id = auto_link_client_confirmation_to_order(tech_id, delivery_id, 72)
+            if linked_order_id:
+                current_app.logger.info(
+                    "confirm_badge_client_for_token AUTO_LINK OK: delivery=%s -> order_id=%s",
+                    delivery_id, linked_order_id,
+                )
+            else:
+                try:
+                    current_app.logger.warning(
+                        "confirm_badge_client_for_token AUTO_LINK DEVOLVIÓ NONE: delivery=%s no se vinculó a ninguna OT. tech=%s desired_id=%s already=%s name=%s phone=%s",
+                        delivery_id, tech_id, desired_id_int, ("1" if already_confirmed else "0"), (name or '')[:60], (phone or '')[:30],
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception("confirm_badge_client_for_token auto_link exception tech=%s delivery=%s", tech_id, delivery_id)
+    ret = {
+        "delivery_id": delivery_id,
+        "client_confirmed_at": now,
+        "technician_id": tech_id,
+        "already_confirmed": False,
+        "linked_order_id": linked_order_id,
+    }
+    current_app.logger.info("confirm_badge_client_for_token FINAL return: %s", ret)
+    return ret
+
+
+def fetch_badge_deliveries_for_technician(technician_id, limit=25):
+    try:
+        tid = int(technician_id)
+    except Exception:
+        return []
+    rows = get_db().execute(
+        """
+        SELECT id, created_at, delivery_channel, initiated_by_user_id,
+               client_phone, share_confirmed_at, share_cancelled_at,
+               client_name, client_company, client_confirmed_at, badge_share_token
+        FROM technician_badge_deliveries
+        WHERE technician_id = ?
+        ORDER BY COALESCE(created_at, '1970-01-01') DESC
+        LIMIT ?
+        """,
+        (tid, int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_badge_stats_for_technician(technician_id):
+    try:
+        tid = int(technician_id)
+    except Exception:
+        return {"deliveries": 0, "client_confirmed": 0, "views": 0, "confirmed_last_7d": 0, "views_last_7d": 0}
+    db = get_db()
+    total_del = db.execute(
+        "SELECT COUNT(*) AS c FROM technician_badge_deliveries WHERE technician_id = ?",
+        (tid,),
+    ).fetchone()["c"]
+    total_conf = db.execute(
+        "SELECT COUNT(*) AS c FROM technician_badge_deliveries WHERE technician_id = ? AND client_confirmed_at IS NOT NULL",
+        (tid,),
+    ).fetchone()["c"]
+    total_views = db.execute(
+        "SELECT COUNT(*) AS c FROM technician_badge_views WHERE technician_id = ?",
+        (tid,),
+    ).fetchone()["c"]
+    last_7d = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+    conf_l7 = db.execute(
+        "SELECT COUNT(*) AS c FROM technician_badge_deliveries WHERE technician_id = ? AND client_confirmed_at >= ?",
+        (tid, last_7d),
+    ).fetchone()["c"]
+    views_l7 = db.execute(
+        "SELECT COUNT(*) AS c FROM technician_badge_views WHERE technician_id = ? AND viewed_at >= ?",
+        (tid, last_7d),
+    ).fetchone()["c"]
+    return {
+        "deliveries": int(total_del or 0),
+        "client_confirmed": int(total_conf or 0),
+        "views": int(total_views or 0),
+        "confirmed_last_7d": int(conf_l7 or 0),
+        "views_last_7d": int(views_l7 or 0),
+    }
+
+
+# -----------------------------------------------------------------------------
+# Technician Orders (OT) — CRUD + search
+# -----------------------------------------------------------------------------
+
+def _order_cols_sqlite():
+    return "id, created_at, updated_at, technician_id, ot_number, client_name, client_address, client_phone, notes, badge_delivery_id, photo_1_path, photo_2_path, edoc_pdf_path"
+
+
+def _row_to_order(row):
+    if not row:
+        return None
+    d = dict(row) if not isinstance(row, dict) else row
+    for k in ("id", "technician_id", "badge_delivery_id"):
+        if d.get(k) is not None:
+            try:
+                d[k] = int(d[k])
+            except (TypeError, ValueError):
+                pass
+    return d
+
+
+def create_technician_order(technician_id, ot_number, client_name=None, client_address=None, client_phone=None, notes=None, badge_delivery_id=None):
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        raise ValueError("Técnico inválido.")
+    ot = str(ot_number or "").strip()
+    if len(ot) < 3:
+        raise ValueError("El número de OT debe tener al menos 3 caracteres.")
+    if len(ot) > 64:
+        raise ValueError("El número de OT es demasiado largo.")
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    ph = "%s" if is_postgres() else "?"
+    db = get_db()
+    # pre check unique (no rompe Integrity a nivel user)
+    dup = db.execute(
+        f"SELECT id FROM technician_orders WHERE technician_id = {ph} AND UPPER(TRIM(ot_number)) = {ph} LIMIT 1",
+        (tid, ot.upper()),
+    ).fetchone()
+    if dup:
+        raise ValueError("Ya existe una Orden con ese número de OT para este técnico.")
+    cur = db.execute(
+        f"""
+        INSERT INTO technician_orders
+            (created_at, updated_at, technician_id, ot_number, client_name, client_address, client_phone, notes, badge_delivery_id)
+        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+        """,
+        (now, now, tid, ot,
+         str(client_name or "").strip()[:200] or None,
+         str(client_address or "").strip()[:250] or None,
+         str(client_phone or "").strip()[:60] or None,
+         (str(notes or "").strip()[:2000] or None),
+         badge_delivery_id),
+    )
+    db.commit()
+    return int(cur.lastrowid)
+
+
+def update_technician_order(order_id, technician_id=None, **fields):
+    try:
+        oid = int(order_id)
+    except (TypeError, ValueError):
+        raise ValueError("Orden inválida.")
+    allowed = {"client_name", "client_address", "client_phone", "notes", "badge_delivery_id",
+               "photo_1_path", "photo_2_path", "edoc_pdf_path"}
+    updates = {k: fields[k] for k in fields if k in allowed}
+    if not updates:
+        return False
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    updates["updated_at"] = now
+    ph = "%s" if is_postgres() else "?"
+    sets = ", ".join(f"{k} = {ph}" for k in updates.keys())
+    params = list(updates.values())
+    params.append(oid)
+    where = f"id = {ph}"
+    if technician_id is not None:
+        try:
+            tid = int(technician_id)
+            params.append(tid)
+            where += f" AND technician_id = {ph}"
+        except (TypeError, ValueError):
+            return False
+    db = get_db()
+    cur = db.execute(f"UPDATE technician_orders SET {sets} WHERE {where}", params)
+    db.commit()
+    return (cur.rowcount or 0) > 0
+
+
+def fetch_technician_order_by_id(order_id):
+    try:
+        oid = int(order_id)
+    except (TypeError, ValueError):
+        return None
+    row = get_db().execute(
+        f"SELECT {_order_cols_sqlite()} FROM technician_orders WHERE id = ?",
+        (oid,),
+    ).fetchone()
+    return _row_to_order(row)
+
+
+def fetch_technician_order_by_ot(ot_number, technician_id=None):
+    ot = str(ot_number or "").strip()
+    if not ot:
+        return None
+    ph = "%s" if is_postgres() else "?"
+    sql = f"SELECT {_order_cols_sqlite()} FROM technician_orders WHERE UPPER(TRIM(ot_number)) = {ph}"
+    args = [ot.upper()]
+    if technician_id is not None:
+        try:
+            args.append(int(technician_id))
+        except (TypeError, ValueError):
+            return None
+        sql += f" AND technician_id = {ph}"
+    sql += " ORDER BY created_at DESC LIMIT 1"
+    row = get_db().execute(sql, args).fetchone()
+    return _row_to_order(row)
+
+
+def _apply_supervisor_orders_scope(sql_base, params, supervisor_scope_names):
+    if supervisor_scope_names is None:
+        return sql_base, params
+    ph = "%s" if is_postgres() else "?"
+    has_where = " WHERE " in sql_base
+    if has_where:
+        connector = " AND"
+    else:
+        connector = " WHERE"
+    if not supervisor_scope_names:
+        sql_base += f"{connector} 1 = 0"
+        return sql_base, params
+    placeholders = ",".join([ph] * len(supervisor_scope_names))
+    params.extend(list(supervisor_scope_names))
+    sql_base += (
+        f"{connector} EXISTS (SELECT 1 FROM technicians t WHERE t.id = technician_orders.technician_id"
+        f" AND UPPER(TRIM(COALESCE(t.supervisor_name,''))) IN ({placeholders}))"
+    )
+    return sql_base, params
+
+
+def list_technician_orders(technician_id=None, q=None, ot_number=None, page=1, per_page=20,
+                           supervisor_scope_names=None):
+    page = max(1, int(page or 1))
+    per_page = min(200, max(1, int(per_page or 20)))
+    offset = (page - 1) * per_page
+    ph = "%s" if is_postgres() else "?"
+    params = []
+    where = []
+    if technician_id is not None:
+        try:
+            where.append(f"technician_id = {ph}")
+            params.append(int(technician_id))
+        except (TypeError, ValueError):
+            return {"rows": [], "total": 0, "page": page, "per_page": per_page}
+    ot_exact = str(ot_number or "").strip()
+    if ot_exact:
+        where.append(f"UPPER(TRIM(ot_number)) LIKE {ph}")
+        params.append(f"%{ot_exact.upper()}%")
+    qq = str(q or "").strip()
+    if qq:
+        like = f"%{qq.upper()}%"
+        where.append(
+            f"("
+            f"UPPER(TRIM(ot_number)) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_name,''))) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_address,''))) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_phone,''))) LIKE {ph}"
+            f")"
+        )
+        params.extend([like, like, like, like])
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    base_sql = f"FROM technician_orders {where_sql}"
+    base_sql, params_count = _apply_supervisor_orders_scope(base_sql, params, supervisor_scope_names)
+    total_row = get_db().execute(f"SELECT COUNT(*) AS c {base_sql}", params_count).fetchone()
+    total = int(total_row["c"]) if total_row else 0
+    # scope params are appended twice → use params_count list for the next query too
+    rows_sql = f"""
+        SELECT {_order_cols_sqlite()},
+               (SELECT t.name FROM technicians t WHERE t.id = technician_orders.technician_id) AS technician_name,
+               (SELECT t.employee_code FROM technicians t WHERE t.id = technician_orders.technician_id) AS technician_employee_code
+        {base_sql}
+        ORDER BY created_at DESC
+        LIMIT {ph} OFFSET {ph}
+    """
+    rows_params = list(params_count) + [per_page, offset]
+    rows = get_db().execute(rows_sql, rows_params).fetchall()
+    return {
+        "rows": [_row_to_order(r) for r in (rows or [])],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": ((total + per_page - 1) // per_page) if total else 0,
+    }
+
+
+def fetch_technician_orders_stats(technician_id):
+    try:
+        tid = int(technician_id)
+    except Exception:
+        return {"total": 0, "with_photos": 0, "with_edoc": 0, "last_30d": 0}
+    last_30d = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    row = get_db().execute(
+        """
+        SELECT
+          COUNT(*) AS c,
+          SUM(CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL) THEN 1 ELSE 0 END) AS cp,
+          SUM(CASE WHEN edoc_pdf_path IS NOT NULL THEN 1 ELSE 0 END) AS ce,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS c30
+        FROM technician_orders WHERE technician_id = ?
+        """,
+        (last_30d, tid),
+    ).fetchone()
+    return {
+        "total": int(row["c"] or 0) if row else 0,
+        "with_photos": int(row["cp"] or 0) if row else 0,
+        "with_edoc": int(row["ce"] or 0) if row else 0,
+        "last_30d": int(row["c30"] or 0) if row else 0,
+    }
+
+
+def _complete_flag_sqlite():
+    return "CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL AND edoc_pdf_path IS NOT NULL) THEN 1 ELSE 0 END"
+
+
+def fetch_orders_today_summary(supervisor_scope_names=None, technician_id=None):
+    """
+    Devuelve un resumen de lo hecho HOY por los técnicos (dentro de scope supervisor):
+      total_orders: ordenes creadas HOY
+      total_completed:  ordenes COMPLETAS (2 fotos + E-DOC) HOY
+      total_incomplete: ordenes INCOMPLETAS HOY
+      active_technicians: cuantos tecnicos distintos cargaron al menos 1 orden HOY
+    """
+    ph = "%s" if is_postgres() else "?"
+    # Date trunc compatible dual: SQLite DATE() works on 'YYYY-MM-DD HH:MM:SS' strings, Postgres DATE() same.
+    date_today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    params = []
+    base = " FROM technician_orders WHERE (DATE(created_at) = DATE(" + ph + "))"
+    params.append(date_today_str)
+    if technician_id is not None:
+        try:
+            base += f" AND technician_id = {ph}"
+            params.append(int(technician_id))
+        except (TypeError, ValueError):
+            pass
+    # Scope supervisor
+    if supervisor_scope_names is not None:
+        if not supervisor_scope_names:
+            base += " AND 1 = 0"
+        else:
+            placeholders = ",".join([ph] * len(supervisor_scope_names))
+            params.extend(list(supervisor_scope_names))
+            base += (
+                f" AND EXISTS (SELECT 1 FROM technicians t WHERE t.id = technician_orders.technician_id"
+                f" AND UPPER(TRIM(COALESCE(t.supervisor_name,''))) IN ({placeholders}))"
+            )
+    row = get_db().execute(
+        f"SELECT COUNT(*) AS total, "
+        f"  SUM({_complete_flag_sqlite()}) AS completed, "
+        f"  COUNT(DISTINCT technician_id) AS techs "
+        f"{base}",
+        params,
+    ).fetchone()
+    total = int(row["total"] or 0) if row else 0
+    completed = int(row["completed"] or 0) if row else 0
+    techs = int(row["techs"] or 0) if row else 0
+    return {
+        "total_orders": total,
+        "total_completed": completed,
+        "total_incomplete": max(0, total - completed),
+        "active_technicians": techs,
+        "day": date_today_str,
+    }
+
+
+def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, supervisor_scope_names=None, technician_id=None, page=1, per_page=50):
+    """
+    Devuelve una LISTA GRUPAL:
+      [ { technician_id, name, employee_code, total_today, completed_today, incomplete_today, rows:[...] }, ... ]
+    Ideal para la vista supervisor "al día" (listado principal por defecto).
+
+    Comportamiento filtro HOY por defecto (today_only=True):
+      - Solo ordenes donde DATE(created_at) = HOY
+      - PERO si hay busqueda por ot_number EXACTO (o LIKE match solo a OTs de dias anteriores),
+        entonces se IGNORA el filtro today_only (el supervisor buscaba una OT archivada).
+
+    Si hay busqueda exacta OT y OT viene de dias anterior: ignoramos today_only (devuelve esa orden aunque sea vieja).
+    """
+    page = max(1, int(page or 1))
+    per_page = min(500, max(1, int(per_page or 50)))
+    ph = "%s" if is_postgres() else "?"
+    date_today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+    # Primero determinamos si user BUSCA ALGO FUERA DE HOY → en ese caso hay que DESACTIVAR today_only
+    # Para eso contamos cuantas OTs coinciden CON HOY y SIN HOY
+    force_disable_today = False
+    ot_norm = str(ot_number or "").strip()
+    q_norm = str(q or "").strip()
+    if (ot_norm or q_norm) and today_only:
+        q_search = f"%{(ot_norm or q_norm).upper()}%"
+        search_sql = (
+            f"FROM technician_orders WHERE ("
+            f"UPPER(TRIM(ot_number)) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_name,''))) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_address,''))) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_phone,''))) LIKE {ph}"
+            f")"
+        )
+        params_search_in = [q_search, q_search, q_search, q_search]
+        params_in_today = list(params_search_in) + [date_today_str]
+        row_in = get_db().execute(
+            f"SELECT COUNT(*) AS c {search_sql} AND (DATE(created_at) = DATE({ph}))", params_in_today
+        ).fetchone()
+        cnt_in = int(row_in["c"] or 0) if row_in else 0
+        row_all = get_db().execute(f"SELECT COUNT(*) AS c {search_sql}", params_search_in).fetchone()
+        cnt_all = int(row_all["c"] or 0) if row_all else 0
+        if cnt_in == 0 and cnt_all > 0:
+            # Solo hay coincidencias FUERA de hoy → desactivar filtro hoy para que el supervisor lo vea
+            force_disable_today = True
+
+    effective_today_only = bool(today_only) and not force_disable_today
+
+    # Base query filter
+    filters = []
+    params = []
+    if effective_today_only:
+        filters.append(f"DATE(created_at) = DATE({ph})")
+        params.append(date_today_str)
+    if technician_id is not None:
+        try:
+            filters.append(f"technician_id = {ph}")
+            params.append(int(technician_id))
+        except (TypeError, ValueError):
+            pass
+    if ot_norm:
+        filters.append(f"UPPER(TRIM(ot_number)) LIKE {ph}")
+        params.append(f"%{ot_norm.upper()}%")
+    elif q_norm:
+        like = f"%{q_norm.upper()}%"
+        filters.append(
+            f"("
+            f"UPPER(TRIM(ot_number)) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_name,''))) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_address,''))) LIKE {ph} OR "
+            f"UPPER(TRIM(COALESCE(client_phone,''))) LIKE {ph}"
+            f")"
+        )
+        params.extend([like, like, like, like])
+
+    where_sql = ("WHERE " + " AND ".join(filters)) if filters else ""
+    sql_base = f"FROM technician_orders {where_sql}"
+    sql_base, params_count = _apply_supervisor_orders_scope(sql_base, params, supervisor_scope_names)
+
+    rows_sql = f"""
+        SELECT {_order_cols_sqlite()},
+               (SELECT t.name FROM technicians t WHERE t.id = technician_orders.technician_id) AS technician_name,
+               (SELECT t.employee_code FROM technicians t WHERE t.id = technician_orders.technician_id) AS technician_employee_code
+        {sql_base}
+        ORDER BY DATE(created_at) DESC, created_at DESC
+        LIMIT {ph}
+    """
+    rows_params = list(params_count) + [per_page]
+    rows = get_db().execute(rows_sql, rows_params).fetchall()
+    orders = [_row_to_order(r) for r in (rows or [])]
+
+    # Agrupar por TECHNICIAN_ID
+    groups = {}
+    order_ids = []
+    for o in orders:
+        order_ids.append(o["id"])
+        tid = int(o["technician_id"] or 0)
+        g = groups.get(tid)
+        if not g:
+            g = {
+                "technician_id": tid,
+                "technician_name": o.get("technician_name") or "",
+                "technician_employee_code": o.get("technician_employee_code") or "",
+                "rows": [],
+                "total_orders": 0,
+                "completed_orders": 0,
+                "incomplete_orders": 0,
+            }
+            groups[tid] = g
+        is_complete = bool(o.get("photo_1_path") and o.get("photo_2_path") and o.get("edoc_pdf_path"))
+        o["_is_complete"] = is_complete
+        g["rows"].append(o)
+        g["total_orders"] += 1
+        if is_complete:
+            g["completed_orders"] += 1
+        else:
+            g["incomplete_orders"] += 1
+    # Convert dict groups to list (preserve creation order: order by most orders desc then name alpha)
+    group_list = sorted(
+        groups.values(),
+        key=lambda g: (-int(g["total_orders"]), (g["technician_name"] or "").lower()),
+    )
+
+    # Conteos globales (count total with filters)
+    total_row = get_db().execute(f"SELECT COUNT(*) AS c {sql_base}", params_count).fetchone()
+    total_rows_all = int(total_row["c"] or 0) if total_row else 0
+    summary_total = 0
+    summary_completed = 0
+    for g in group_list:
+        summary_total += g["total_orders"]
+        summary_completed += g["completed_orders"]
+
+    return {
+        "today_only_active": effective_today_only,  # True si mostramos solo hoy
+        "day": date_today_str,
+        "groups": group_list,
+        "total_orders": summary_total,
+        "total_completed": summary_completed,
+        "total_incomplete": max(0, summary_total - summary_completed),
+        "active_technicians": len(group_list),
+        "total_rows_db": total_rows_all,
+        "technician_id_filter": technician_id,
+    }
+
+
+def auto_link_client_confirmation_to_order(technician_id, badge_delivery_id, window_hours=72):
+    """
+    Después de que el cliente confirma la credencial, asociamos automáticamente la confirmación
+    a la OT. Orden de búsqueda:
+      a) CASO A (estricto, preferido): Ya existe una OT con technician_orders.badge_delivery_id == badge_delivery_id
+         ⇒ esa es la OT correcta, la devolvemos y autopropagamos campos vacíos.
+      b) CASO B (fallback suave SIN contaminar): Si el caso A no matchea, buscamos LA ÚLTIMA OT del técnico
+         (dentro de window_hours) que AÚN NO TIENE badge_delivery_id ASIGNADA y ADEMÁS client_name está vacío
+         ⇒ asignarle badge_delivery_id y propagar campos. Es la OT más probablemente nueva.
+
+    Además: si la confirmación trae datos de cliente (nombre/empresa/teléfono), los propagamos
+    AUTOMÁTICAMENTE a la technician_orders vinculada, SÓLO si la OT no tenía ya esos campos cargados
+    (no sobreescribimos datos que el técnico cargó manualmente).
+
+    Devuelve el order_id vinculado (o None).
+    """
+    try:
+        tid = int(technician_id)
+        did = int(badge_delivery_id)
+    except (TypeError, ValueError):
+        return None
+    ph = "%s" if is_postgres() else "?"
+    db = get_db()
+
+    # Levantar datos de la confirmación (badge delivery con client_confirmed_at)
+    delivery_data = db.execute(
+        f"SELECT client_name, client_company, client_phone, client_confirmed_at FROM technician_badge_deliveries WHERE id = {ph} AND technician_id = {ph} LIMIT 1",
+        (did, tid),
+    ).fetchone()
+    delivery_info = dict(delivery_data) if delivery_data else {}
+    d_name = (delivery_info.get("client_name") or "").strip()
+    d_addr = (delivery_info.get("client_company") or "").strip()
+    d_phone = (delivery_info.get("client_phone") or "").strip()
+    if not (d_name or d_addr or d_phone):
+        return None
+
+    window = (datetime.utcnow() - timedelta(hours=window_hours)).strftime("%Y-%m-%d %H:%M:%S")
+
+    def _apply_update(rd, order_id):
+        if not rd or not order_id:
+            return None
+        updates = {}
+        ot_name = (rd.get("client_name") or "").strip()
+        ot_addr = (rd.get("client_address") or "").strip()
+        ot_phone = (rd.get("client_phone") or "").strip()
+        keys_rd = list(rd.keys())
+        ot_bdid = rd.get("badge_delivery_id") if ("badge_delivery_id" in keys_rd) else None
+        override_bdid = (rd.get("__override_bdid") is True)
+        if d_name and not ot_name:
+            updates["client_name"] = d_name[:200]
+        if d_addr and not ot_addr:
+            updates["client_address"] = d_addr[:250]
+        if d_phone and not ot_phone:
+            updates["client_phone"] = d_phone[:60]
+        # REGLAS badge_delivery_id:
+        # 1) Si override_bdid=True (CASO C1): la OT ya tenía bdid PERO esa delivery no tiene confirmación -> sobrescribir si did distinto.
+        # 2) Si bdid es NULL/0/empty y did existe: asignar normal.
+        needs_set_bdid = False
+        if override_bdid:
+            try:
+                cur_i = int(ot_bdid or 0)
+                new_i = int(did or 0)
+                if new_i > 0 and cur_i != new_i:
+                    needs_set_bdid = True
+            except Exception:
+                needs_set_bdid = False
+        else:
+            if (ot_bdid is None or ot_bdid == 0 or str(ot_bdid).strip() == "") and did:
+                needs_set_bdid = True
+        if needs_set_bdid:
+            try:
+                updates["badge_delivery_id"] = int(did)
+            except Exception:
+                pass
+        if updates:
+            try:
+                update_technician_order(order_id, technician_id=tid, **updates)
+            except Exception:
+                get_db().rollback() if False else None
+        return order_id
+
+    # CASO A (estricto): badge_delivery_id coincide exacto (se compartió credencial DESDE la OT)
+    found = db.execute(
+        f"SELECT id, client_name, client_address, client_phone, badge_delivery_id FROM technician_orders WHERE technician_id = {ph} AND badge_delivery_id = {ph} ORDER BY created_at DESC LIMIT 1",
+        (tid, did),
+    ).fetchone()
+    if found:
+        return _apply_update(dict(found), int(found["id"]))
+
+    # CASO B (fallback suave): última OT del técnico, última semana, SIN badge_delivery_id y SIN client_name
+    try:
+        rows = db.execute(
+            f"""
+            SELECT id, client_name, client_address, client_phone, badge_delivery_id
+              FROM technician_orders
+             WHERE technician_id = {ph}
+               AND COALESCE(created_at, '1970-01-01') >= {ph}
+             ORDER BY
+               CASE WHEN badge_delivery_id IS NULL OR badge_delivery_id = '' OR badge_delivery_id = 0 THEN 0 ELSE 1 END ASC,
+               CASE WHEN client_name IS NULL OR client_name = '' THEN 0 ELSE 1 END ASC,
+               created_at DESC
+             LIMIT 3
+            """,
+            (tid, window),
+        ).fetchall()
+        for row in rows:
+            rd = dict(row)
+            ot_bdid = rd.get("badge_delivery_id")
+            ot_name = (rd.get("client_name") or "").strip()
+            # Asignar sólo si la OT no tenía badge_delivery_id vinculado (evitar sobrescribir otra OT confirmada)
+            if ot_bdid is None or str(ot_bdid).strip() == "" or int(ot_bdid or 0) == 0:
+                if not ot_name or not (rd.get("client_address") or "").strip():
+                    return _apply_update(rd, int(rd["id"]))
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception("auto_link fallback falló tech=%s delivery=%s", tid, did)
+
+    # CASO C (muy agresivo): la OT ya tiene badge_delivery_id PERO la delivery asignada NO tiene client_confirmed_at
+    # o la OT simplemente no tiene client_name/client_address → reasignar A ESTA delivery CONFIRMADA para que panel OK
+    try:
+        from flask import current_app as applogc
+        rows_c = db.execute(
+            f"""
+            SELECT id, client_name, client_address, client_phone, badge_delivery_id, created_at
+              FROM technician_orders
+             WHERE technician_id = {ph}
+               AND COALESCE(created_at, '1970-01-01') >= {ph}
+             ORDER BY created_at DESC
+             LIMIT 10
+            """,
+            (tid, window),
+        ).fetchall()
+        # PRIMERA PASADA: CASO C1 TIENE PRIORIDAD TOTAL (la OT YA TIENE UN badge_delivery_id PERO ESTÁ SIN CONFIRMAR -> sobrescribir)
+        for orow in rows_c:
+            ord = dict(orow)
+            oid = int(ord["id"])
+            cur_bdid = ord.get("badge_delivery_id")
+            if cur_bdid and int(cur_bdid or 0) > 0:
+                cur_del = db.execute(
+                    f"SELECT id, client_confirmed_at FROM technician_badge_deliveries WHERE id = {ph} LIMIT 1",
+                    (int(cur_bdid),),
+                ).fetchone()
+                if cur_del:
+                    cd = dict(cur_del)
+                    cur_cc = (cd.get("client_confirmed_at") or "").strip()
+                    if not cur_cc:
+                        applogc.info(
+                            "auto_link CASO C1 (prioridad): order=%s badge_delivery_id_actual=%s SIN client_confirmed_at. Reasignando a delivery CONFIRMADA=%s (el cliente confirmó la de ?d= anterior). OT ya tenía nombre=%s addr=%s.",
+                            oid, cur_bdid, did, str((ord.get("client_name") or "").strip())[:30], str((ord.get("client_address") or "").strip())[:30],
+                        )
+                        ord["__override_bdid"] = True
+                        return _apply_update(ord, oid)
+        # SEGUNDA PASADA: CASO C2 = OT sin badge_delivery_id, candidata (sin nombre o sin dirección)
+        for orow in rows_c:
+            ord = dict(orow)
+            oid = int(ord["id"])
+            cur_bdid = ord.get("badge_delivery_id")
+            ot_name = (ord.get("client_name") or "").strip()
+            ot_addr = (ord.get("client_address") or "").strip()
+            if (cur_bdid is None or int(cur_bdid or 0) == 0 or str(cur_bdid).strip() == "") and (not ot_name or not ot_addr):
+                applogc.info(
+                    "auto_link CASO C2: order=%s sin datos (name=%s addr=%s) y sin badge. Vinculando delivery CONFIRMADA=%s",
+                    oid, ot_name[:30], ot_addr[:30], did,
+                )
+                return _apply_update(ord, oid)
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception("auto_link CASO C falló tech=%s delivery=%s", tid, did)
+
+    return None
 
 def fetch_master_technicians(q=None, region=None, supervisor=None, center=None, company=None, is_active=None, limit=100, offset=0, sort_by=None, sort_dir=None):
     params = []
