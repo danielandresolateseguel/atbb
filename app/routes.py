@@ -7326,7 +7326,6 @@ def new_audit():
     if not can_create_audit():
         abort(403)
     mobile_units = fetch_mobile_units()
-    print(f"DEBUG: Mobile Units: {mobile_units}")
     vehicles = fetch_vehicles()
     material_catalog = fetch_material_catalog()
     material_index = {row["material_code"]: row["material_name"] for row in material_catalog}
@@ -7600,6 +7599,14 @@ def new_audit():
             return redirect(url_for("main.audit_detail", audit_id=audit_id))
         except ValueError as exc:
             flash(str(exc), "error")
+        except Exception as exc:
+            current_app.logger.exception(
+                "POST /audits/new FAILED form_keys=%s files_keys=%s",
+                sorted(request.form.keys()),
+                sorted(request.files.keys()),
+            )
+            safe_msg = str(exc) if current_app and current_app.config.get("DEBUG") else "Contacta a soporte o revisa los logs."
+            flash(f"Error interno al guardar la auditoria. {safe_msg}", "error")
 
     response = make_response(
         render_template(

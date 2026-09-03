@@ -149,8 +149,12 @@ class PostgresConnection:
             cursor.execute(_postgres_sql(sql), params or None)
             return cursor
         except Exception as exc:
-            if _try_autorepair_postgres_column(exc, self._connection, sql):
-                cursor.close()
+            parsed = _parse_missing_table_column_from_error(exc)
+            if parsed and parsed[1] and _try_autorepair_postgres_column(
+                exc, self._connection, sql, override_table=parsed[0], override_column=parsed[1]
+            ):
+                try: cursor.close()
+                except Exception: pass
                 cursor = self._connection.cursor()
                 cursor.execute(_postgres_sql(sql), params or None)
                 return cursor
@@ -162,8 +166,12 @@ class PostgresConnection:
             cursor.executemany(_postgres_sql(sql), seq_of_params)
             return cursor
         except Exception as exc:
-            if _try_autorepair_postgres_column(exc, self._connection, sql):
-                cursor.close()
+            parsed = _parse_missing_table_column_from_error(exc)
+            if parsed and parsed[1] and _try_autorepair_postgres_column(
+                exc, self._connection, sql, override_table=parsed[0], override_column=parsed[1]
+            ):
+                try: cursor.close()
+                except Exception: pass
                 cursor = self._connection.cursor()
                 cursor.executemany(_postgres_sql(sql), seq_of_params)
                 return cursor
@@ -197,30 +205,76 @@ def _looks_like_double_column(col_name, table_name):
 
 
 def _parse_missing_table_column_from_error(exc):
-    """Retorna (table, column) o None."""
+    """Retorna (table, column) o None.
+
+    Acepta varios formatos usados por psycopg y sqlite:
+
+    Postgres (psycopg v3):
+      column "users"."technician_id" does not exist
+      column "technician_id" of relation "users" does not exist
+
+    Sqlite3:
+      no such column: users.technician_id
+      no such column: technician_id
+    """
     try:
-        msg = str(exc).lower()
         import re
-        if "undefinedcolumn" in type(exc).__name__.lower() or "undefined_column" in msg or "column" in msg and "does not exist" in msg:
-            m = re.search(r"column\s+([\w\.\"']+)\s+does not exist", msg)
-            if m:
-                q = m.group(1).strip("\"'").split(".")
-                if len(q) == 2:
-                    return (q[0], q[1])
-                if len(q) == 1:
-                    return (None, q[0])
+        msg_lines = []
+        msg_lines.append(str(exc))
+        # psycopg incluye diag.message_primary + diag.table_name/diag.column_name via __context__? usamos diag si existe
+        try:
+            diag = getattr(exc, "diag", None)
+            if diag is not None:
+                t = getattr(diag, "table_name", None)
+                c = getattr(diag, "column_name", None)
+                if c:
+                    return (t, c)
+        except Exception:
+            pass
+        full_msg = "\n".join(msg_lines).lower()
+
+        # Formato 1:  column "X"."Y" does not exist  (table.column quoted)
+        m = re.search(r"column\s+\"([^\"]+)\"\.\"([^\"]+)\"\s+does not exist", full_msg)
+        if m:
+            return (m.group(1), m.group(2))
+
+        # Formato 2:  column "Y" of relation "X" does not exist  (relation = table)
+        m = re.search(r"column\s+\"([^\"]+)\"\s+of\s+relation\s+\"([^\"]+)\"\s+does not exist", full_msg)
+        if m:
+            return (m.group(2), m.group(1))
+
+        # Formato 3: sqlite no such column: X.Y
+        m = re.search(r"no such column\s*:\s*([\w\.\"]+)", full_msg)
+        if m:
+            q = m.group(1).strip('"').split(".")
+            if len(q) == 2:
+                return (q[0], q[1])
+            if len(q) == 1:
+                return (None, q[0])
+
+        # Formato 4: fallback simple column X.Y does not exist (unquoted)
+        m = re.search(r"column\s+([\w\.]+)\s+does not exist", full_msg)
+        if m:
+            q = m.group(1).split(".")
+            if len(q) == 2:
+                return (q[0], q[1])
+            if len(q) == 1:
+                return (None, q[0])
     except Exception:
         return None
     return None
 
 
-def _try_autorepair_postgres_column(exc, raw_conn, original_sql):
+def _try_autorepair_postgres_column(exc, raw_conn, original_sql, override_table=None, override_column=None):
     """Retorna True si se autoreparó y debe reintentarse."""
     try:
-        parsed = _parse_missing_table_column_from_error(exc)
-        if not parsed:
-            return False
-        table_guess, col_name = parsed
+        col_name = override_column
+        table_guess = override_table
+        if not col_name:
+            parsed = _parse_missing_table_column_from_error(exc)
+            if not parsed:
+                return False
+            table_guess, col_name = parsed
         if not col_name:
             return False
 
@@ -2753,18 +2807,83 @@ def ensure_all_columns_postgres(cursor):
         cursor.execute("ALTER TABLE supervisors ADD COLUMN IF NOT EXISTS region TEXT")
     except Exception:
         pass
-    # --- mobile_units (ya son del create inicial, seguras) ---
+    # --- mobile_units ---
     try:
         cursor.execute("ALTER TABLE mobile_units ADD COLUMN IF NOT EXISTS notes TEXT")
     except Exception:
         pass
-    # --- import_batches scope_json (redundante con create, safe) ---
+    # --- import_batches ---
     try:
         cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS scope_json TEXT")
         cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS can_rollback INTEGER NOT NULL DEFAULT 0")
         cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS rolled_back_at TIMESTAMPTZ")
         cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS rolled_back_by_user_id INTEGER REFERENCES users (id)")
         cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS error_message TEXT")
+    except Exception:
+        pass
+    # --- audit_items columnas que pudieron faltar ---
+    try:
+        cursor.execute("ALTER TABLE audit_items ADD COLUMN IF NOT EXISTS expected_quantity INTEGER")
+        cursor.execute("ALTER TABLE audit_items ADD COLUMN IF NOT EXISTS found_quantity INTEGER")
+        cursor.execute("ALTER TABLE audit_items ADD COLUMN IF NOT EXISTS note TEXT")
+        cursor.execute("ALTER TABLE audit_items ADD COLUMN IF NOT EXISTS evidence_path TEXT")
+        cursor.execute("ALTER TABLE audit_items ADD COLUMN IF NOT EXISTS status TEXT")
+        cursor.execute("ALTER TABLE audit_items ADD COLUMN IF NOT EXISTS score_percentage DOUBLE PRECISION NOT NULL DEFAULT 100")
+    except Exception:
+        pass
+    # --- user_supervisor_scopes (por si la tabla existe sin is_active) ---
+    try:
+        cursor.execute("ALTER TABLE user_supervisor_scopes ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1")
+    except Exception:
+        pass
+    # --- equipment_inventory (por si faltan columnas de backup batch) ---
+    try:
+        cursor.execute("ALTER TABLE equipment_inventory ADD COLUMN IF NOT EXISTS batch_id INTEGER REFERENCES import_batches(id)")
+    except Exception:
+        pass
+    # --- audit_finding_events (CREATE fallback) ---
+    try:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_finding_events (
+                id SERIAL PRIMARY KEY,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                finding_id INTEGER NOT NULL REFERENCES audit_findings (id),
+                actor_user_id INTEGER REFERENCES users (id),
+                event_type TEXT NOT NULL,
+                detail TEXT
+            )
+            """
+        )
+    except Exception:
+        pass
+    # --- technician_orders (CREATE fallback) ---
+    try:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS technician_orders (
+                id SERIAL PRIMARY KEY,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                technician_id INTEGER NOT NULL REFERENCES technicians (id),
+                ot_number TEXT NOT NULL,
+                client_name TEXT,
+                client_address TEXT,
+                client_phone TEXT,
+                notes TEXT,
+                badge_delivery_id INTEGER REFERENCES technician_badge_deliveries (id),
+                photo_1_path TEXT,
+                photo_2_path TEXT,
+                edoc_pdf_path TEXT,
+                edoc_generated_at TIMESTAMPTZ,
+                status TEXT NOT NULL DEFAULT 'pending',
+                is_photo_1_complete INTEGER NOT NULL DEFAULT 0,
+                is_photo_2_complete INTEGER NOT NULL DEFAULT 0,
+                is_edoc_complete INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(technician_id, ot_number)
+            )
+            """
+        )
     except Exception:
         pass
     # --- technicians_phone_commune_team_region ya cubiertas en ensure_technicians_columns_postgres arriba
@@ -7711,164 +7830,177 @@ def create_audit_supply_requests(audit_id, supply_requests):
 
 
 def create_audit(audit_data, items, supply_requests=None):
-    connection = get_db()
-    insert_sql = """
-        INSERT INTO audits (
-            audit_date,
-            auditor_name,
-            auditor_user_id,
-            sa_number,
-            auditor_signature_path,
-            technician_signature_path,
-            technician_display_name,
-            technician_employee_code,
-            technician_company_snapshot,
-            technician_supervisor_snapshot,
-            technician_center_snapshot,
-            location,
-            address,
-            installation_type,
-            total_score,
-            result_status,
-            record_scope,
-            general_notes,
-            serialized_stock_status,
-            serialized_stock_notes,
-            material_stock_status,
-            material_stock_notes,
-            mobile_unit_id,
-            technician_id,
-            vehicle_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-    insert_params = (
-        audit_data["audit_date"],
-        audit_data["auditor_name"],
-        audit_data.get("auditor_user_id"),
-        audit_data.get("sa_number"),
-        audit_data.get("auditor_signature_path"),
-        audit_data.get("technician_signature_path"),
-        audit_data.get("technician_display_name"),
-        audit_data.get("technician_employee_code"),
-        audit_data.get("technician_company_snapshot"),
-        audit_data.get("technician_supervisor_snapshot"),
-        audit_data.get("technician_center_snapshot"),
-        audit_data["location"],
-        audit_data.get("address"),
-        audit_data["installation_type"],
-        audit_data["total_score"],
-        audit_data["result_status"],
-        normalize_audit_record_scope(audit_data.get("record_scope")),
-        audit_data["general_notes"],
-        audit_data.get("serialized_stock_status"),
-        audit_data.get("serialized_stock_notes"),
-        audit_data.get("material_stock_status"),
-        audit_data.get("material_stock_notes"),
-        audit_data["mobile_unit_id"],
-        audit_data.get("technician_id"),
-        audit_data["vehicle_id"],
-    )
-
-    if is_postgres():
-        cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
-        new_id_row = cursor.fetchone()
-        if not new_id_row:
-            audit_id = None
-        else:
-            audit_id = new_id_row["id"] if isinstance(new_id_row, dict) else new_id_row[0]
-    else:
-        cursor = connection.execute(insert_sql, insert_params)
-        audit_id = cursor.lastrowid
-
-    inserted_items = []
-    for item in items:
-        item_params = (
-            audit_id,
-            item["section_key"],
-            item["section_title"],
-            item["item_key"],
-            item["item_label"],
-            item["status"],
-            1 if item["is_critical"] else 0,
-            item.get("non_compliance_reason"),
-            item["notes"],
-            item.get("photo_path"),
-        )
-        if is_postgres():
-            item_cursor = connection.execute(
-                """
-                INSERT INTO audit_items (
-                    audit_id,
-                    section_key,
-                    section_title,
-                    item_key,
-                    item_label,
-                    status,
-                    is_critical,
-                    non_compliance_reason,
-                    notes,
-                    photo_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                RETURNING id
-                """,
-                item_params,
-            )
-            item_row = item_cursor.fetchone()
-            item_id = (item_row["id"] if isinstance(item_row, dict) else item_row[0]) if item_row else None
-        else:
-            item_cursor = connection.execute(
-                """
-                INSERT INTO audit_items (
-                    audit_id,
-                    section_key,
-                    section_title,
-                    item_key,
-                    item_label,
-                    status,
-                    is_critical,
-                    non_compliance_reason,
-                    notes,
-                    photo_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                item_params,
-            )
-            item_id = item_cursor.lastrowid
-        inserted_items.append({**item, "id": item_id})
-    create_audit_findings(audit_id, audit_data, inserted_items, connection=connection)
-
-    if supply_requests:
-        connection.executemany(
+    try:
+        connection = get_db()
+        insert_sql = """
+            INSERT INTO audits (
+                audit_date,
+                auditor_name,
+                auditor_user_id,
+                sa_number,
+                auditor_signature_path,
+                technician_signature_path,
+                technician_display_name,
+                technician_employee_code,
+                technician_company_snapshot,
+                technician_supervisor_snapshot,
+                technician_center_snapshot,
+                location,
+                address,
+                installation_type,
+                total_score,
+                result_status,
+                record_scope,
+                general_notes,
+                serialized_stock_status,
+                serialized_stock_notes,
+                material_stock_status,
+                material_stock_notes,
+                mobile_unit_id,
+                technician_id,
+                vehicle_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
-            INSERT INTO audit_supply_requests (
-                audit_id,
-                section_key,
-                section_title,
-                item_key,
-                item_label,
-                request_type,
-                material_code,
-                quantity,
-                notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    audit_id,
-                    req["section_key"],
-                    req["section_title"],
-                    req["item_key"],
-                    req["item_label"],
-                    req["request_type"],
-                    req["material_code"],
-                    req.get("quantity"),
-                    req.get("notes"),
-                )
-                for req in supply_requests
-            ],
+        insert_params = (
+            audit_data["audit_date"],
+            audit_data["auditor_name"],
+            audit_data.get("auditor_user_id"),
+            audit_data.get("sa_number"),
+            audit_data.get("auditor_signature_path"),
+            audit_data.get("technician_signature_path"),
+            audit_data.get("technician_display_name"),
+            audit_data.get("technician_employee_code"),
+            audit_data.get("technician_company_snapshot"),
+            audit_data.get("technician_supervisor_snapshot"),
+            audit_data.get("technician_center_snapshot"),
+            audit_data["location"],
+            audit_data.get("address"),
+            audit_data["installation_type"],
+            audit_data["total_score"],
+            audit_data["result_status"],
+            normalize_audit_record_scope(audit_data.get("record_scope")),
+            audit_data["general_notes"],
+            audit_data.get("serialized_stock_status"),
+            audit_data.get("serialized_stock_notes"),
+            audit_data.get("material_stock_status"),
+            audit_data.get("material_stock_notes"),
+            audit_data["mobile_unit_id"],
+            audit_data.get("technician_id"),
+            audit_data["vehicle_id"],
         )
-    connection.commit()
-    return audit_id
+
+        if is_postgres():
+            cursor = connection.execute(insert_sql + " RETURNING id", insert_params)
+            new_id_row = cursor.fetchone()
+            if not new_id_row:
+                audit_id = None
+            else:
+                audit_id = new_id_row["id"] if isinstance(new_id_row, dict) else new_id_row[0]
+        else:
+            cursor = connection.execute(insert_sql, insert_params)
+            audit_id = cursor.lastrowid
+
+        inserted_items = []
+        for item in items:
+            item_params = (
+                audit_id,
+                item["section_key"],
+                item["section_title"],
+                item["item_key"],
+                item["item_label"],
+                item["status"],
+                1 if item["is_critical"] else 0,
+                item.get("non_compliance_reason"),
+                item["notes"],
+                item.get("photo_path"),
+            )
+            if is_postgres():
+                item_cursor = connection.execute(
+                    """
+                    INSERT INTO audit_items (
+                        audit_id,
+                        section_key,
+                        section_title,
+                        item_key,
+                        item_label,
+                        status,
+                        is_critical,
+                        non_compliance_reason,
+                        notes,
+                        photo_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id
+                    """,
+                    item_params,
+                )
+                item_row = item_cursor.fetchone()
+                item_id = (item_row["id"] if isinstance(item_row, dict) else item_row[0]) if item_row else None
+            else:
+                item_cursor = connection.execute(
+                    """
+                    INSERT INTO audit_items (
+                        audit_id,
+                        section_key,
+                        section_title,
+                        item_key,
+                        item_label,
+                        status,
+                        is_critical,
+                        non_compliance_reason,
+                        notes,
+                        photo_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    item_params,
+                )
+                item_id = item_cursor.lastrowid
+            inserted_items.append({**item, "id": item_id})
+        create_audit_findings(audit_id, audit_data, inserted_items, connection=connection)
+
+        if supply_requests:
+            connection.executemany(
+                """
+                INSERT INTO audit_supply_requests (
+                    audit_id,
+                    section_key,
+                    section_title,
+                    item_key,
+                    item_label,
+                    request_type,
+                    material_code,
+                    quantity,
+                    notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        audit_id,
+                        req["section_key"],
+                        req["section_title"],
+                        req["item_key"],
+                        req["item_label"],
+                        req["request_type"],
+                        req["material_code"],
+                        req.get("quantity"),
+                        req.get("notes"),
+                    )
+                    for req in supply_requests
+                ],
+            )
+        connection.commit()
+        return audit_id
+    except Exception:
+        try:
+            from flask import current_app
+            current_app.logger.exception(
+                "create_audit FAILED audit_keys=%s items_len=%s supply_len=%s",
+                sorted(list(audit_data.keys())) if audit_data else None,
+                len(items) if items is not None else None,
+                len(supply_requests) if supply_requests is not None else None,
+            )
+        except Exception:
+            pass
+        raise
 
 
 def update_audit_record_scope(audit_id, record_scope):
