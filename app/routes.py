@@ -1732,82 +1732,104 @@ def inject_auth_context():
     show_findings_alerts_modal = False
     findings_alerts_modal_stats = None
     findings_alerts_modal_urls = None
-    if user and user.get("role") in {"supervisor", "auditor"} and can_view_findings():
-        now = int(time.time())
-        next_show_raw = session.get("findings_alerts_next_show_at")
-        next_show_at = 0
-        try:
-            next_show_at = int(next_show_raw) if next_show_raw is not None else 0
-        except (TypeError, ValueError):
+
+    try:
+        if user and user.get("role") in {"supervisor", "auditor"} and can_view_findings():
+            now = int(time.time())
+            next_show_raw = session.get("findings_alerts_next_show_at")
             next_show_at = 0
-        if now >= next_show_at:
             try:
-                stats = fetch_finding_stats(
-                    None,
-                    auditor_user_id=current_auditor_user_id(),
-                    supervisor_scope_names=current_supervisor_scope_names(),
+                next_show_at = int(next_show_raw) if next_show_raw is not None else 0
+            except (TypeError, ValueError):
+                next_show_at = 0
+            if now >= next_show_at:
+                try:
+                    stats = fetch_finding_stats(
+                        None,
+                        auditor_user_id=current_auditor_user_id(),
+                        supervisor_scope_names=current_supervisor_scope_names(),
+                    )
+                except Exception:
+                    current_app.logger.exception("Error al calcular estadísticas de alertas de hallazgos")
+                    session["findings_alerts_next_show_at"] = now + (15 * 60)
+                    stats = {}
+                has_alerts = any(
+                    (
+                        stats.get("reopened_count"),
+                        stats.get("escalated_treatment_count"),
+                        stats.get("stale_treatment_count"),
+                        stats.get("overdue_validation_count"),
+                        stats.get("overdue_effectiveness_count"),
+                    )
                 )
-            except Exception:
-                current_app.logger.exception("Error al calcular estadísticas de alertas de hallazgos")
-                session["findings_alerts_next_show_at"] = now + (15 * 60)
-                stats = {}
-            has_alerts = any(
-                (
-                    stats.get("reopened_count"),
-                    stats.get("escalated_treatment_count"),
-                    stats.get("stale_treatment_count"),
-                    stats.get("overdue_validation_count"),
-                    stats.get("overdue_effectiveness_count"),
-                )
-            )
-            if has_alerts:
-                show_findings_alerts_modal = True
-                findings_alerts_modal_stats = stats
-                findings_alerts_modal_urls = {
-                    "reopened": url_for("main.findings_list", quick_filter="reopened", page=1),
-                    "escalated_treatment": url_for("main.findings_list", quick_filter="escalated_treatment", page=1),
-                    "stale_treatment": url_for("main.findings_list", quick_filter="stale_treatment", page=1),
-                    "overdue_validation": url_for("main.findings_list", quick_filter="overdue_validation", page=1),
-                    "overdue_effectiveness": url_for("main.findings_list", quick_filter="overdue_effectiveness", page=1),
-                }
-            else:
-                session["findings_alerts_next_show_at"] = now + (15 * 60)
+                if has_alerts:
+                    show_findings_alerts_modal = True
+                    findings_alerts_modal_stats = stats
+                    findings_alerts_modal_urls = {
+                        "reopened": url_for("main.findings_list", quick_filter="reopened", page=1),
+                        "escalated_treatment": url_for("main.findings_list", quick_filter="escalated_treatment", page=1),
+                        "stale_treatment": url_for("main.findings_list", quick_filter="stale_treatment", page=1),
+                        "overdue_validation": url_for("main.findings_list", quick_filter="overdue_validation", page=1),
+                        "overdue_effectiveness": url_for("main.findings_list", quick_filter="overdue_effectiveness", page=1),
+                    }
+                else:
+                    session["findings_alerts_next_show_at"] = now + (15 * 60)
+    except Exception:
+        current_app.logger.exception("inject_auth_context: error en alertas hallazgos")
 
     supervisor_has_empty_scope = False
-    if user and user.get("role") == "supervisor":
-        scopes = current_supervisor_scope_names()
-        supervisor_has_empty_scope = (not scopes)
+    try:
+        if user and user.get("role") == "supervisor":
+            scopes = current_supervisor_scope_names()
+            supervisor_has_empty_scope = (not scopes)
+    except Exception:
+        current_app.logger.exception("inject_auth_context: error en supervisor_scope")
+        supervisor_has_empty_scope = False
+
+    _safe = lambda f, default=False: _call_safe(f, default)
+    def _call_safe(fn, default=False):
+        try:
+            return fn()
+        except Exception:
+            current_app.logger.exception(f"inject_auth_context: error en helper {getattr(fn, '__name__', repr(fn))}")
+            return default
+
+    try:
+        csrf = csrf_token()
+    except Exception:
+        current_app.logger.exception("inject_auth_context: error en csrf_token")
+        csrf = ""
 
     return {
         "current_user": user,
-        "csrf_token": csrf_token(),
+        "csrf_token": csrf,
         "is_admin": bool(user and (user.get("role") == "admin")),
         "is_gerente": bool(user and (user.get("role") == "gerente")),
         "is_auditor": bool(user and (user.get("role") == "auditor")),
         "is_supervisor": bool(user and (user.get("role") == "supervisor")),
         "is_technician": bool(user and (user.get("role") == "technician")),
-        "current_technician_id": current_technician_id(),
+        "current_technician_id": _call_safe(current_technician_id, None),
         "supervisor_has_empty_scope": supervisor_has_empty_scope,
         "show_findings_alerts_modal": show_findings_alerts_modal,
         "findings_alerts_modal_stats": findings_alerts_modal_stats,
         "findings_alerts_modal_urls": findings_alerts_modal_urls,
-        "can_import": can_import(),
-        "can_create_audit": can_create_audit(),
-        "can_view_supply_requests": can_view_supply_requests(),
-        "can_create_supply_requests": can_create_supply_requests(),
-        "can_view_all_audits": can_view_all_audits(),
-        "can_view_users": can_view_users(),
-        "can_create_users": can_create_users(),
-        "can_edit_users": can_edit_users(),
-        "can_view_reports": can_view_reports(),
-        "can_view_technician_profiles": can_view_technician_profiles(),
-        "can_manage_supervisor_scopes": can_manage_supervisor_scopes(),
-        "can_view_findings": can_view_findings(),
-        "can_view_service": can_view_service(),
-        "can_respond_findings": can_respond_findings(),
-        "can_update_treatment_findings": can_update_treatment_findings(),
-        "can_validate_findings": can_validate_findings(),
-        "can_verify_findings_effectiveness": can_verify_findings_effectiveness(),
+        "can_import": _safe(can_import),
+        "can_create_audit": _safe(can_create_audit),
+        "can_view_supply_requests": _safe(can_view_supply_requests),
+        "can_create_supply_requests": _safe(can_create_supply_requests),
+        "can_view_all_audits": _safe(can_view_all_audits),
+        "can_view_users": _safe(can_view_users),
+        "can_create_users": _safe(can_create_users),
+        "can_edit_users": _safe(can_edit_users),
+        "can_view_reports": _safe(can_view_reports),
+        "can_view_technician_profiles": _safe(can_view_technician_profiles),
+        "can_manage_supervisor_scopes": _safe(can_manage_supervisor_scopes),
+        "can_view_findings": _safe(can_view_findings),
+        "can_view_service": _safe(can_view_service),
+        "can_respond_findings": _safe(can_respond_findings),
+        "can_update_treatment_findings": _safe(can_update_treatment_findings),
+        "can_validate_findings": _safe(can_validate_findings),
+        "can_verify_findings_effectiveness": _safe(can_verify_findings_effectiveness),
     }
 
 
