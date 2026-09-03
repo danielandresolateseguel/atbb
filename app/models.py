@@ -145,19 +145,149 @@ class PostgresConnection:
 
     def execute(self, sql, params=None):
         cursor = self._connection.cursor()
-        cursor.execute(_postgres_sql(sql), params or None)
-        return cursor
+        try:
+            cursor.execute(_postgres_sql(sql), params or None)
+            return cursor
+        except Exception as exc:
+            if _try_autorepair_postgres_column(exc, self._connection, sql):
+                cursor.close()
+                cursor = self._connection.cursor()
+                cursor.execute(_postgres_sql(sql), params or None)
+                return cursor
+            raise
 
     def executemany(self, sql, seq_of_params):
         cursor = self._connection.cursor()
-        cursor.executemany(_postgres_sql(sql), seq_of_params)
-        return cursor
+        try:
+            cursor.executemany(_postgres_sql(sql), seq_of_params)
+            return cursor
+        except Exception as exc:
+            if _try_autorepair_postgres_column(exc, self._connection, sql):
+                cursor.close()
+                cursor = self._connection.cursor()
+                cursor.executemany(_postgres_sql(sql), seq_of_params)
+                return cursor
+            raise
 
     def commit(self):
-        self._connection.commit()
+        try:
+            self._connection.commit()
+        except Exception:
+            pass
 
     def close(self):
         self._connection.close()
+
+
+def _looks_like_integer_column(col_name, table_name):
+    cn = (col_name or "").lower()
+    tn = (table_name or "").lower()
+    if cn.endswith("_id") or cn.endswith("_count") or cn.endswith("_qty") or cn.endswith("_km") or cn.endswith("_minutes") or cn.endswith("_meters"):
+        return True
+    if cn in {"id", "year", "quantity", "is_active", "is_enabled", "must_change_password", "can_rollback", "qc_live_installation", "speedtest_done", "row_count", "created_count", "updated_count", "technician_id", "vehicle_id", "mobile_unit_id", "auditor_user_id", "storage_location_id", "batch_id", "material_id", "finding_id", "actor_user_id", "qc_session_id", "supervisor_id", "badge_delivery_id", "delivery_id", "router_optimal_location", "environment_clean_order", "cable_meters", "installation_duration_minutes", "stale_treatment_count", "overdue_validation_count", "overdue_effectiveness_count", "escalated_treatment_count", "reopened_count", "rolled_back_by_user_id", "uploaded_by_user_id", "effectiveness_verified_by_user_id", "user_id"}:
+        return True
+    return False
+
+
+def _looks_like_double_column(col_name, table_name):
+    cn = (col_name or "").lower()
+    if cn in {"total_score", "quantity"}:
+        return True
+    return False
+
+
+def _parse_missing_table_column_from_error(exc):
+    """Retorna (table, column) o None."""
+    try:
+        msg = str(exc).lower()
+        import re
+        if "undefinedcolumn" in type(exc).__name__.lower() or "undefined_column" in msg or "column" in msg and "does not exist" in msg:
+            m = re.search(r"column\s+([\w\.\"']+)\s+does not exist", msg)
+            if m:
+                q = m.group(1).strip("\"'").split(".")
+                if len(q) == 2:
+                    return (q[0], q[1])
+                if len(q) == 1:
+                    return (None, q[0])
+    except Exception:
+        return None
+    return None
+
+
+def _try_autorepair_postgres_column(exc, raw_conn, original_sql):
+    """Retorna True si se autoreparó y debe reintentarse."""
+    try:
+        parsed = _parse_missing_table_column_from_error(exc)
+        if not parsed:
+            return False
+        table_guess, col_name = parsed
+        if not col_name:
+            return False
+
+        if not table_guess:
+            import re
+            normalized = _postgres_sql(original_sql)[:2000].lower()
+            candidates = []
+            for m in re.finditer(r"\bfrom\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+                candidates.append(m.group(1))
+            for m in re.finditer(r"\bjoin\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+                candidates.append(m.group(1))
+            for m in re.finditer(r"\bupdate\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+                candidates.append(m.group(1))
+            for m in re.finditer(r"\binsert into\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+                candidates.append(m.group(1))
+            candidates = [c for c in candidates if c and c not in {"where", "select", "order", "group", "limit"}]
+            if not candidates:
+                return False
+            table_guess = candidates[0]
+
+        if _looks_like_double_column(col_name, table_guess):
+            coltype = "DOUBLE PRECISION"
+        elif _looks_like_integer_column(col_name, table_guess):
+            coltype = "INTEGER"
+        else:
+            coltype = "TEXT"
+
+        alter = f'ALTER TABLE {table_guess} ADD COLUMN IF NOT EXISTS "{col_name}" {coltype}'
+
+        try:
+            raw_conn.rollback()
+        except Exception:
+            pass
+
+        try:
+            autocommit_before = raw_conn.autocommit
+        except Exception:
+            autocommit_before = None
+
+        try:
+            try:
+                raw_conn.autocommit = True
+            except Exception:
+                pass
+            cur = raw_conn.cursor()
+            try:
+                cur.execute(alter)
+            finally:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+        finally:
+            try:
+                if autocommit_before is not None:
+                    raw_conn.autocommit = autocommit_before
+            except Exception:
+                pass
+
+        try:
+            from flask import current_app
+            current_app.logger.warning(f"AUTOREPAIR: {alter}")
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
 
 
 def _sqlite_greatest(*args):
@@ -183,15 +313,140 @@ def get_db():
             connection = psycopg.connect(current_app.config["DATABASE_URL"], row_factory=dict_row)
             g.db_conn = PostgresConnection(connection)
         else:
-            connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
-            connection.row_factory = sqlite3.Row
+            raw_connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
+            raw_connection.row_factory = sqlite3.Row
             try:
-                connection.create_function("GREATEST", -1, _sqlite_greatest)
-                connection.create_function("LEAST", -1, _sqlite_least)
+                raw_connection.create_function("GREATEST", -1, _sqlite_greatest)
+                raw_connection.create_function("LEAST", -1, _sqlite_least)
             except Exception:
                 pass
-            g.db_conn = connection
+            g.db_conn = SQLiteConnection(raw_connection)
     return g.db_conn
+
+
+class SQLiteConnection:
+    """Wrapper sobre sqlite3.Connection con auto-repair on-the-fly de
+    columnas faltantes (error \"no such column: X\") mediante ALTER TABLE
+    ADD COLUMN generico y retry 1 vez. Idempotente gracias a add_column_if_missing."""
+
+    def __init__(self, raw_connection):
+        self._connection = raw_connection
+
+    def _autorepair_and_retry_execute(self, sql, params, original_exc):
+        try:
+            col = _parse_sqlite_missing_column(original_exc)
+            if not col:
+                return None
+            table_guess = _guess_table_from_sql(sql)
+            if not table_guess:
+                return None
+            if _looks_like_double_column(col, table_guess):
+                coltype = "REAL"
+            elif _looks_like_integer_column(col, table_guess):
+                coltype = "INTEGER"
+            else:
+                coltype = "TEXT"
+            try:
+                add_column_if_missing(self._connection, table_guess, col, coltype)
+            except Exception:
+                # fallback ALTER DIRECTO a pesar del check
+                try:
+                    self._connection.execute(f"ALTER TABLE {table_guess} ADD COLUMN {col} {coltype}")
+                    self._connection.commit()
+                except Exception:
+                    return None
+            try:
+                from flask import current_app
+                current_app.logger.warning(f"SQLite AUTOREPAIR: ALTER TABLE {table_guess} ADD COLUMN {col} {coltype}")
+            except Exception:
+                pass
+            # Retry el execute original ahora con la columna creada
+            return self._connection.execute(sql, params if params else ())
+        except Exception:
+            return None
+
+    def execute(self, sql, params=None):
+        try:
+            return self._connection.execute(sql, params if params else ())
+        except Exception as exc:
+            retry_cur = self._autorepair_and_retry_execute(sql, params, exc)
+            if retry_cur is not None:
+                return retry_cur
+            raise
+
+    def executemany(self, sql, seq_of_params):
+        try:
+            return self._connection.executemany(sql, seq_of_params)
+        except Exception as exc:
+            try:
+                col = _parse_sqlite_missing_column(exc)
+                if col:
+                    t = _guess_table_from_sql(sql)
+                    if t:
+                        coltype = "REAL" if _looks_like_double_column(col, t) else ("INTEGER" if _looks_like_integer_column(col, t) else "TEXT")
+                        try:
+                            add_column_if_missing(self._connection, t, col, coltype)
+                        except Exception:
+                            try:
+                                self._connection.execute(f"ALTER TABLE {t} ADD COLUMN {col} {coltype}")
+                                self._connection.commit()
+                            except Exception:
+                                pass
+                        return self._connection.executemany(sql, seq_of_params)
+            except Exception:
+                pass
+            raise
+
+    def commit(self):
+        try:
+            self._connection.commit()
+        except Exception:
+            pass
+
+    def close(self):
+        try:
+            self._connection.close()
+        except Exception:
+            pass
+
+
+def _parse_sqlite_missing_column(exc):
+    try:
+        msg = str(exc).lower()
+        import re
+        if "no such column" in msg:
+            m = re.search(r"no such column\s*:\s*([\w\.\"]+)", msg)
+            if m:
+                q = m.group(1).strip("\"'").split(".")
+                if len(q) == 2:
+                    return q[1]
+                if len(q) == 1:
+                    return q[0]
+    except Exception:
+        return None
+    return None
+
+
+def _guess_table_from_sql(sql):
+    try:
+        import re
+        normalized = (sql or "")[:2000].lower()
+        candidates = []
+        for m in re.finditer(r"\bfrom\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+            candidates.append(m.group(1))
+        for m in re.finditer(r"\bjoin\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+            candidates.append(m.group(1))
+        for m in re.finditer(r"\bupdate\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+            candidates.append(m.group(1))
+        for m in re.finditer(r"\binsert into\s+([a-zA-Z_][a-zA-Z0-9_]*)", normalized):
+            candidates.append(m.group(1))
+        skip = {"where", "select", "order", "group", "limit", "having", "on"}
+        for c in candidates:
+            if c and c not in skip:
+                return c
+    except Exception:
+        return None
+    return None
 
 
 def close_db(_error=None):
@@ -1280,6 +1535,7 @@ def init_db_postgres():
     ensure_badge_deliveries_columns_postgres(cursor)
     ensure_technician_orders_postgres(cursor)
     ensure_users_columns_postgres(cursor)
+    ensure_all_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
     connection.commit()
     connection.close()
@@ -2392,6 +2648,10 @@ def ensure_technicians_columns_postgres(cursor):
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS profile_photo_path TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS badge_share_token TEXT UNIQUE")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users (id)")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS phone TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS commune TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS team TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS region TEXT")
 
 
 def ensure_users_columns_postgres(cursor):
@@ -2447,9 +2707,67 @@ def ensure_audits_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_center_snapshot TEXT")
 
 
-def ensure_users_columns_postgres(cursor):
-    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS technician_id INTEGER")
-    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0")
+def ensure_all_columns_postgres(cursor):
+    """Super migracion idempotente. Agrega TODAS las columnas conocidas
+    via ALTER TABLE ... ADD COLUMN IF NOT EXISTS. Es seguro ejecutarla
+    multiples veces. Corrige la situacion donde la tabla existia desde
+    antes y CREATE TABLE IF NOT EXISTS no agrego columnas nuevas."""
+    # --- technicians ---
+    try: ensure_technicians_columns_postgres(cursor)
+    except Exception: pass
+    # --- users ---
+    try: ensure_users_columns_postgres(cursor)
+    except Exception: pass
+    # --- badge deliveries ---
+    try: ensure_badge_deliveries_columns_postgres(cursor)
+    except Exception: pass
+    # --- audits ---
+    try: ensure_audits_columns_postgres(cursor)
+    except Exception: pass
+    # --- audit_findings + events ---
+    try: ensure_audit_findings_columns_postgres(cursor)
+    except Exception: pass
+    # --- tnps ---
+    try: ensure_tnps_columns_postgres(cursor)
+    except Exception: pass
+    # --- qc ---
+    try: ensure_qc_columns_postgres(cursor)
+    except Exception: pass
+    # --- vehicles columnas de vencimiento que se agregaron en updates posteriores ---
+    try:
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS insurance_expiry TEXT")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS extinguisher_expiry TEXT")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS gnc_expiry TEXT")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS rto_expiry TEXT")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS botiquin_expiry TEXT")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS review_date TEXT")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS assigned_employee_code TEXT")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS odometer_km INTEGER")
+        cursor.execute("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS unit_number TEXT")
+    except Exception:
+        pass
+    # --- supervisors (phone/email) ---
+    try:
+        cursor.execute("ALTER TABLE supervisors ADD COLUMN IF NOT EXISTS phone TEXT")
+        cursor.execute("ALTER TABLE supervisors ADD COLUMN IF NOT EXISTS email TEXT")
+        cursor.execute("ALTER TABLE supervisors ADD COLUMN IF NOT EXISTS region TEXT")
+    except Exception:
+        pass
+    # --- mobile_units (ya son del create inicial, seguras) ---
+    try:
+        cursor.execute("ALTER TABLE mobile_units ADD COLUMN IF NOT EXISTS notes TEXT")
+    except Exception:
+        pass
+    # --- import_batches scope_json (redundante con create, safe) ---
+    try:
+        cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS scope_json TEXT")
+        cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS can_rollback INTEGER NOT NULL DEFAULT 0")
+        cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS rolled_back_at TIMESTAMPTZ")
+        cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS rolled_back_by_user_id INTEGER REFERENCES users (id)")
+        cursor.execute("ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS error_message TEXT")
+    except Exception:
+        pass
+    # --- technicians_phone_commune_team_region ya cubiertas en ensure_technicians_columns_postgres arriba
 
 
 def ensure_audit_findings_columns_postgres(cursor):
