@@ -1949,6 +1949,33 @@ def fetch_user_supervisor_scope_names(user_id):
     )
 
 
+def find_owner_user_id_by_supervisor_name(supervisor_name):
+    """Dado un nombre de supervisor (scope_name), devuelve el user_id del usuario
+    supervisor asignado en user_supervisor_scopes, o None si no hay match."""
+    normalized = normalize_supervisor_scope_name(supervisor_name)
+    if not normalized:
+        return None
+    placeholder = "%s" if is_postgres() else "?"
+    connection = get_db()
+    queries = [
+        f"SELECT user_id FROM user_supervisor_scopes WHERE supervisor_name = {placeholder} AND COALESCE(is_active, 1) = 1 ORDER BY id ASC LIMIT 1",
+        f"SELECT user_id FROM user_supervisor_scopes WHERE supervisor_name = {placeholder} ORDER BY id ASC LIMIT 1",
+    ]
+    for q in queries:
+        try:
+            row = connection.execute(q, (normalized,)).fetchone()
+        except Exception:
+            continue
+        if row:
+            user_id = row["user_id"] if isinstance(row, dict) else row[0]
+            if user_id is not None:
+                try:
+                    return int(user_id)
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+
 def replace_user_supervisor_scopes(user_id, scope_names):
     user_id = int(user_id)
     normalized_raw = []
