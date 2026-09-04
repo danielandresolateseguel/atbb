@@ -155,7 +155,7 @@
             <h1 style="margin:0;font-size:26px;line-height:1.2;word-break:break-word;color:#ffffff;font-weight:800;">
                 {% if current_technician_view %}Mis órdenes de trabajo{% elif target_technician %}Órdenes — {{ target_technician.name }} ({{ target_technician.employee_code }}){% else %}Buscador de Órdenes Técnicas{% endif %}
             </h1>
-            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">{% if current_technician_view %}Crea una orden por cada OT que recibas, adjuntá las 2 fotos obligatorias y el E-DOC PDF.{% else %}Por defecto: solo LO DEL DÍA (para comparar con la app madre). Lo archivado lo buscás por N° OT.{% endif %}</p>
+            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">{% if current_technician_view %}Crea una orden por cada OT que recibas, adjuntá las 2 fotos obligatorias y el E-DOC PDF.{% else %}Por defecto: solo LO DEL DÍA (para comparar con la LaborApp). Lo archivado lo buscás por N° OT.{% endif %}</p>
         </div>
         {% if current_technician_view %}
         <a class="button button-primary" href="{{ url_for('main.technician_orders_new') }}" style="padding:13px 18px;font-size:15px;border-radius:14px;">+ Nueva Orden</a>
@@ -192,7 +192,7 @@
         <div class="ot-stat-card" style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:14px;padding:16px 18px;">
             <div style="font-size:12px;font-weight:700;opacity:1;text-transform:uppercase;letter-spacing:.06em;">Completadas HOY</div>
             <div class="ot-stat-num" style="font-size:30px;font-weight:800;margin-top:6px;">{{ today_summary.total_completed or 0 }}</div>
-            <div style="font-size:12px;opacity:1;font-weight:600;">listas para cruzar con la app madre</div>
+            <div style="font-size:12px;opacity:1;font-weight:600;">listas para cruzar con la LaborApp</div>
         </div>
         <div class="ot-stat-card" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border-radius:14px;padding:16px 18px;">
             <div style="font-size:12px;font-weight:700;opacity:1;text-transform:uppercase;letter-spacing:.06em;">Incompletas HOY</div>
@@ -686,7 +686,7 @@
                 </div>
                 <div style="font-size:13px;color:#1e293b;margin-top:4px;font-weight:600;">
                     {% if today_only and not (q or ot_number) %}
-                    Cuando los técnicos carguen órdenes, aparecerán aquí agrupadas por técnico para que compares el número con la app madre.
+                    Cuando los técnicos carguen órdenes, aparecerán aquí agrupadas por técnico para que compares el número con la LaborApp.
                     {% else %}
                     {% if (q or ot_number) %}Probá limpiar la búsqueda o buscar por N° OT exacto.{% endif %}
                     {% endif %}
