@@ -9499,18 +9499,46 @@ def technician_orders(technician_id=None):
         page = max(1, int(request.args.get("page") or 1))
     except (TypeError, ValueError):
         page = 1
-    # show_today = 1 (default supervisor/admin view) ; 0 = mostrar todo (historial)
     try:
         show_today_param = int(request.args.get("day") or request.args.get("show_today") or 1)
     except (TypeError, ValueError):
         show_today_param = 1
     today_only_default = bool(show_today_param)
+    # Filtros avanzados
+    date_from = (request.args.get("date_from") or "").strip() or None
+    date_to = (request.args.get("date_to") or "").strip() or None
+    status_filter = (request.args.get("status") or "").strip() or None
+    # quick_preset: today, yesterday, last7, last30
+    quick_preset = (request.args.get("preset") or "").strip() or None
+    # Si el filtro de técnico viene por select del form (no por URL)
+    _tech_id_from_form = None
+    try:
+        _t = (request.args.get("technician_id_select") or "").strip()
+        if _t:
+            _tech_id_from_form = int(_t)
+    except (TypeError, ValueError):
+        _tech_id_from_form = None
+    if quick_preset:
+        from datetime import datetime as _dt, timedelta as _td
+        _today = _dt.utcnow().date()
+        if quick_preset == "today":
+            date_from = _today.strftime("%Y-%m-%d")
+            date_to = date_from
+        elif quick_preset == "yesterday":
+            _y = _today - _td(days=1)
+            date_from = _y.strftime("%Y-%m-%d")
+            date_to = date_from
+        elif quick_preset == "last7":
+            date_from = (_today - _td(days=6)).strftime("%Y-%m-%d")
+            date_to = _today.strftime("%Y-%m-%d")
+        elif quick_preset == "last30":
+            date_from = (_today - _td(days=29)).strftime("%Y-%m-%d")
+            date_to = _today.strftime("%Y-%m-%d")
     scope_names = None
     current_technician = None
     target_technician = None
     is_tech_view = False
     if is_technician():
-        # technician: ONLY own orders. Técnicos SÍ quieren ver todas sus órdenes (no solo hoy, para seguir OT pendientes).
         is_tech_view = True
         current_technician = current_technician_id()
         if technician_id is not None and technician_id != current_technician:
@@ -9522,13 +9550,15 @@ def technician_orders(technician_id=None):
             abort(403)
         if is_supervisor():
             scope_names = current_supervisor_scope_names() or []
+        # Prioridad: URL param > form select
+        if technician_id is None and _tech_id_from_form:
+            technician_id = _tech_id_from_form
         if technician_id is not None:
             if not can_act_on_technician(technician_id):
                 abort(403)
             target_technician = fetch_technician_by_id(technician_id)
-        # Supervisor/admin default today_only = True (solo lo del día; lo archivado se busca x OT).
         today_only = today_only_default
-    # ---- Resumen HOY (stats grandes arriba) ----
+    # ---- Resumen HOY ----
     today_summary = None
     try:
         today_summary = fetch_orders_today_summary(
@@ -9538,26 +9568,128 @@ def technician_orders(technician_id=None):
     except Exception:
         today_summary = {"total_orders": 0, "total_completed": 0, "total_incomplete": 0, "active_technicians": 0, "day": ""}
 
-    # ---- Listado GRUPAL por técnico (vista supervisor/admin hoy) ; Technician usa listado plano simple.
     grouped = None
     orders_flat = None
     total_pages = 0
     total = 0
+    # Lista de técnicos disponibles para el selector (solo admin/supervisor y en buscador global)
+    scoped_technicians = None
+    if not is_tech_view:
+        try:
+            all_techs = fetch_technicians() or []
+            if scope_names is not None:
+                sn_upper = set(s.strip().upper() for s in (scope_names or []) if s and s.strip())
+                if sn_upper:
+                    all_techs = [t for t in all_techs if (t.get("supervisor_name") or "").strip().upper() in sn_upper]
+            all_techs = [t for t in all_techs if t.get("id")]
+            all_techs.sort(key=lambda t: ((t.get("name") or "").lower()))
+            scoped_technicians = all_techs
+        except Exception:
+            scoped_technicians = []
+
+    technician_day_groups = None
+    technician_day_error = None
     if is_tech_view:
-        # Technician: listado plano (ordenado + paginado, sin agrupar, SIN filtro hoy a menos que él lo pida).
         result = list_technician_orders(
             technician_id=technician_id,
             q=q,
             ot_number=ot_number,
             page=page,
-            per_page=25,
+            per_page=200,
             supervisor_scope_names=scope_names,
         )
-        orders_flat = result.get("rows") or []
+        orders_flat_raw = list(result.get("rows") or [])
         total_pages = result.get("total_pages") or 0
         total = result.get("total") or 0
+        # Pre-calcular campos helpers en cada row (Jinja2 agrupará por date_key)
+        orders_flat = []
+        try:
+            from app.models import _pretty_date_label
+            for idx, o in enumerate(orders_flat_raw):
+                o_dict = {}
+                try:
+                    if isinstance(o, dict):
+                        o_dict = dict(o)
+                    else:
+                        try:
+                            o_dict = dict(o)
+                        except Exception:
+                            try:
+                                ks = list(o.keys())
+                            except Exception:
+                                ks = []
+                            for k in ks:
+                                try:
+                                    o_dict[k] = o[k]
+                                except Exception:
+                                    o_dict[k] = None
+                except Exception:
+                    o_dict = {}
+                # Garantizar llaves basicas nunca undefined en template
+                for req in ("id","ot_number","client_name","client_phone","client_address",
+                            "photo_1_path","photo_2_path","edoc_pdf_path","created_at"):
+                    if req not in o_dict:
+                        o_dict[req] = None
+                p1 = (str(o_dict.get("photo_1_path") or "").strip())
+                p2 = (str(o_dict.get("photo_2_path") or "").strip())
+                pdf = (str(o_dict.get("edoc_pdf_path") or "").strip())
+                o_dict["_is_complete"] = bool(p1 and p2 and pdf)
+                created = str(o_dict.get("created_at") or "")
+                dk = created[:10]
+                if not dk:
+                    dk = "Sin fecha"
+                    dl = "Sin fecha"
+                else:
+                    try:
+                        dl = _pretty_date_label(dk)
+                    except Exception:
+                        dl = dk
+                o_dict["date_key"] = dk
+                o_dict["date_label"] = dl
+                o_dict["_idx"] = idx
+                orders_flat.append(o_dict)
+        except Exception as _e:
+            orders_flat = []
+            technician_day_error = f"{type(_e).__name__}: {str(_e)}"
+            # Fallback: convertir rows y CALCULAR LOS MISMOS CAMPOS (no dejar incompleto al Jinja)
+            try:
+                from app.models import _pretty_date_label
+            except Exception:
+                _pretty_date_label = None
+            try:
+                for o in orders_flat_raw:
+                    nd = {}
+                    try:
+                        if isinstance(o, dict): nd = dict(o)
+                        else:
+                            try: nd = dict(o)
+                            except Exception:
+                                for k in list(o.keys()):
+                                    try: nd[k] = o[k]
+                                    except Exception: nd[k] = None
+                    except Exception:
+                        nd = {}
+                    for req in ("id","ot_number","client_name","client_phone","client_address",
+                                "photo_1_path","photo_2_path","edoc_pdf_path","created_at"):
+                        if req not in nd: nd[req] = None
+                    p1 = (str(nd.get("photo_1_path") or "").strip())
+                    p2 = (str(nd.get("photo_2_path") or "").strip())
+                    pdf = (str(nd.get("edoc_pdf_path") or "").strip())
+                    nd["_is_complete"] = bool(p1 and p2 and pdf)
+                    created = str(nd.get("created_at") or "")
+                    dk = created[:10]
+                    if not dk: dk = "Sin fecha"
+                    dl = dk
+                    if dk != "Sin fecha" and _pretty_date_label:
+                        try: dl = _pretty_date_label(dk)
+                        except Exception: dl = dk
+                    nd["date_key"] = dk
+                    nd["date_label"] = dl
+                    orders_flat.append(nd)
+            except Exception as _e2:
+                if not technician_day_error:
+                    technician_day_error = f"{type(_e2).__name__}: {str(_e2)}"
     else:
-        # Supervisor/Admin: VISTA GRUPAL (agrupado x técnico, chips completas/incompletas)
         grouped = fetch_orders_grouped_by_technician(
             today_only=today_only,
             q=q,
@@ -9565,12 +9697,14 @@ def technician_orders(technician_id=None):
             supervisor_scope_names=scope_names,
             technician_id=technician_id,
             page=page,
-            per_page=100,
+            per_page=500,
+            date_from=date_from,
+            date_to=date_to,
+            status_filter=status_filter,
         )
         today_only_active = bool(grouped.get("today_only_active"))
-        # Detectar caso: originalmente estaba "Solo hoy" activado, pero la busqueda OT archivada lo DESACTIVO automaticamente
         smart_archive_search = bool(today_only and not today_only_active and (q or ot_number))
-        today_only = today_only_active  # actualizo despues de force disable
+        today_only = today_only_active
 
     orders_stats = None
     if technician_id is not None:
@@ -9580,24 +9714,29 @@ def technician_orders(technician_id=None):
             orders_stats = {"total": 0, "with_photos": 0, "with_edoc": 0, "last_30d": 0}
     return render_template(
         "technician_orders_list.html",
-        # Variables plano (tecnico / legacy templates)
         orders_result={"rows": orders_flat or [], "total_pages": total_pages, "page": page, "total": total},
         orders=orders_flat or [],
         total_pages=total_pages,
         total=total,
         page=page,
-        # Variables grupales (supervisor)
         grouped=grouped,
         today_summary=today_summary,
         today_only=bool(today_only),
         smart_archive_search=bool(smart_archive_search if not is_tech_view else False),
         is_tech_view=bool(is_tech_view),
-        # Filtros
         q=q,
         ot_number=ot_number,
         target_technician=target_technician,
         orders_stats=orders_stats,
         current_technician_view=bool(current_technician),
+        scoped_technicians=scoped_technicians,
+        filter_technician_id=technician_id,
+        date_from=date_from,
+        date_to=date_to,
+        status_filter=status_filter,
+        quick_preset=quick_preset,
+        technician_day_groups=technician_day_groups,
+        technician_day_error=technician_day_error,
     )
 
 

@@ -7,3 +7,4 @@ audit_app.db
 app/static/uploads/
 .dbg/
 debug-*.md
+_external/

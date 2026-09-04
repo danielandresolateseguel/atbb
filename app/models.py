@@ -14572,30 +14572,56 @@ def fetch_orders_today_summary(supervisor_scope_names=None, technician_id=None):
     }
 
 
-def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, supervisor_scope_names=None, technician_id=None, page=1, per_page=50):
+def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, supervisor_scope_names=None, technician_id=None, page=1, per_page=50, date_from=None, date_to=None, status_filter=None):
     """
     Devuelve una LISTA GRUPAL:
-      [ { technician_id, name, employee_code, total_today, completed_today, incomplete_today, rows:[...] }, ... ]
-    Ideal para la vista supervisor "al día" (listado principal por defecto).
+      [ { technician_id, name, employee_code, total_orders, completed_orders, incomplete_orders,
+          day_groups: [ { date_str, date_label, total_orders, completed_orders, incomplete_orders, rows: [...] } ],
+          rows: [...] (legacy, todos los rows del técnico para vistas antiguas)
+        }, ... ]
 
     Comportamiento filtro HOY por defecto (today_only=True):
       - Solo ordenes donde DATE(created_at) = HOY
       - PERO si hay busqueda por ot_number EXACTO (o LIKE match solo a OTs de dias anteriores),
         entonces se IGNORA el filtro today_only (el supervisor buscaba una OT archivada).
 
-    Si hay busqueda exacta OT y OT viene de dias anterior: ignoramos today_only (devuelve esa orden aunque sea vieja).
+    Filtros avanzados adicionales:
+      - date_from (YYYY-MM-DD): fecha mínima
+      - date_to   (YYYY-MM-DD): fecha máxima
+      - status_filter: "all" | "complete" | "incomplete"
     """
     page = max(1, int(page or 1))
-    per_page = min(500, max(1, int(per_page or 50)))
+    per_page = min(1000, max(1, int(per_page or 50)))
     ph = "%s" if is_postgres() else "?"
     date_today_str = datetime.utcnow().strftime("%Y-%m-%d")
 
+    def _norm_date(s):
+        if not s:
+            return None
+        s = str(s).strip()
+        if len(s) >= 10:
+            s = s[:10]
+        import re
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+            return s
+        return None
+
+    date_from_norm = _norm_date(date_from)
+    date_to_norm = _norm_date(date_to)
+    status_norm = None
+    if status_filter and str(status_filter).lower() in ("complete", "incomplete"):
+        status_norm = str(status_filter).lower()
+
     # Primero determinamos si user BUSCA ALGO FUERA DE HOY → en ese caso hay que DESACTIVAR today_only
-    # Para eso contamos cuantas OTs coinciden CON HOY y SIN HOY
     force_disable_today = False
     ot_norm = str(ot_number or "").strip()
     q_norm = str(q or "").strip()
-    if (ot_norm or q_norm) and today_only:
+    # Si hay filtros de fecha explícitos → forzamos desactivar today_only
+    if date_from_norm or date_to_norm:
+        force_disable_today = True
+    if status_norm:
+        force_disable_today = True or force_disable_today
+    if (ot_norm or q_norm) and today_only and not force_disable_today:
         q_search = f"%{(ot_norm or q_norm).upper()}%"
         search_sql = (
             f"FROM technician_orders WHERE ("
@@ -14614,7 +14640,6 @@ def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, 
         row_all = get_db().execute(f"SELECT COUNT(*) AS c {search_sql}", params_search_in).fetchone()
         cnt_all = int(row_all["c"] or 0) if row_all else 0
         if cnt_in == 0 and cnt_all > 0:
-            # Solo hay coincidencias FUERA de hoy → desactivar filtro hoy para que el supervisor lo vea
             force_disable_today = True
 
     effective_today_only = bool(today_only) and not force_disable_today
@@ -14625,6 +14650,13 @@ def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, 
     if effective_today_only:
         filters.append(f"DATE(created_at) = DATE({ph})")
         params.append(date_today_str)
+    else:
+        if date_from_norm:
+            filters.append(f"DATE(created_at) >= DATE({ph})")
+            params.append(date_from_norm)
+        if date_to_norm:
+            filters.append(f"DATE(created_at) <= DATE({ph})")
+            params.append(date_to_norm)
     if technician_id is not None:
         try:
             filters.append(f"technician_id = {ph}")
@@ -14653,14 +14685,28 @@ def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, 
     rows_sql = f"""
         SELECT {_order_cols_sqlite()},
                (SELECT t.name FROM technicians t WHERE t.id = technician_orders.technician_id) AS technician_name,
-               (SELECT t.employee_code FROM technicians t WHERE t.id = technician_orders.technician_id) AS technician_employee_code
+               (SELECT t.employee_code FROM technicians t WHERE t.id = technician_orders.technician_id) AS technician_employee_code,
+               DATE(created_at) AS date_group_key
         {sql_base}
         ORDER BY DATE(created_at) DESC, created_at DESC
         LIMIT {ph}
     """
     rows_params = list(params_count) + [per_page]
     rows = get_db().execute(rows_sql, rows_params).fetchall()
-    orders = [_row_to_order(r) for r in (rows or [])]
+    orders_raw = [dict(r) for r in (rows or [])]
+
+    # Pre-computar is_complete y filtrar por status_filter (post-fetch para SQLite/PG compat)
+    orders = []
+    for r in orders_raw:
+        o = _row_to_order(r)
+        o["date_group_key"] = r.get("date_group_key") or (str(o.get("created_at") or "")[:10])
+        is_complete = bool(o.get("photo_1_path") and o.get("photo_2_path") and o.get("edoc_pdf_path"))
+        o["_is_complete"] = is_complete
+        if status_norm == "complete" and not is_complete:
+            continue
+        if status_norm == "incomplete" and is_complete:
+            continue
+        orders.append(o)
 
     # Agrupar por TECHNICIAN_ID
     groups = {}
@@ -14675,19 +14721,44 @@ def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, 
                 "technician_name": o.get("technician_name") or "",
                 "technician_employee_code": o.get("technician_employee_code") or "",
                 "rows": [],
+                "day_groups": {},
                 "total_orders": 0,
                 "completed_orders": 0,
                 "incomplete_orders": 0,
             }
             groups[tid] = g
-        is_complete = bool(o.get("photo_1_path") and o.get("photo_2_path") and o.get("edoc_pdf_path"))
-        o["_is_complete"] = is_complete
+        is_complete = o["_is_complete"]
         g["rows"].append(o)
         g["total_orders"] += 1
         if is_complete:
             g["completed_orders"] += 1
         else:
             g["incomplete_orders"] += 1
+        # Sub-grupo por DÍA dentro del técnico
+        dk = str(o.get("date_group_key") or "")[:10] or "Sin fecha"
+        dg = g["day_groups"].get(dk)
+        if not dg:
+            dg = {
+                "date_str": dk,
+                "date_label": _pretty_date_label(dk),
+                "total_orders": 0,
+                "completed_orders": 0,
+                "incomplete_orders": 0,
+                "rows": [],
+            }
+            g["day_groups"][dk] = dg
+        dg["rows"].append(o)
+        dg["total_orders"] += 1
+        if is_complete:
+            dg["completed_orders"] += 1
+        else:
+            dg["incomplete_orders"] += 1
+
+    # Convert day_groups dict → list ordered by date desc
+    for g in groups.values():
+        day_list = sorted(g["day_groups"].values(), key=lambda d: d["date_str"], reverse=True)
+        g["day_groups"] = day_list
+
     # Convert dict groups to list (preserve creation order: order by most orders desc then name alpha)
     group_list = sorted(
         groups.values(),
@@ -14704,7 +14775,7 @@ def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, 
         summary_completed += g["completed_orders"]
 
     return {
-        "today_only_active": effective_today_only,  # True si mostramos solo hoy
+        "today_only_active": effective_today_only,
         "day": date_today_str,
         "groups": group_list,
         "total_orders": summary_total,
@@ -14713,7 +14784,35 @@ def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, 
         "active_technicians": len(group_list),
         "total_rows_db": total_rows_all,
         "technician_id_filter": technician_id,
+        "filters_applied": {
+            "date_from": date_from_norm,
+            "date_to": date_to_norm,
+            "status": status_norm,
+        },
     }
+
+
+def _pretty_date_label(date_str):
+    """Convierte YYYY-MM-DD a una etiqueta legible tipo 'Hoy', 'Ayer', 'Lun 02 Sep'."""
+    sep = "-"
+    if not date_str or len(date_str) < 10:
+        return date_str or "Sin fecha"
+    try:
+        from datetime import datetime as _dt
+        d = _dt.strptime(date_str[:10], "%Y-%m-%d").date()
+        today = datetime.utcnow().date()
+        delta = (today - d).days
+        if delta == 0:
+            return f"Hoy {sep} {date_str}"
+        if delta == 1:
+            return f"Ayer {sep} {date_str}"
+        es_days = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        es_months = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+        wd = es_days[d.weekday()]
+        mn = es_months[d.month - 1]
+        return f"{wd} {d.day:02d} {mn} {sep} {date_str}"
+    except Exception:
+        return date_str
 
 
 def auto_link_client_confirmation_to_order(technician_id, badge_delivery_id, window_hours=72):

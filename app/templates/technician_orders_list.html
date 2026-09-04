@@ -27,6 +27,12 @@
             grid-template-columns: 1fr !important;
             gap: 6px !important;
         }
+        .ot-adv-grid {
+            grid-template-columns: 1fr !important;
+        }
+        .ot-preset-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+        }
     }
     @media (max-width: 420px) {
         .ot-stats-grid {
@@ -54,7 +60,92 @@
         opacity: 1 !important;
         font-weight: 500 !important;
     }
+    .ot-day-group {
+        border-top: 2px solid #e2e8f0;
+        background: #fbfdff;
+    }
+    .ot-day-group-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 9px 16px;
+        cursor: pointer;
+        user-select: none;
+        background: linear-gradient(135deg,#f0f9ff,#eff6ff);
+        border-bottom: 1px solid #dbeafe;
+    }
+    .ot-day-group-header:hover {
+        background: linear-gradient(135deg,#e0f2fe,#dbeafe);
+    }
+    .ot-day-chevron {
+        transition: transform 0.2s ease;
+        display: inline-block;
+    }
+    .ot-day-group.collapsed .ot-day-chevron {
+        transform: rotate(-90deg);
+    }
+    .ot-day-group.collapsed .ot-day-rows {
+        display: none;
+    }
+    .ot-adv-panel {
+        border-top: 1px dashed #cbd5e1;
+        margin-top: 6px;
+        padding-top: 14px;
+    }
+    .ot-preset-btn {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        font-weight: 700;
+        color: #0f172a;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .ot-preset-btn:hover {
+        background: #f1f5f9;
+        border-color: #94a3b8;
+    }
+    .ot-preset-btn.active {
+        background: linear-gradient(135deg,#1d4ed8,#1e40af);
+        color: #fff;
+        border-color: #1e40af;
+    }
 </style>
+<script>
+    function toggleAdvanced() {
+        var panel = document.getElementById('advFiltersPanel');
+        btn = document.getElementById('btnToggleAdv');
+        if (!panel) return;
+        if (panel.style.display === 'none') {
+            panel.style.display = '';
+            if (btn) btn.innerHTML = '▲ Ocultar filtros avanzados';
+        } else {
+            panel.style.display = 'none';
+            if (btn) btn.innerHTML = '▼ Filtros avanzados';
+        }
+    }
+    function toggleDayGroup(btn) {
+        var wrap = btn.closest('.ot-day-group');
+        if (wrap) {
+            wrap.classList.toggle('collapsed');
+        }
+    }
+    function applyPreset(preset) {
+        var f = document.getElementById('formOrdersSearch');
+        if (!f) return;
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'preset'; inp.value = preset;
+        f.appendChild(inp);
+        f.submit();
+    }
+    function clearAll() {
+        window.location.href = "{{ url_for('main.technician_orders') }}";
+    }
+</script>
 <div style="max-width:1100px;margin:24px auto;padding:0 14px;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;">
         <div>
@@ -116,7 +207,7 @@
     </div>
     {% endif %}
 
-    <form method="GET" action="{{ url_for('main.technician_orders') }}" class="ot-search-grid" style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr auto auto;gap:12px;margin-bottom:16px;align-items:end;">
+    <form method="GET" action="{{ url_for('main.technician_orders') }}" id="formOrdersSearch" class="ot-search-grid" style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr auto auto;gap:12px;margin-bottom:16px;align-items:end;">
         <div>
             <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Buscar (nombre / dirección / OT)</label>
             <input type="search" name="q" value="{{ q or '' }}" placeholder="Ej: Jose Hernandez 1485" class="text-input ot-contrast-input" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
@@ -140,76 +231,277 @@
             <button type="submit" class="button button-secondary" style="padding:11px 16px;">🔎 Buscar</button>
             <a class="button button-secondary" style="padding:11px 16px;background:#f8fafc;" href="{{ url_for('main.technician_orders') }}">Limpiar</a>
         </div>
-    </form>
 
-    {# ========== TECHNICIAN VIEW (PLANA): Mis órdenes, sin agrupar ========== #}
-    {% if is_tech_view %}
-        {% if orders %}
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
-            <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;">
-                    <thead>
-                        <tr style="background:#f8fafc;">
-                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">N° OT</th>
-                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Cliente / Obra</th>
-                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Fecha</th>
-                            <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Estado</th>
-                            <th style="text-align:right;padding:11px 14px;"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for o in orders %}
-                        {% set has_p1 = (o.photo_1_path or '')|trim != '' %}
-                        {% set has_p2 = (o.photo_2_path or '')|trim != '' %}
-                        {% set has_pdf = (o.edoc_pdf_path or '')|trim != '' %}
-                        {% set complete = has_p1 and has_p2 and has_pdf %}
-                        <tr style="border-top:1px solid #f1f5f9;">
-                            <td style="padding:12px 14px;vertical-align:top;">
-                                <div style="font-weight:700;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;">{{ o.ot_number }}</div>
-                                {% if o.client_phone %}
-                                <div style="font-size:12px;color:#0f172a;margin-top:2px;font-weight:700;">📞 {{ o.client_phone }}</div>
-                                {% endif %}
-                            </td>
-                            <td style="padding:12px 14px;vertical-align:top;">
-                                <div style="font-weight:700;color:#0f172a;">{{ o.client_name or '—' }}</div>
-                                {% if o.client_address %}
-                                <div style="font-size:13px;color:#0f172a;margin-top:2px;font-weight:600;">📍 {{ o.client_address }}</div>
-                                {% endif %}
-                            </td>
-                            <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:700;">{{ o.created_at|ar_dt }}</td>
-                            <td style="padding:12px 14px;vertical-align:top;">
-                                {% if complete %}
-                                <span class="chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;font-weight:700;">✓ Completa</span>
-                                {% else %}
-                                <span class="chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;font-weight:700;">⏳ Incompleta</span>
-                                <div style="font-size:12px;color:#0f172a;margin-top:4px;font-weight:700;">
-                                    {% if not has_p1 %}📸 Falta foto 1. {% endif %}
-                                    {% if not has_p2 %}📸 Falta foto 2. {% endif %}
-                                    {% if not has_pdf %}📄 Falta E-DOC.{% endif %}
-                                </div>
-                                {% endif %}
-                            </td>
-                            <td style="padding:12px 14px;text-align:right;vertical-align:top;">
-                                <a class="button button-secondary" style="padding:7px 12px;font-size:14px;" href="{{ url_for('main.technician_order_detail', order_id=o.id) }}">Abrir →</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        {% if not is_tech_view %}
+        <div style="grid-column: 1 / -1;">
+            <button type="button" id="btnToggleAdv" onclick="toggleAdvanced()" class="button button-secondary" style="width:100%;padding:9px 14px;background:#f8fafc;color:#1e293b;border-color:#cbd5e1;font-weight:700;">
+                {% if date_from or date_to or status_filter or (filter_technician_id and not target_technician) %}▲ Ocultar filtros avanzados{% else %}▼ Filtros avanzados{% endif %}
+            </button>
+            <div id="advFiltersPanel" class="ot-adv-panel" style="{% if not (date_from or date_to or status_filter or (filter_technician_id and not target_technician)) %}display:none;{% endif %}">
+                <div class="ot-adv-grid" style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px;align-items:end;">
+                    {% if scoped_technicians is defined and scoped_technicians and not target_technician %}
+                    <div>
+                        <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Técnico</label>
+                        <select name="technician_id_select" onchange="document.getElementById('formOrdersSearch').submit();" class="text-input ot-contrast-input" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:600;background:#fff;">
+                            <option value="">Todos los técnicos ({{ scoped_technicians|length }})</option>
+                            {% for t in scoped_technicians %}
+                            <option value="{{ t.id }}" {% if filter_technician_id and filter_technician_id|int == t.id %}selected{% endif %}>
+                                {{ t.name or 'Sin nombre' }}{% if t.employee_code %} · Leg. {{ t.employee_code|string|replace('.0','') }}{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Estado</label>
+                        <select name="status" class="text-input ot-contrast-input" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:600;background:#fff;">
+                            <option value="">Todos los estados</option>
+                            <option value="complete" {% if status_filter == 'complete' %}selected{% endif %}>✓ Completas (fotos + E-DOC)</option>
+                            <option value="incomplete" {% if status_filter == 'incomplete' %}selected{% endif %}>⏳ Pendientes (faltan datos)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Fecha desde</label>
+                        <input type="date" name="date_from" value="{{ date_from or '' }}" class="text-input ot-contrast-input" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:600;">
+                    </div>
+                    <div>
+                        <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Fecha hasta</label>
+                        <input type="date" name="date_to" value="{{ date_to or '' }}" class="text-input ot-contrast-input" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:600;">
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <div class="ot-preset-grid" style="display:grid;grid-template-columns:repeat(4, auto);gap:8px;">
+                        <button type="button" class="ot-preset-btn {% if quick_preset == 'today' %}active{% endif %}" onclick="applyPreset('today')">Hoy</button>
+                        <button type="button" class="ot-preset-btn {% if quick_preset == 'yesterday' %}active{% endif %}" onclick="applyPreset('yesterday')">Ayer</button>
+                        <button type="button" class="ot-preset-btn {% if quick_preset == 'last7' %}active{% endif %}" onclick="applyPreset('last7')">Últimos 7 días</button>
+                        <button type="button" class="ot-preset-btn {% if quick_preset == 'last30' %}active{% endif %}" onclick="applyPreset('last30')">Últimos 30 días</button>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button type="submit" class="button button-secondary" style="padding:9px 16px;background:linear-gradient(135deg,#1d4ed8,#1e40af);color:#fff;border-color:#1e40af;font-weight:700;">✓ Aplicar filtros</button>
+                        <button type="button" class="button button-secondary" style="padding:9px 16px;background:#f8fafc;color:#1e293b;border-color:#cbd5e1;font-weight:700;" onclick="clearAll()">↺ Resetear todo</button>
+                    </div>
+                </div>
+                {% if date_from or date_to or status_filter %}
+                <div style="margin-top:12px;padding:9px 14px;background:#fef3c7;border:1px solid #fde68a;border-radius:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-weight:800;color:#92400e;font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Filtros activos:</span>
+                    {% if date_from %}<span style="background:#fff;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#92400e;border:1px solid #fcd34d;">Desde: {{ date_from }}</span>{% endif %}
+                    {% if date_to %}<span style="background:#fff;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#92400e;border:1px solid #fcd34d;">Hasta: {{ date_to }}</span>{% endif %}
+                    {% if status_filter %}<span style="background:#fff;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;color:#92400e;border:1px solid #fcd34d;">Estado: {{ 'Completas' if status_filter == 'complete' else 'Pendientes' }}</span>{% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
-
-        {% if total_pages and total_pages > 1 %}
-        <div style="display:flex;gap:10px;justify-content:center;margin:20px 0;align-items:center;flex-wrap:wrap;">
-            {% if page > 1 %}
-            <a class="button button-secondary" href="{{ url_for('main.technician_orders', page=page-1, q=q, ot=ot_number) }}">← Pág. {{ page - 1 }}</a>
-            {% endif %}
-            <span style="font-size:14px;color:#1e293b;font-weight:600;">Página <b>{{ page }}</b> de {{ total_pages }} · {{ total }} órdenes</span>
-            {% if page < total_pages %}
-            <a class="button button-secondary" href="{{ url_for('main.technician_orders', page=page+1, q=q, ot=ot_number) }}">Pág. {{ page + 1 }} →</a>
-            {% endif %}
-        </div>
         {% endif %}
+    </form>
+
+    {# ========== TECHNICIAN VIEW: AGRUPADO POR DÍA (colapsable) via Jinja2 groupby (no depende de runtime Python) ========== #}
+    {% if is_tech_view %}
+
+        {% if orders %}
+            {# ===== Banner debug (confirmación visual) ===== #}
+            <div style="background:#fff;border:1px solid #bfdbfe;border-radius:12px;padding:10px 14px;margin-bottom:12px;">
+                <div style="font-size:12px;color:#1e3a8a;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-bottom:4px;">
+                    Diagnóstico (solo visible por el técnico, no afecta producción)
+                </div>
+                {% if technician_day_error %}
+                <div style="color:#991b1b;font-weight:700;">❌ Pre-procesamiento: <code style="background:#fee2e2;padding:2px 6px;border-radius:6px;">{{ technician_day_error }}</code></div>
+                {% else %}
+                <div style="color:#15803d;font-weight:700;">
+                    ✔ Rows OK: {{ orders|length }} órdenes · Primer row date_key = <code>{{ orders[0].date_key if orders else '—' }}</code> ·
+                    Primer row date_label = <code>{{ orders[0].date_label if orders else '—' }}</code>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ===== GROUPBY JINJA2: primero "normalizamos" todas las rows para asegurar date_key y date_label existan ===== #}
+            {# Esto evita el UndefinedError si alguna row se escapa del pre-procesamiento Python ===== #}
+            {% set norm_ns = namespace(safe_rows=[], total_ok=0, total_missing=0) %}
+            {% for _o in orders %}
+                {# ==== fecha date_key ==== #}
+                {% set _dk = None %}
+                {% if _o is mapping and 'date_key' in _o and _o['date_key'] is not none %}
+                    {% set _dk_s = _o['date_key']|string|trim %}
+                    {% if _dk_s != '' %} {% set _dk = _dk_s %} {% endif %}
+                {% endif %}
+                {% if _dk is none %}
+                    {% set _cr = (_o['created_at'] if (_o is mapping and 'created_at' in _o) else None) %}
+                    {% if _cr is not none %}
+                        {% set _cr_s = _cr|string %}
+                        {% set _dk = _cr_s[:10] if (_cr_s and _cr_s|length >= 10) else 'Sin fecha' %}
+                        {% if not _dk or _dk == '' %} {% set _dk = 'Sin fecha' %} {% endif %}
+                    {% endif %}
+                {% endif %}
+                {% if _dk is none or _dk == '' %} {% set _dk = 'Sin fecha' %} {% endif %}
+
+                {# ==== fecha date_label ==== #}
+                {% set _dl = None %}
+                {% if _o is mapping and 'date_label' in _o and _o['date_label'] is not none %}
+                    {% set _dl_s = _o['date_label']|string|trim %}
+                    {% if _dl_s != '' %} {% set _dl = _dl_s %} {% endif %}
+                {% endif %}
+                {% if _dl is none or _dl == '' %} {% set _dl = _dk %} {% endif %}
+
+                {# ==== estado _is_complete ==== #}
+                {% set _ic = None %}
+                {# PRIORIDAD 1: usar el valor que calculó Python si existe (ya está bien calculado) #}
+                {% if _o is mapping and '_is_complete' in _o and _o['_is_complete'] is defined %}
+                    {% set _test = _o['_is_complete'] %}
+                    {% if _test == True or _test == False %}
+                        {% set _ic = _test %}
+                    {% elif _test == 1 or _test == 0 %}
+                        {% set _ic = bool(_test) %}
+                    {% endif %}
+                {% endif %}
+                {# PRIORIDAD 2: recalcular en Jinja PERO sin el None->"None" bug #}
+                {% if _ic is none %}
+                    {% set _p1raw = (_o['photo_1_path'] if (_o is mapping and 'photo_1_path' in _o) else None) %}
+                    {% set _p2raw = (_o['photo_2_path'] if (_o is mapping and 'photo_2_path' in _o) else None) %}
+                    {% set _pdraw = (_o['edoc_pdf_path']  if (_o is mapping and 'edoc_pdf_path'  in _o) else None) %}
+                    {% set _hp1 = False %}{% set _hp2 = False %}{% set _hpdf = False %}
+                    {% if _p1raw is not none %}
+                        {% set _s = _p1raw|string|trim %}
+                        {% if _s != '' and _s != 'None' and _s != 'none' and _s != 'NULL' and _s != 'null' %}
+                            {% set _hp1 = True %}
+                        {% endif %}
+                    {% endif %}
+                    {% if _p2raw is not none %}
+                        {% set _s = _p2raw|string|trim %}
+                        {% if _s != '' and _s != 'None' and _s != 'none' and _s != 'NULL' and _s != 'null' %}
+                            {% set _hp2 = True %}
+                        {% endif %}
+                    {% endif %}
+                    {% if _pdraw is not none %}
+                        {% set _s = _pdraw|string|trim %}
+                        {% if _s != '' and _s != 'None' and _s != 'none' and _s != 'NULL' and _s != 'null' %}
+                            {% set _hpdf = True %}
+                        {% endif %}
+                    {% endif %}
+                    {% set _ic = (_hp1 and _hp2 and _hpdf) %}
+                {% endif %}
+
+                {# ==== merge al safe dict ==== #}
+                {% set _safe = dict(_o) if (_o is mapping) else {} %}
+                {% set _ = _safe.update({'date_key': _dk, 'date_label': _dl, '_is_complete': _ic}) %}
+                {% set _ = norm_ns.safe_rows.append(_safe) %}
+                {% if _dk != 'Sin fecha' %} {% set _ = norm_ns.total_ok.__add__(1) %} {% endif %}
+            {% endfor %}
+            {% set safe_orders = norm_ns.safe_rows %}
+
+            {# ===== Ahora groupby 100% seguro ===== #}
+            {% set grouped_days = safe_orders | groupby('date_key') %}
+            {# Ordenamos por date_key DESC con namespace #}
+            {% set sort_ns = namespace(unsorted=[], sorted=[]) %}
+            {% for gk, grows in grouped_days %}
+                {% set _label = '' %}
+                {% for _sample in grows[:1] %}
+                    {% set _label = _sample['date_label'] if (_sample is mapping and 'date_label' in _sample) else (gk|string) %}
+                {% endfor %}
+                {% if _label == '' %} {% set _label = gk|string %} {% endif %}
+                {% set _ = sort_ns.unsorted.append( (gk, grows, _label) ) %}
+            {% endfor %}
+            {% if sort_ns.unsorted %}
+                {% for item in sort_ns.unsorted | sort(attribute=0, reverse=True) %}
+                    {% set _ = sort_ns.sorted.append( item ) %}
+                {% endfor %}
+            {% endif %}
+            {% set final_day_groups = sort_ns.sorted %}
+
+            {% for item in final_day_groups %}
+            {% set grouper_key = item[0] %}
+            {% set day_rows = item[1] %}
+            {% set date_label = item[2] %}
+            {% set total_day = day_rows | length %}
+            {% set complete_day = day_rows | selectattr('_is_complete') | list | length %}
+            {% set incomplete_day = total_day - complete_day %}
+            <div class="ot-group-card ot-day-group" style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:14px;overflow:hidden;">
+                <div class="ot-day-group-header" onclick="toggleDayGroup(this)" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-bottom:1px solid #bfdbfe;cursor:pointer;">
+                    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                        <span class="ot-day-chevron" style="font-weight:800;color:#1e40af;">▼</span>
+                        <span style="font-weight:800;color:#0f172a;font-size:15px;">📅 {{ date_label }}</span>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <span style="background:#dbeafe;border:1px solid #93c5fd;color:#0f172a;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;">
+                            📋 {{ total_day }} órdenes
+                        </span>
+                        {% if complete_day %}
+                        <span style="background:#dcfce7;border:1px solid #86efac;color:#0f172a;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;">
+                            ✓ {{ complete_day }} completas
+                        </span>
+                        {% endif %}
+                        {% if incomplete_day %}
+                        <span style="background:#fef3c7;border:1px solid #fde047;color:#0f172a;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:800;">
+                            ⏳ {{ incomplete_day }} pendientes
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="ot-day-rows" style="background:#fff;">
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr style="background:#f8fafc;">
+                                    <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">N° OT</th>
+                                    <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Cliente / Obra</th>
+                                    <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Fecha</th>
+                                    <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Estado</th>
+                                    <th style="text-align:right;padding:11px 14px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for o in day_rows %}
+                                {% set has_p1 = (o.photo_1_path or '')|trim != '' %}
+                                {% set has_p2 = (o.photo_2_path or '')|trim != '' %}
+                                {% set has_pdf = (o.edoc_pdf_path or '')|trim != '' %}
+                                {% set complete = o._is_complete if (o._is_complete is defined) else (has_p1 and has_p2 and has_pdf) %}
+                                <tr style="border-top:1px solid #f1f5f9;">
+                                    <td style="padding:12px 14px;vertical-align:top;">
+                                        <div style="font-weight:700;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;">{{ o.ot_number }}</div>
+                                        {% if o.client_phone %}
+                                        <div style="font-size:12px;color:#0f172a;margin-top:2px;font-weight:700;">📞 {{ o.client_phone }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td style="padding:12px 14px;vertical-align:top;">
+                                        <div style="font-weight:700;color:#0f172a;">{{ o.client_name or '—' }}</div>
+                                        {% if o.client_address %}
+                                        <div style="font-size:13px;color:#0f172a;margin-top:2px;font-weight:600;">📍 {{ o.client_address }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:700;">{{ o.created_at|ar_dt }}</td>
+                                    <td style="padding:12px 14px;vertical-align:top;">
+                                        {% if complete %}
+                                        <span class="chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;font-weight:700;">✓ Completa</span>
+                                        {% else %}
+                                        <span class="chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;font-weight:700;">⏳ Incompleta</span>
+                                        <div style="font-size:12px;color:#0f172a;margin-top:4px;font-weight:700;">
+                                            {% if not has_p1 %}📸 Falta foto 1. {% endif %}
+                                            {% if not has_p2 %}📸 Falta foto 2. {% endif %}
+                                            {% if not has_pdf %}📄 Falta E-DOC.{% endif %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td style="padding:12px 14px;text-align:right;vertical-align:top;">
+                                        <a class="button button-secondary" style="padding:7px 12px;font-size:14px;" href="{{ url_for('main.technician_order_detail', order_id=o.id) }}">Abrir →</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if total_pages and total_pages > 1 %}
+            <div style="display:flex;gap:10px;justify-content:center;margin:20px 0;align-items:center;flex-wrap:wrap;">
+                {% if page > 1 %}
+                <a class="button button-secondary" href="{{ url_for('main.technician_orders', page=page-1, q=q, ot=ot_number) }}">← Pág. {{ page - 1 }}</a>
+                {% endif %}
+                <span style="font-size:14px;color:#1e293b;font-weight:600;">Página <b>{{ page }}</b> de {{ total_pages }} · {{ total }} órdenes</span>
+                {% if page < total_pages %}
+                <a class="button button-secondary" href="{{ url_for('main.technician_orders', page=page+1, q=q, ot=ot_number) }}">Pág. {{ page + 1 }} →</a>
+                {% endif %}
+            </div>
+            {% endif %}
 
         {% else %}
         <div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:18px;padding:40px 20px;text-align:center;">
@@ -244,6 +536,11 @@
                             <span style="font-weight:600;color:#1e293b;font-size:13px;">· Leg. {{ group.technician_employee_code|string|replace('.0', '') }}</span>
                             {% endif %}
                         </div>
+                        {% if group.day_groups and group.day_groups|length > 1 %}
+                        <div style="font-size:12px;color:#475569;margin-top:2px;font-weight:600;">
+                            📆 {{ group.day_groups|length }} días · desde {{ group.day_groups[-1].date_str }} hasta {{ group.day_groups[0].date_str }}
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="ot-group-chips-wrap" style="display:flex;gap:8px;flex-wrap:wrap;">
                         <span class="ot-group-chip chip chip-info" style="background:#dbeafe;color:#0f172a;border-color:#93c5fd;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:800;">
@@ -260,39 +557,104 @@
                     </div>
                 </div>
                 <div style="padding:2px 0;">
-                    {% for o in group.rows %}
-                    {% set complete = o._is_complete %}
-                    <div class="ot-row-grid" style="display:grid;grid-template-columns:1.4fr 1.2fr .9fr 1.1fr auto;gap:10px;align-items:start;padding:12px 16px;border-top:1px solid #f1f5f9;">
-                        <div style="min-width:0;">
-                            <div style="font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-weight:800;color:#0f172a;line-height:1.3;word-break:break-word;">{{ o.ot_number }}</div>
-                            {% if o.client_phone %}
-                            <div style="font-size:12px;color:#0f172a;margin-top:2px;font-weight:700;">📞 {{ o.client_phone }}</div>
-                            {% endif %}
-                        </div>
-                        <div style="min-width:0;">
-                            <div style="font-weight:700;color:#0f172a;font-size:14px;">{{ o.client_name or '—' }}</div>
-                            {% if o.client_address %}
-                            <div style="font-size:12px;color:#0f172a;margin-top:2px;line-height:1.3;word-break:break-word;font-weight:700;">📍 {{ o.client_address }}</div>
-                            {% endif %}
-                        </div>
-                        <div style="font-size:13px;color:#0f172a;white-space:nowrap;font-weight:800;">{{ o.created_at|ar_dt }}</div>
-                        <div style="min-width:0;">
-                            {% if complete %}
-                            <span class="chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;font-weight:700;">✓ Completa</span>
-                            {% else %}
-                            <span class="chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;font-weight:700;">⏳ Incompleta</span>
-                            <div style="font-size:11px;color:#0f172a;margin-top:3px;line-height:1.3;font-weight:800;">
-                                {% if not o.photo_1_path %}📸 1 · {% endif %}
-                                {% if not o.photo_2_path %}📸 2 · {% endif %}
-                                {% if not o.edoc_pdf_path %}📄 E-DOC{% endif %}
+                    {# Renderizar sub-grupos por día dentro del técnico #}
+                    {% set show_day_groups = (group.day_groups is defined) and group.day_groups and (group.day_groups|length > 1) %}
+                    {% if show_day_groups %}
+                        {% for dg in group.day_groups %}
+                        <div class="ot-day-group" style="{% if not loop.first %}border-top: 2px solid #e2e8f0;{% endif %}background:{% if loop.first %}#ffffff;{% else %}#fbfdff;{% endif %}">
+                            <div class="ot-day-group-header" onclick="toggleDayGroup(this)">
+                                <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                                    <span class="ot-day-chevron" style="font-weight:800;color:#1e40af;">▼</span>
+                                    <span style="font-weight:800;color:#1e293b;font-size:14px;">📅 {{ dg.date_label }}</span>
+                                </div>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                    <span style="background:#dbeafe;border:1px solid #93c5fd;color:#0f172a;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;">
+                                        📋 {{ dg.total_orders }}
+                                    </span>
+                                    <span style="background:#dcfce7;border:1px solid #86efac;color:#0f172a;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;">
+                                        ✓ {{ dg.completed_orders }}
+                                    </span>
+                                    {% if dg.incomplete_orders %}
+                                    <span style="background:#fef3c7;border:1px solid #fde047;color:#0f172a;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;">
+                                        ⏳ {{ dg.incomplete_orders }}
+                                    </span>
+                                    {% endif %}
+                                </div>
                             </div>
-                            {% endif %}
+                            <div class="ot-day-rows">
+                                {% for o in dg.rows %}
+                                {% set complete = o._is_complete %}
+                                <div class="ot-row-grid" style="display:grid;grid-template-columns:1.4fr 1.2fr .9fr 1.1fr auto;gap:10px;align-items:start;padding:12px 16px;border-top:1px solid #f1f5f9;">
+                                    <div style="min-width:0;">
+                                        <div style="font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-weight:800;color:#0f172a;line-height:1.3;word-break:break-word;">{{ o.ot_number }}</div>
+                                        {% if o.client_phone %}
+                                        <div style="font-size:12px;color:#0f172a;margin-top:2px;font-weight:700;">📞 {{ o.client_phone }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div style="min-width:0;">
+                                        <div style="font-weight:700;color:#0f172a;font-size:14px;">{{ o.client_name or '—' }}</div>
+                                        {% if o.client_address %}
+                                        <div style="font-size:12px;color:#0f172a;margin-top:2px;line-height:1.3;word-break:break-word;font-weight:700;">📍 {{ o.client_address }}</div>
+                                        {% endif %}
+                                    </div>
+                                    <div style="font-size:13px;color:#0f172a;white-space:nowrap;font-weight:800;">{{ o.created_at|ar_dt }}</div>
+                                    <div style="min-width:0;">
+                                        {% if complete %}
+                                        <span class="chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;font-weight:700;">✓ Completa</span>
+                                        {% else %}
+                                        <span class="chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;font-weight:700;">⏳ Incompleta</span>
+                                        <div style="font-size:11px;color:#0f172a;margin-top:3px;line-height:1.3;font-weight:800;">
+                                            {% if not o.photo_1_path %}📸 1 · {% endif %}
+                                            {% if not o.photo_2_path %}📸 2 · {% endif %}
+                                            {% if not o.edoc_pdf_path %}📄 E-DOC{% endif %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    <div>
+                                        <a class="button button-secondary" style="padding:7px 12px;font-size:14px;white-space:nowrap;" href="{{ url_for('main.technician_order_detail', order_id=o.id) }}">Abrir →</a>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
                         </div>
-                        <div>
-                            <a class="button button-secondary" style="padding:7px 12px;font-size:14px;white-space:nowrap;" href="{{ url_for('main.technician_order_detail', order_id=o.id) }}">Abrir →</a>
+                        {% endfor %}
+                    {% else %}
+                        {# Vista simplificada: solo 1 día (o sin day_groups) — renderizado plano del grupo #}
+                        {% set rows_to_show = group.day_groups[0].rows if (group.day_groups is defined and group.day_groups) else group.rows %}
+                        {% for o in rows_to_show %}
+                        {% set complete = o._is_complete %}
+                        <div class="ot-row-grid" style="display:grid;grid-template-columns:1.4fr 1.2fr .9fr 1.1fr auto;gap:10px;align-items:start;padding:12px 16px;border-top:1px solid #f1f5f9;">
+                            <div style="min-width:0;">
+                                <div style="font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-weight:800;color:#0f172a;line-height:1.3;word-break:break-word;">{{ o.ot_number }}</div>
+                                {% if o.client_phone %}
+                                <div style="font-size:12px;color:#0f172a;margin-top:2px;font-weight:700;">📞 {{ o.client_phone }}</div>
+                                {% endif %}
+                            </div>
+                            <div style="min-width:0;">
+                                <div style="font-weight:700;color:#0f172a;font-size:14px;">{{ o.client_name or '—' }}</div>
+                                {% if o.client_address %}
+                                <div style="font-size:12px;color:#0f172a;margin-top:2px;line-height:1.3;word-break:break-word;font-weight:700;">📍 {{ o.client_address }}</div>
+                                {% endif %}
+                            </div>
+                            <div style="font-size:13px;color:#0f172a;white-space:nowrap;font-weight:800;">{{ o.created_at|ar_dt }}</div>
+                            <div style="min-width:0;">
+                                {% if complete %}
+                                <span class="chip chip-success" style="background:#dcfce7;color:#0f172a;border-color:#86efac;font-weight:700;">✓ Completa</span>
+                                {% else %}
+                                <span class="chip chip-warning" style="background:#fef3c7;color:#0f172a;border-color:#fde047;font-weight:700;">⏳ Incompleta</span>
+                                <div style="font-size:11px;color:#0f172a;margin-top:3px;line-height:1.3;font-weight:800;">
+                                    {% if not o.photo_1_path %}📸 1 · {% endif %}
+                                    {% if not o.photo_2_path %}📸 2 · {% endif %}
+                                    {% if not o.edoc_pdf_path %}📄 E-DOC{% endif %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <a class="button button-secondary" style="padding:7px 12px;font-size:14px;white-space:nowrap;" href="{{ url_for('main.technician_order_detail', order_id=o.id) }}">Abrir →</a>
+                            </div>
                         </div>
-                    </div>
-                    {% endfor %}
+                        {% endfor %}
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
