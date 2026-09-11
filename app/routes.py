@@ -2109,6 +2109,12 @@ def admin_backfill_qc_critical_items():
     user = current_user()
     if not user or user.get("role") != "admin":
         abort(403)
+    if not validate_csrf_token(request.form.get("csrf_token")):
+        flash("Token de seguridad expirado o inválido. Volvé a intentar.", "error")
+        fallback = request.referrer
+        if not fallback:
+            fallback = url_for("main.qc_reports") if can_view_reports() else url_for("main.dashboard")
+        return redirect(fallback)
     try:
         result = backfill_qc_items_is_critical() or {}
         updated = int(result.get("updated_rows") or 0)

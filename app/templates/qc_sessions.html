@@ -44,7 +44,10 @@
             <select name="technician_id">
                 <option value="" {% if not filters.technician_id %}selected{% endif %}>Todos</option>
                 {% for technician in technicians %}
-                    <option value="{{ technician['id'] }}" {% if filters.technician_id|int == technician['id'] %}selected{% endif %}>
+                    {% set _tid = filters.technician_id %}
+                    {% set _sel = _tid is string and _tid.isdigit() %}
+                    {% set _tid_int = _tid|int if _sel else -1 %}
+                    <option value="{{ technician['id'] }}" {% if _tid_int == technician['id'] %}selected{% endif %}>
                         {{ technician["name"] }} ({{ technician["employee_code"] }})
                     </option>
                 {% endfor %}
