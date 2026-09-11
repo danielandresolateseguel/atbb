@@ -167,6 +167,7 @@ from app.models import (
     update_audit_record_scope,
     update_qc_record_scope,
     update_service_record_scope,
+    backfill_qc_items_is_critical,
     update_mobile_unit_technician,
     update_vehicle_extinguisher_expiry,
     update_vehicle_insurance_expiry,
@@ -2101,6 +2102,36 @@ def user_supervisor_scopes(user_id):
 
     scopes = fetch_user_supervisor_scopes(user_id)
     return render_template("user_scopes_form.html", user=user, scopes=scopes)
+
+
+@main.route("/admin/backfill/qc-critical-items", methods=["POST"])
+def admin_backfill_qc_critical_items():
+    user = current_user()
+    if not user or user.get("role") != "admin":
+        abort(403)
+    try:
+        result = backfill_qc_items_is_critical() or {}
+        updated = int(result.get("updated_rows") or 0)
+        set_crit = int(result.get("rows_set_critical") or 0)
+        cleared = int(result.get("rows_cleared_non_critical") or 0)
+        total = int(result.get("total_qc_items_section") or 0)
+        keys = ", ".join(result.get("critical_keys_now") or []) or "(ninguno)"
+        flash(
+            f"Backfill QC criticos OK: {updated} filas actualizadas "
+            f"(+{set_crit} a criticos, -{cleared} a no-criticos) de {total} items. "
+            f"Items criticos actuales: {keys}.",
+            "success",
+        )
+    except ValueError as exc:
+        flash(str(exc), "error")
+    except Exception as exc:
+        current_app.logger.exception("admin_backfill_qc_critical_items FAILED")
+        flash(f"Error al aplicar backfill QC criticos: {exc}", "error")
+
+    fallback = request.referrer
+    if not fallback:
+        fallback = url_for("main.qc_reports") if can_view_reports() else url_for("main.dashboard")
+    return redirect(fallback)
 
 
 CSV_IMPORT_TYPES = {

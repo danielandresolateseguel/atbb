@@ -10,6 +10,12 @@
         <p class="hero-copy">KPIs y tendencias del módulo QC.</p>
     </div>
     <div class="hero-actions">
+        {% if is_admin %}
+        <form method="post" action="{{ url_for('main.admin_backfill_qc_critical_items') }}" onsubmit="return confirm('Esto alinea el flag is_critical de TODOS los items QC historicos con la definicion actual del checklist. No cambia scores ni estados. Continuar?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="button button-secondary" type="submit">Actualizar items criticos historicos</button>
+        </form>
+        {% endif %}
         <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Volver a QC</a>
     </div>
 </section>

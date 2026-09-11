@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
 
-from app.checklist import TOOL_MATCH_RULES
+from app.checklist import TOOL_MATCH_RULES, QC_SECTION_KEY, CHECKLIST_SECTIONS
 
 try:
     from zoneinfo import ZoneInfo
@@ -8129,6 +8129,65 @@ def update_service_record_scope(service_session_id, record_scope):
     )
     connection.commit()
     return (cursor.rowcount or 0) > 0
+
+
+def _get_qc_critical_item_keys_from_checklist():
+    critical_keys = set()
+    for section in CHECKLIST_SECTIONS or []:
+        if (section or {}).get("key") != QC_SECTION_KEY:
+            continue
+        for item in section.get("items") or []:
+            if item and item.get("critical"):
+                k = (item.get("key") or "").strip()
+                if k:
+                    critical_keys.add(k)
+    return critical_keys
+
+
+def backfill_qc_items_is_critical():
+    critical_keys = _get_qc_critical_item_keys_from_checklist()
+    if not critical_keys:
+        return {"updated_rows": 0, "total_qc_items": 0, "critical_keys_now": []}
+
+    connection = get_db()
+    placeholders = ",".join("?" for _ in critical_keys)
+    sorted_keys = sorted(critical_keys)
+
+    counts = connection.execute(
+        "SELECT COUNT(*) AS total FROM qc_items WHERE section_key = ?",
+        (QC_SECTION_KEY,),
+    ).fetchone()
+    total_qc_items = (counts["total"] if isinstance(counts, dict) else counts[0]) if counts else 0
+
+    set_sql_critical = f"""
+        UPDATE qc_items
+        SET is_critical = 1
+        WHERE section_key = ?
+          AND item_key IN ({placeholders})
+          AND COALESCE(is_critical, 0) != 1
+    """
+    cursor_set = connection.execute(set_sql_critical, [QC_SECTION_KEY, *sorted_keys])
+    rows_set_critical = cursor_set.rowcount or 0
+
+    clear_sql = f"""
+        UPDATE qc_items
+        SET is_critical = 0
+        WHERE section_key = ?
+          AND item_key NOT IN ({placeholders})
+          AND COALESCE(is_critical, 0) != 0
+    """
+    cursor_clear = connection.execute(clear_sql, [QC_SECTION_KEY, *sorted_keys])
+    rows_cleared = cursor_clear.rowcount or 0
+
+    connection.commit()
+
+    return {
+        "updated_rows": int(rows_set_critical) + int(rows_cleared),
+        "rows_set_critical": int(rows_set_critical),
+        "rows_cleared_non_critical": int(rows_cleared),
+        "total_qc_items_section": int(total_qc_items),
+        "critical_keys_now": sorted_keys,
+    }
 
 
 def append_qc_visibility_filters(where_clauses, params, include_pruebas=False, table_alias="qc_sessions"):
