@@ -672,6 +672,16 @@ def can_view_service():
     return bool(user and (user.get("role") in {"admin", "gerente", "auditor", "supervisor"}))
 
 
+def can_view_qc():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "gerente", "auditor", "supervisor"}))
+
+
+def can_create_qc():
+    user = current_user()
+    return bool(user and (user.get("role") in {"admin", "auditor"}))
+
+
 def can_respond_findings():
     user = current_user()
     return bool(user and (user.get("role") in {"admin", "supervisor"}))
@@ -1828,6 +1838,8 @@ def inject_auth_context():
         "can_manage_supervisor_scopes": _safe(can_manage_supervisor_scopes),
         "can_view_findings": _safe(can_view_findings),
         "can_view_service": _safe(can_view_service),
+        "can_view_qc": _safe(can_view_qc),
+        "can_create_qc": _safe(can_create_qc),
         "can_respond_findings": _safe(can_respond_findings),
         "can_update_treatment_findings": _safe(can_update_treatment_findings),
         "can_validate_findings": _safe(can_validate_findings),
@@ -3152,7 +3164,7 @@ def delete_audit_evidence():
 @main.route("/api/qc/upload-evidence", methods=["POST"])
 def upload_qc_evidence():
     try:
-        if not can_create_audit():
+        if not can_create_qc():
             abort(403)
 
         item_key = (request.form.get("item_key") or "").strip()
@@ -3227,7 +3239,7 @@ def upload_qc_evidence():
 @main.route("/api/qc/upload-session-photo", methods=["POST"])
 def upload_qc_session_photo():
     try:
-        if not can_create_audit():
+        if not can_create_qc():
             abort(403)
 
         qc_date = (request.form.get("qc_date") or "").strip()
@@ -4447,7 +4459,7 @@ def service_report_pdf(service_session_id):
 
 @main.route("/qc")
 def qc_sessions():
-    if not current_user():
+    if not can_view_qc():
         return redirect(url_for("main.login"))
 
     user = current_user()
@@ -4512,7 +4524,7 @@ def qc_sessions():
 
 @main.route("/qc/new", methods=["GET", "POST"])
 def qc_new():
-    if not can_create_audit():
+    if not can_create_qc():
         abort(403)
 
     audit_context = None
