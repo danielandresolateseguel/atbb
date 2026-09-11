@@ -403,6 +403,131 @@
             return JSON.stringify(clean, null, 0);
         }
 
+        function getItemPhotoCounts(checklistItem) {
+            const itemKey = String(checklistItem && checklistItem.dataset ? checklistItem.dataset.itemKey || "" : "").trim();
+            if (!itemKey) {
+                return { uploaded: 0, pending: 0, total: 0 };
+            }
+            const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
+            const uploadedPaths = uploadedInput ? parseUploadedPaths(uploadedInput.value) : [];
+            const pending = collectPendingFilesFromItem(checklistItem);
+            return {
+                uploaded: uploadedPaths.length,
+                pending: pending.length,
+                total: uploadedPaths.length + pending.length,
+            };
+        }
+
+        function validateQcItem(checklistItem) {
+            const errors = [];
+            if (!checklistItem) {
+                return { errors: errors, status: "", hasPhoto: false, hasNotes: false };
+            }
+            const itemKey = String(checklistItem.dataset ? checklistItem.dataset.itemKey || "" : "").trim();
+            const itemLabel = String(checklistItem.dataset ? checklistItem.dataset.itemLabel || "" : "").trim() || itemKey;
+            let selectedStatus = "";
+            const statusRadios = checklistItem.querySelectorAll(`input[type="radio"][name="status__${CSS.escape(itemKey)}"]`);
+            statusRadios.forEach((r) => {
+                if (r.checked) {
+                    selectedStatus = String(r.value || "").trim().toLowerCase();
+                }
+            });
+            const notesInput = checklistItem.querySelector(`textarea[name="notes__${CSS.escape(itemKey)}"]`);
+            const notesValue = notesInput ? String(notesInput.value || "").trim() : "";
+            const hasNotes = Boolean(notesValue);
+            const photoCounts = getItemPhotoCounts(checklistItem);
+            const hasPhoto = photoCounts.total > 0;
+            if (selectedStatus === "nc_menor" || selectedStatus === "nc_mayor") {
+                if (!hasNotes) {
+                    errors.push("Detalle obligatorio");
+                }
+                if (!hasPhoto) {
+                    errors.push("Evidencia fotografica obligatoria");
+                }
+            }
+            const oldInline = checklistItem.querySelector(".qc-item-inline-errors");
+            if (errors.length > 0) {
+                checklistItem.classList.add("qc-item-invalid");
+                if (!oldInline) {
+                    const inlineBox = document.createElement("div");
+                    inlineBox.className = "qc-item-inline-errors";
+                    inlineBox.setAttribute("role", "alert");
+                    const statusGroup = checklistItem.querySelector(".status-group");
+                    if (statusGroup && statusGroup.parentNode) {
+                        statusGroup.parentNode.insertBefore(inlineBox, statusGroup.nextSibling);
+                    } else {
+                        checklistItem.appendChild(inlineBox);
+                    }
+                }
+                const inlineBox = checklistItem.querySelector(".qc-item-inline-errors");
+                if (inlineBox) {
+                    inlineBox.textContent = `${errors.join(" · ")}`;
+                }
+            } else {
+                checklistItem.classList.remove("qc-item-invalid");
+                if (oldInline) {
+                    oldInline.remove();
+                }
+            }
+            return {
+                itemKey: itemKey,
+                itemLabel: itemLabel,
+                status: selectedStatus,
+                errors: errors,
+                hasPhoto: hasPhoto,
+                hasNotes: hasNotes,
+                photoCounts: photoCounts,
+            };
+        }
+
+        function validateAllQcItems() {
+            const invalid = [];
+            form.querySelectorAll(".checklist-item").forEach((checklistItem) => {
+                const v = validateQcItem(checklistItem);
+                if (v.errors.length > 0) {
+                    invalid.push(v);
+                }
+            });
+            return invalid;
+        }
+
+        function attachQcItemLiveValidation(checklistItem) {
+            if (!checklistItem) {
+                return;
+            }
+            const itemKey = String(checklistItem.dataset ? checklistItem.dataset.itemKey || "" : "").trim();
+            if (!itemKey) {
+                return;
+            }
+            const statusRadios = checklistItem.querySelectorAll(`input[type="radio"][name="status__${CSS.escape(itemKey)}"]`);
+            statusRadios.forEach((r) => {
+                r.addEventListener("change", function () {
+                    validateQcItem(checklistItem);
+                });
+            });
+            const notesInput = checklistItem.querySelector(`textarea[name="notes__${CSS.escape(itemKey)}"]`);
+            if (notesInput) {
+                notesInput.addEventListener("input", function () {
+                    validateQcItem(checklistItem);
+                });
+                notesInput.addEventListener("blur", function () {
+                    validateQcItem(checklistItem);
+                });
+            }
+            const fileInputs = checklistItem.querySelectorAll('input[type="file"]');
+            fileInputs.forEach((fi) => {
+                fi.addEventListener("change", function () {
+                    validateQcItem(checklistItem);
+                });
+            });
+            const evButtons = checklistItem.querySelectorAll("button.evidence-action, button[data-evidence-remove], button.evidence-remove");
+            evButtons.forEach((btn) => {
+                btn.addEventListener("click", function () {
+                    setTimeout(() => validateQcItem(checklistItem), 50);
+                });
+            });
+        }
+
         function getItemMaxPhotos(checklistItem) {
             const raw = checklistItem && checklistItem.dataset && checklistItem.dataset.maxPhotos;
             const parsed = parseInt(raw, 10);
@@ -994,20 +1119,12 @@
         form.addEventListener("submit", function (event) {
             const evidencePaths = new Set();
             let maxPhotosViolation = null;
-            const itemValidationErrors = [];
 
             form.querySelectorAll(".checklist-item").forEach((checklistItem) => {
-                checklistItem.classList.remove("qc-item-invalid");
-                const oldInline = checklistItem.querySelector(".qc-item-inline-errors");
-                if (oldInline) {
-                    oldInline.remove();
-                }
-
                 const itemKey = String(checklistItem.dataset.itemKey || "").trim();
                 if (!itemKey) {
                     return;
                 }
-                const itemLabel = String(checklistItem.dataset.itemLabel || itemKey);
                 const multi = isItemMultiEvidence(checklistItem);
                 const maxPhotos = getItemMaxPhotos(checklistItem);
                 const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
@@ -1017,54 +1134,12 @@
                 const pending = collectPendingFilesFromItem(checklistItem);
                 const totalForItem = uploadedPaths.length + pending.length;
                 if (multi && totalForItem > maxPhotos) {
-                    const itemLabelFallback = String(checklistItem.dataset.itemLabel || itemKey);
-                    maxPhotosViolation = { itemKey, itemLabel: itemLabelFallback, total: totalForItem, max: maxPhotos };
+                    const itemLabel = String(checklistItem.dataset.itemLabel || itemKey);
+                    maxPhotosViolation = { itemKey, itemLabel, total: totalForItem, max: maxPhotos };
                 }
                 pending.forEach((entry, index) => {
                     evidencePaths.add(`${itemKey}__${entry.isCamera ? "camera" : "file"}__${index}`);
                 });
-
-                const statusRadios = checklistItem.querySelectorAll(`input[type="radio"][name="status__${CSS.escape(itemKey)}"]`);
-                let selectedStatus = "";
-                statusRadios.forEach((r) => {
-                    if (r.checked) {
-                        selectedStatus = String(r.value || "").trim().toLowerCase();
-                    }
-                });
-
-                const notesInput = checklistItem.querySelector(`textarea[name="notes__${CSS.escape(itemKey)}"]`);
-                const notesValue = notesInput ? String(notesInput.value || "").trim() : "";
-                const hasPhoto = totalForItem > 0;
-                const itemErrors = [];
-                if (selectedStatus === "nc_menor" || selectedStatus === "nc_mayor") {
-                    if (!notesValue) {
-                        itemErrors.push("Detalle obligatorio");
-                    }
-                    if (!hasPhoto) {
-                        itemErrors.push("Evidencia fotografica obligatoria");
-                    }
-                }
-
-                if (itemErrors.length > 0) {
-                    itemValidationErrors.push({
-                        itemKey: itemKey,
-                        itemLabel: itemLabel,
-                        status: selectedStatus,
-                        errors: itemErrors.slice(),
-                    });
-                    checklistItem.classList.add("qc-item-invalid");
-                    const inlineBox = document.createElement("div");
-                    inlineBox.className = "qc-item-inline-errors";
-                    inlineBox.setAttribute("role", "alert");
-                    inlineBox.textContent = `${itemErrors.join(" · ")}`;
-                    const statusGroup = checklistItem.querySelector(".status-group");
-                    if (statusGroup && statusGroup.parentNode) {
-                        statusGroup.parentNode.insertBefore(inlineBox, statusGroup.nextSibling);
-                    } else {
-                        checklistItem.appendChild(inlineBox);
-                    }
-                    checklistItem.scrollIntoView({ behavior: "smooth", block: "center" });
-                }
             });
 
             if (maxPhotosViolation) {
@@ -1072,6 +1147,8 @@
                 window.alert(`El ítem "${maxPhotosViolation.itemLabel}" supera el límite de fotografías: tienes ${maxPhotosViolation.total} y el máximo es ${maxPhotosViolation.max}. Quita algunas fotos.`);
                 return;
             }
+
+            const itemValidationErrors = validateAllQcItems();
 
             if (itemValidationErrors.length > 0) {
                 event.preventDefault();
@@ -1123,7 +1200,11 @@
             }
         });
 
-        form.querySelectorAll(".checklist-item").forEach((item) => syncEvidenceFilename(item));
+        form.querySelectorAll(".checklist-item").forEach((item) => {
+            syncEvidenceFilename(item);
+            attachQcItemLiveValidation(item);
+            validateQcItem(item);
+        });
         syncQcPhotoFilename();
     })();
 </script>
