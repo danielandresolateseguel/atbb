@@ -11,8 +11,9 @@
     </div>
     <div class="hero-actions">
         {% if is_admin %}
-        <form method="post" action="{{ url_for('main.admin_backfill_qc_critical_items') }}" onsubmit="return confirm('Esto alinea el flag is_critical de TODOS los items QC historicos con la definicion actual del checklist. No cambia scores ni estados. Continuar?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <form method="post" action="" onsubmit="return confirm('Esto alinea el flag is_critical de TODOS los items QC historicos con la definicion actual del checklist. No cambia scores ni estados. Continuar?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}">
+            <input type="hidden" name="action" value="backfill_qc_critical_items">
             <button class="button button-secondary" type="submit">Actualizar items criticos historicos</button>
         </form>
         {% endif %}

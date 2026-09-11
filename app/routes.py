@@ -4819,12 +4819,40 @@ def qc_new():
     )
 
 
-@main.route("/qc/reports")
+@main.route("/qc/reports", methods=["GET", "POST"])
 def qc_reports():
     if not can_view_reports():
         abort(403)
 
     user = current_user()
+    is_admin_user = bool(user and user.get("role") == "admin")
+
+    if request.method == "POST" and request.form.get("action") == "backfill_qc_critical_items":
+        if not is_admin_user:
+            abort(403)
+        if not validate_csrf_token(request.form.get("csrf_token")):
+            flash("Token de seguridad expirado o inválido. Volvé a intentar.", "error")
+            return redirect(url_for("main.qc_reports", **request.args.to_dict(flat=True)))
+        try:
+            result = backfill_qc_items_is_critical() or {}
+            updated = int(result.get("updated_rows") or 0)
+            set_crit = int(result.get("rows_set_critical") or 0)
+            cleared = int(result.get("rows_cleared_non_critical") or 0)
+            total = int(result.get("total_qc_items_section") or 0)
+            keys = ", ".join(result.get("critical_keys_now") or []) or "(ninguno)"
+            flash(
+                f"Backfill QC criticos OK: {updated} filas actualizadas "
+                f"(+{set_crit} a criticos, -{cleared} a no-criticos) de {total} items. "
+                f"Items criticos actuales: {keys}.",
+                "success",
+            )
+        except ValueError as exc:
+            flash(str(exc), "error")
+        except Exception as exc:
+            current_app.logger.exception("qc_reports backfill_qc_critical_items FAILED")
+            flash(f"Error al aplicar backfill QC criticos: {exc}", "error")
+        return redirect(url_for("main.qc_reports", **request.args.to_dict(flat=True)))
+
     auditor_user_id = user["id"] if user and user.get("role") == "auditor" else None
     filters = {
         "from_date": request.args.get("from_date", "").strip(),
