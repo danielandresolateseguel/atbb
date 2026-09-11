@@ -223,10 +223,10 @@ CHECKLIST_SECTIONS = [
         "title": "Control de Calidad de Instalaciones",
         "weight": 15,
         "items": [
-            {"key": "nomenclado", "label": "Nomenclado", "critical": False, "multi_photo": True, "max_photos": 3},
+            {"key": "nomenclado", "label": "Nomenclado", "critical": True, "multi_photo": True, "max_photos": 3},
             {"key": "rabillado", "label": "Rabillado", "critical": False, "multi_photo": True, "max_photos": 3},
-            {"key": "tensado", "label": "Tensado", "critical": False, "multi_photo": True, "max_photos": 3},
-            {"key": "reten_a_cadena", "label": "Reten a cadena", "critical": False, "multi_photo": True, "max_photos": 3},
+            {"key": "tensado", "label": "Tensado", "critical": True, "multi_photo": True, "max_photos": 3},
+            {"key": "reten_a_cadena", "label": "Reten a cadena", "critical": True, "multi_photo": True, "max_photos": 3},
             {"key": "piton_8_retencion", "label": "Pitón del 8 (retención)", "critical": True, "multi_photo": True, "max_photos": 3},
             {"key": "recorrido_fibra_piton_6", "label": "Recorrido de fibra con pitón del 6", "critical": False, "multi_photo": True, "max_photos": 3},
             {
@@ -245,7 +245,7 @@ CHECKLIST_SECTIONS = [
                 "multi_photo": True,
                 "max_photos": 3,
             },
-            {"key": "tubo_pasapared", "label": "Tubo pasapared", "critical": True, "multi_photo": True, "max_photos": 3},
+            {"key": "tubo_pasapared", "label": "Tubo pasapared", "critical": False, "multi_photo": True, "max_photos": 3},
             {"key": "loop", "label": "Loop", "critical": True, "multi_photo": True, "max_photos": 3},
             {"key": "sellador", "label": "Sellador", "critical": False, "multi_photo": True, "max_photos": 3},
             {"key": "engrampado_por_vertice", "label": "Engrampado por vertice", "critical": False, "multi_photo": True, "max_photos": 3},
