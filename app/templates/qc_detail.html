@@ -200,6 +200,9 @@
                     <div class="checklist-header">
                         <div>
                             <strong>{{ item["item_label"] }}</strong>
+                            {% if item["is_critical"] %}
+                                <span class="critical-chip">Crítico</span>
+                            {% endif %}
                         </div>
                         <span class="metric-pill metric-wrap {% if item['status'] == 'conforme' %}metric-ok{% elif item['status'] == 'no_aplica' %}metric-neutral{% elif item['status'] == 'nc_menor' %}metric-warning{% else %}metric-danger{% endif %}">
                             {{ item["status"]|replace('_', ' ')|capitalize }}

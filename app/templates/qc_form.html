@@ -158,6 +158,9 @@
                     <div class="checklist-header">
                         <div>
                             <strong>{{ item["label"] }}</strong>
+                            {% if item.get('critical') %}
+                                <span class="critical-chip">Crítico</span>
+                            {% endif %}
                         </div>
                     </div>
                     <div class="status-group">
