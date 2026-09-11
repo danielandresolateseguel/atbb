@@ -13,11 +13,32 @@
     </div>
     <div class="hero-actions">
         <span class="badge badge-{{ service['result_status']|lower|replace(' ', '-') }}">{{ service["result_status"] }}</span>
+        {% if service["record_scope"] == "pruebas" %}
+            <span class="badge badge-pruebas">Pruebas</span>
+        {% endif %}
+        {% if is_admin %}
+            <form method="post" action="{{ url_for('main.service_record_scope_update', service_session_id=service['id']) }}">
+                {% if service["record_scope"] == "pruebas" %}
+                    <input type="hidden" name="record_scope" value="oficial">
+                    <button class="button button-secondary" type="submit" onclick="return confirm('Este service volverá a impactar en el circuito oficial. ¿Continuar?');">Volver a oficial</button>
+                {% else %}
+                    <input type="hidden" name="record_scope" value="pruebas">
+                    <button class="button button-secondary" type="submit" onclick="return confirm('El service dejará de impactar en historial, dashboard y reportes oficiales. ¿Mover a pruebas?');">Mover a pruebas</button>
+                {% endif %}
+            </form>
+        {% endif %}
         <a class="button button-secondary" href="{{ url_for('main.service_report', service_session_id=service['id']) }}" target="_blank" rel="noopener noreferrer">Informe</a>
         <a class="button button-secondary" href="{{ url_for('main.service_report_pdf', service_session_id=service['id']) }}" target="_blank" rel="noopener noreferrer">PDF</a>
         <a class="button button-secondary" href="{{ url_for('main.service_sessions') }}">Volver</a>
     </div>
 </section>
+
+{% if service["record_scope"] == "pruebas" %}
+    <section class="alert-card alert-warning">
+        <strong>Service aislado en pruebas</strong>
+        <p>Este registro se conserva para trazabilidad, pero queda fuera del historial y de los reportes oficiales hasta que vuelva al circuito oficial.</p>
+    </section>
+{% endif %}
 
 <section class="detail-grid">
     <article class="card info-card">
@@ -29,6 +50,7 @@
         </div>
         <div class="info-list">
             <p><strong>Auditor:</strong> {{ service["auditor_name"] }}</p>
+            <p><strong>Sector:</strong> {% if service["record_scope"] == "pruebas" %}Pruebas{% else %}Oficial{% endif %}</p>
             <p><strong>Técnico:</strong> {{ service["technician_name"] }}{% if service["employee_code"] %} | {{ service["employee_code"] }}{% endif %}</p>
             <p><strong>Provincia:</strong> {{ service["location"] }}</p>
             <p><strong>Dirección:</strong> {{ service["address"] or "-" }}</p>

@@ -165,6 +165,8 @@ from app.models import (
     update_finding_effectiveness,
     validate_finding,
     update_audit_record_scope,
+    update_qc_record_scope,
+    update_service_record_scope,
     update_mobile_unit_technician,
     update_vehicle_extinguisher_expiry,
     update_vehicle_insurance_expiry,
@@ -6851,6 +6853,56 @@ def audit_record_scope_update(audit_id):
     else:
         flash("La auditoria volvio al circuito oficial.", "success")
     return redirect(url_for("main.audit_detail", audit_id=audit_id))
+
+
+@main.route("/qc/<int:qc_session_id>/record-scope", methods=["POST"])
+def qc_record_scope_update(qc_session_id):
+    if not is_admin():
+        abort(403)
+
+    qc = fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None)
+    if not qc:
+        abort(404)
+
+    record_scope = (request.form.get("record_scope") or "").strip().lower()
+    if record_scope not in {"oficial", "pruebas"}:
+        flash("El sector seleccionado no es valido.", "error")
+        return redirect(url_for("main.qc_detail", qc_session_id=qc_session_id))
+
+    if not update_qc_record_scope(qc_session_id, record_scope):
+        flash("No fue posible actualizar el sector del QC.", "error")
+        return redirect(url_for("main.qc_detail", qc_session_id=qc_session_id))
+
+    if record_scope == "pruebas":
+        flash("El QC fue movido a pruebas y ya no impacta en el circuito oficial.", "success")
+    else:
+        flash("El QC volvio al circuito oficial.", "success")
+    return redirect(url_for("main.qc_detail", qc_session_id=qc_session_id))
+
+
+@main.route("/service/<int:service_session_id>/record-scope", methods=["POST"])
+def service_record_scope_update(service_session_id):
+    if not is_admin():
+        abort(403)
+
+    service_row = fetch_service_session_detail(service_session_id, supervisor_scope_names=None)
+    if not service_row:
+        abort(404)
+
+    record_scope = (request.form.get("record_scope") or "").strip().lower()
+    if record_scope not in {"oficial", "pruebas"}:
+        flash("El sector seleccionado no es valido.", "error")
+        return redirect(url_for("main.service_detail", service_session_id=service_session_id))
+
+    if not update_service_record_scope(service_session_id, record_scope):
+        flash("No fue posible actualizar el sector del service.", "error")
+        return redirect(url_for("main.service_detail", service_session_id=service_session_id))
+
+    if record_scope == "pruebas":
+        flash("El service fue movido a pruebas y ya no impacta en el circuito oficial.", "success")
+    else:
+        flash("El service volvio al circuito oficial.", "success")
+    return redirect(url_for("main.service_detail", service_session_id=service_session_id))
 
 
 @main.route("/audits/<int:audit_id>")

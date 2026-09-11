@@ -1027,6 +1027,24 @@ def init_db():
         );
         """
     )
+    try:
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_audits_unique_sa_tech_date ON audits (COALESCE(sa_number, ''), technician_id, audit_date)"
+        )
+    except Exception:
+        pass
+    try:
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_qc_sessions_unique_sa_tech_date ON qc_sessions (COALESCE(sa_number, ''), technician_id, qc_date)"
+        )
+    except Exception:
+        pass
+    try:
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_service_sessions_unique_sa_tech_date ON service_sessions (COALESCE(sa_number, ''), technician_id, service_date)"
+        )
+    except Exception:
+        pass
     ensure_legacy_columns(connection)
     seed_demo_data(connection)
     ensure_mobile_unit_codes_normalized_sqlite(connection)
@@ -1591,6 +1609,24 @@ def init_db_postgres():
     ensure_users_columns_postgres(cursor)
     ensure_all_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
+    try:
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_audits_unique_sa_tech_date ON audits (COALESCE(sa_number, ''), technician_id, audit_date)"
+        )
+    except Exception:
+        pass
+    try:
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_qc_sessions_unique_sa_tech_date ON qc_sessions (COALESCE(sa_number, ''), technician_id, qc_date)"
+        )
+    except Exception:
+        pass
+    try:
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_service_sessions_unique_sa_tech_date ON service_sessions (COALESCE(sa_number, ''), technician_id, service_date)"
+        )
+    except Exception:
+        pass
     connection.commit()
     connection.close()
 
@@ -7859,6 +7895,26 @@ def create_audit_supply_requests(audit_id, supply_requests):
 def create_audit(audit_data, items, supply_requests=None):
     try:
         connection = get_db()
+        sa_number = (audit_data.get("sa_number") or "").strip() or None
+        technician_id = audit_data.get("technician_id")
+        audit_date = (audit_data.get("audit_date") or "").strip()
+        if sa_number and technician_id is not None and audit_date:
+            existing = connection.execute(
+                """
+                SELECT id FROM audits
+                WHERE COALESCE(sa_number, '') = ?
+                  AND technician_id = ?
+                  AND audit_date = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (sa_number, int(technician_id), audit_date),
+            ).fetchone()
+            if existing:
+                dup_id = existing["id"] if isinstance(existing, dict) else existing[0]
+                raise ValueError(
+                    f"Ya existe una auditoría registrada con el mismo SA {sa_number}, técnico y fecha (ID {dup_id}). Si se trata de una corrección, editar la existente o mover el duplicado a 'pruebas'."
+                )
         insert_sql = """
             INSERT INTO audits (
                 audit_date,
@@ -8040,6 +8096,36 @@ def update_audit_record_scope(audit_id, record_scope):
         WHERE id = ?
         """,
         (safe_scope, audit_id),
+    )
+    connection.commit()
+    return (cursor.rowcount or 0) > 0
+
+
+def update_qc_record_scope(qc_session_id, record_scope):
+    safe_scope = normalize_audit_record_scope(record_scope)
+    connection = get_db()
+    cursor = connection.execute(
+        """
+        UPDATE qc_sessions
+        SET record_scope = ?
+        WHERE id = ?
+        """,
+        (safe_scope, qc_session_id),
+    )
+    connection.commit()
+    return (cursor.rowcount or 0) > 0
+
+
+def update_service_record_scope(service_session_id, record_scope):
+    safe_scope = normalize_audit_record_scope(record_scope)
+    connection = get_db()
+    cursor = connection.execute(
+        """
+        UPDATE service_sessions
+        SET record_scope = ?
+        WHERE id = ?
+        """,
+        (safe_scope, service_session_id),
     )
     connection.commit()
     return (cursor.rowcount or 0) > 0
@@ -8299,6 +8385,26 @@ def fetch_qc_items(qc_session_id):
 
 def create_qc_session(qc_data, items):
     connection = get_db()
+    sa_number = (qc_data.get("sa_number") or "").strip() or None
+    technician_id = qc_data.get("technician_id")
+    qc_date = (qc_data.get("qc_date") or "").strip()
+    if sa_number and technician_id is not None and qc_date:
+        existing = connection.execute(
+            """
+            SELECT id FROM qc_sessions
+            WHERE COALESCE(sa_number, '') = ?
+              AND technician_id = ?
+              AND qc_date = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (sa_number, int(technician_id), qc_date),
+        ).fetchone()
+        if existing:
+            dup_id = existing["id"] if isinstance(existing, dict) else existing[0]
+            raise ValueError(
+                f"Ya existe un QC registrado con el mismo SA {sa_number}, técnico y fecha (ID {dup_id}). Si se trata de una corrección, editar el existente o mover el duplicado a 'pruebas'."
+            )
     insert_sql = """
         INSERT INTO qc_sessions (
             qc_date,
@@ -8660,6 +8766,26 @@ def fetch_service_speedtests(service_session_id):
 
 def create_service_session(service_data, items, speedtests):
     connection = get_db()
+    sa_number = (service_data.get("sa_number") or "").strip() or None
+    technician_id = service_data.get("technician_id")
+    service_date = (service_data.get("service_date") or "").strip()
+    if sa_number and technician_id is not None and service_date:
+        existing = connection.execute(
+            """
+            SELECT id FROM service_sessions
+            WHERE COALESCE(sa_number, '') = ?
+              AND technician_id = ?
+              AND service_date = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (sa_number, int(technician_id), service_date),
+        ).fetchone()
+        if existing:
+            dup_id = existing["id"] if isinstance(existing, dict) else existing[0]
+            raise ValueError(
+                f"Ya existe un service registrado con el mismo SA {sa_number}, técnico y fecha (ID {dup_id}). Si se trata de una corrección, editar el existente o mover el duplicado a 'pruebas'."
+            )
     insert_sql = """
         INSERT INTO service_sessions (
             service_date,
@@ -11359,6 +11485,7 @@ def fetch_technician_list_summary(
                 MAX(audits.audit_date) AS last_audit_date
             FROM audits
             WHERE audits.technician_id IS NOT NULL
+              AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
             {audit_date_from}
             {audit_date_to}
             GROUP BY audits.technician_id
@@ -11374,6 +11501,7 @@ def fetch_technician_list_summary(
                 MAX(qc_sessions.qc_date) AS last_qc_date
             FROM qc_sessions
             WHERE 1=1
+              AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
             {qc_date_from}
             {qc_date_to}
             GROUP BY qc_sessions.technician_id
@@ -11386,6 +11514,7 @@ def fetch_technician_list_summary(
                 MAX(service_sessions.service_date) AS last_service_date
             FROM service_sessions
             WHERE 1=1
+              AND COALESCE(service_sessions.record_scope, 'oficial') = 'oficial'
             {service_date_from}
             {service_date_to}
             GROUP BY service_sessions.technician_id

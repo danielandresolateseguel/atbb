@@ -1011,6 +1011,18 @@
             if (evidencePaths.size < 2) {
                 event.preventDefault();
                 window.alert("Debes subir al menos 2 fotos de evidencia (en cualquier ítem del checklist y/o en la foto general del QC) para registrar el control.");
+                return;
+            }
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                const originalLabel = submitBtn.textContent;
+                submitBtn.disabled = true;
+                submitBtn.textContent = "En proceso...";
+                submitBtn.setAttribute("data-original-label", originalLabel);
+                setTimeout(function () {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = submitBtn.getAttribute("data-original-label") || originalLabel;
+                }, 20000);
             }
         });
 

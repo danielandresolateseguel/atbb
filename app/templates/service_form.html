@@ -561,6 +561,20 @@
 
         form.querySelectorAll(".checklist-item").forEach((item) => syncEvidenceFilename(item));
         syncServicePhotoFilename();
+
+        form.addEventListener("submit", function () {
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                const originalLabel = submitBtn.textContent;
+                submitBtn.disabled = true;
+                submitBtn.textContent = "En proceso...";
+                submitBtn.setAttribute("data-original-label", originalLabel);
+                setTimeout(function () {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = submitBtn.getAttribute("data-original-label") || originalLabel;
+                }, 20000);
+            }
+        });
     })();
 </script>
 {% endblock %}

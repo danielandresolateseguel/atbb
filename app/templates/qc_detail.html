@@ -25,10 +25,28 @@
         {% if can_view_reports %}
             <a class="button button-secondary" href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
         {% endif %}
+        {% if is_admin %}
+            <form method="post" action="{{ url_for('main.qc_record_scope_update', qc_session_id=qc['id']) }}">
+                {% if qc["record_scope"] == "pruebas" %}
+                    <input type="hidden" name="record_scope" value="oficial">
+                    <button class="button button-secondary" type="submit" onclick="return confirm('Este QC volverá a impactar en el circuito oficial. ¿Continuar?');">Volver a oficial</button>
+                {% else %}
+                    <input type="hidden" name="record_scope" value="pruebas">
+                    <button class="button button-secondary" type="submit" onclick="return confirm('El QC dejará de impactar en historial, dashboard y reportes oficiales. ¿Mover a pruebas?');">Mover a pruebas</button>
+                {% endif %}
+            </form>
+        {% endif %}
         <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Volver</a>
         <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
     </div>
 </section>
+
+{% if qc["record_scope"] == "pruebas" %}
+    <section class="alert-card alert-warning">
+        <strong>QC aislado en pruebas</strong>
+        <p>Este registro se conserva para trazabilidad, pero queda fuera del historial y de los reportes oficiales hasta que vuelva al circuito oficial.</p>
+    </section>
+{% endif %}
 
 <section class="detail-grid">
     <article class="card info-card">
@@ -40,6 +58,7 @@
         </div>
         <div class="info-list">
             <p><strong>Auditor:</strong> {{ qc["auditor_name"] }}</p>
+            <p><strong>Sector:</strong> {% if qc["record_scope"] == "pruebas" %}Pruebas{% else %}Oficial{% endif %}</p>
             <p><strong>SA:</strong> {{ qc["sa_number"] or "-" }}</p>
             <p><strong>Técnico:</strong> {{ qc["technician_name"] }}{% if qc["employee_code"] %} | {{ qc["employee_code"] }}{% endif %}</p>
             <p><strong>Empresa:</strong> {{ qc["technician_company"] or "-" }}</p>
