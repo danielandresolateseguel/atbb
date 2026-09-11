@@ -2,6 +2,27 @@
 
 {% block title %}Nuevo QC{% endblock %}
 
+{% block extra_head %}
+<style>
+.qc-item-invalid {
+    border: 1px solid #ef4444 !important;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.08) inset;
+    background: #fff5f5;
+}
+.qc-item-inline-errors {
+    margin: 0.75rem 0 0 0;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid #ef4444;
+    background: #fee2e2;
+    color: #7f1d1d;
+    font-size: 0.825rem;
+    line-height: 1.25rem;
+    white-space: pre-wrap;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <section class="hero">
     <div>
@@ -142,7 +163,11 @@
             <div>
                 <p class="eyebrow">Checklist</p>
                 <h3>{{ section["title"] }}</h3>
-                <p class="empty-state">Evidencia fotográfica: mínimo 2 fotos en total (en cualquier ítem del checklist y/o en la foto general del QC). Cada ítem permite hasta 3 fotografías.</p>
+                <p class="empty-state">
+                    Reglas de validación: (1) ítems en NC menor o NC mayor requieren <strong>detalle + 1 foto</strong>
+                    cada uno. (2) Mínimo <strong>2 fotos totales</strong> (ítems o foto general del lugar) para cerrar
+                    el QC (garantía de visita). Cada ítem permite hasta 3 fotografías.
+                </p>
             </div>
         </div>
         <div class="audit-detail-grid">
@@ -257,7 +282,7 @@
             </label>
 
             <label>
-                <span>Fotos del QC (opcional)</span>
+                <span>Fotos del QC (general del lugar) · suma al mínimo de 2 fotos</span>
                 <div class="evidence-upload-row" id="qc_photo_block">
                     <input type="hidden" name="uploaded_qc_photo_path" id="uploaded_qc_photo_path" value="{{ request.form.get('uploaded_qc_photo_path', '') }}">
                     <input
@@ -969,12 +994,20 @@
         form.addEventListener("submit", function (event) {
             const evidencePaths = new Set();
             let maxPhotosViolation = null;
+            const itemValidationErrors = [];
 
             form.querySelectorAll(".checklist-item").forEach((checklistItem) => {
+                checklistItem.classList.remove("qc-item-invalid");
+                const oldInline = checklistItem.querySelector(".qc-item-inline-errors");
+                if (oldInline) {
+                    oldInline.remove();
+                }
+
                 const itemKey = String(checklistItem.dataset.itemKey || "").trim();
                 if (!itemKey) {
                     return;
                 }
+                const itemLabel = String(checklistItem.dataset.itemLabel || itemKey);
                 const multi = isItemMultiEvidence(checklistItem);
                 const maxPhotos = getItemMaxPhotos(checklistItem);
                 const uploadedInput = checklistItem.querySelector(`input[name="uploaded_photo_path__${CSS.escape(itemKey)}"]`);
@@ -984,17 +1017,78 @@
                 const pending = collectPendingFilesFromItem(checklistItem);
                 const totalForItem = uploadedPaths.length + pending.length;
                 if (multi && totalForItem > maxPhotos) {
-                    const itemLabel = String(checklistItem.dataset.itemLabel || itemKey);
-                    maxPhotosViolation = { itemKey, itemLabel, total: totalForItem, max: maxPhotos };
+                    const itemLabelFallback = String(checklistItem.dataset.itemLabel || itemKey);
+                    maxPhotosViolation = { itemKey, itemLabel: itemLabelFallback, total: totalForItem, max: maxPhotos };
                 }
                 pending.forEach((entry, index) => {
                     evidencePaths.add(`${itemKey}__${entry.isCamera ? "camera" : "file"}__${index}`);
                 });
+
+                const statusRadios = checklistItem.querySelectorAll(`input[type="radio"][name="status__${CSS.escape(itemKey)}"]`);
+                let selectedStatus = "";
+                statusRadios.forEach((r) => {
+                    if (r.checked) {
+                        selectedStatus = String(r.value || "").trim().toLowerCase();
+                    }
+                });
+
+                const notesInput = checklistItem.querySelector(`textarea[name="notes__${CSS.escape(itemKey)}"]`);
+                const notesValue = notesInput ? String(notesInput.value || "").trim() : "";
+                const hasPhoto = totalForItem > 0;
+                const itemErrors = [];
+                if (selectedStatus === "nc_menor" || selectedStatus === "nc_mayor") {
+                    if (!notesValue) {
+                        itemErrors.push("Detalle obligatorio");
+                    }
+                    if (!hasPhoto) {
+                        itemErrors.push("Evidencia fotografica obligatoria");
+                    }
+                }
+
+                if (itemErrors.length > 0) {
+                    itemValidationErrors.push({
+                        itemKey: itemKey,
+                        itemLabel: itemLabel,
+                        status: selectedStatus,
+                        errors: itemErrors.slice(),
+                    });
+                    checklistItem.classList.add("qc-item-invalid");
+                    const inlineBox = document.createElement("div");
+                    inlineBox.className = "qc-item-inline-errors";
+                    inlineBox.setAttribute("role", "alert");
+                    inlineBox.textContent = `${itemErrors.join(" · ")}`;
+                    const statusGroup = checklistItem.querySelector(".status-group");
+                    if (statusGroup && statusGroup.parentNode) {
+                        statusGroup.parentNode.insertBefore(inlineBox, statusGroup.nextSibling);
+                    } else {
+                        checklistItem.appendChild(inlineBox);
+                    }
+                    checklistItem.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
             });
 
             if (maxPhotosViolation) {
                 event.preventDefault();
                 window.alert(`El ítem "${maxPhotosViolation.itemLabel}" supera el límite de fotografías: tienes ${maxPhotosViolation.total} y el máximo es ${maxPhotosViolation.max}. Quita algunas fotos.`);
+                return;
+            }
+
+            if (itemValidationErrors.length > 0) {
+                event.preventDefault();
+                const lines = itemValidationErrors.slice(0, 8).map((entry) => {
+                    const statusLabel = entry.status === "nc_mayor" ? "NC mayor" : entry.status === "nc_menor" ? "NC menor" : entry.status || "-";
+                    return ` · ${entry.itemLabel} (${statusLabel}): ${entry.errors.join(", ")}`;
+                });
+                if (itemValidationErrors.length > 8) {
+                    lines.push(` · ... y otros ${itemValidationErrors.length - 8} ítems con inconsistencias`);
+                }
+                const header = "Revisá los ítems marcados en rojo antes de guardar el QC:\n";
+                window.alert(header + lines.join("\n"));
+                const firstInvalid = form.querySelector(".qc-item-invalid");
+                if (firstInvalid) {
+                    firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+                    firstInvalid.focus?.();
+                }
                 return;
             }
 
