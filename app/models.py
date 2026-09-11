@@ -11688,6 +11688,7 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
             MIN(audits.audit_date) AS first_audit_date
         FROM audits
         WHERE audits.technician_id = ?
+          AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
         {audit_from}
         {audit_to}
     """.format(
@@ -11704,6 +11705,7 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
             MIN(qc_sessions.qc_date) AS first_qc_date
         FROM qc_sessions
         WHERE qc_sessions.technician_id = ?
+          AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
         {qc_from}
         {qc_to}
     """.format(
@@ -11719,6 +11721,7 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
             MIN(service_sessions.service_date) AS first_service_date
         FROM service_sessions
         WHERE service_sessions.technician_id = ?
+          AND COALESCE(service_sessions.record_scope, 'oficial') = 'oficial'
         {service_from}
         {service_to}
     """.format(
@@ -11747,6 +11750,8 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
         FROM audits
         JOIN audit_items ON audit_items.audit_id = audits.id
         WHERE audits.technician_id = ?
+          AND audits.result_status != 'Borrador'
+          AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
           AND audit_items.status = 'no_cumple'
         {audit_from}
         {audit_to}
@@ -11761,6 +11766,7 @@ def fetch_technician_profile_summary(technician_id, filters=None, auditor_user_i
         FROM qc_sessions
         JOIN qc_items ON qc_items.qc_session_id = qc_sessions.id
         WHERE qc_sessions.technician_id = ?
+          AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
           AND qc_items.status = 'nc_mayor'
         {qc_from}
         {qc_to}
@@ -11915,6 +11921,7 @@ def fetch_technician_profile_benchmarks(technician_id, filters=None, auditor_use
             1.0 * SUM(CASE WHEN audits.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS approval_rate
         FROM audits
         WHERE audits.technician_id {peer_ids_where}
+          AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
         {audit_from}
         {audit_to}
     """.format(
@@ -11931,6 +11938,7 @@ def fetch_technician_profile_benchmarks(technician_id, filters=None, auditor_use
             1.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS approval_rate
         FROM qc_sessions
         WHERE qc_sessions.technician_id {peer_ids_where}
+          AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
         {qc_from}
         {qc_to}
     """.format(
@@ -11946,6 +11954,7 @@ def fetch_technician_profile_benchmarks(technician_id, filters=None, auditor_use
             {round_expr_bm_service_avg} AS avg_score
         FROM service_sessions
         WHERE service_sessions.technician_id {peer_ids_where}
+          AND COALESCE(service_sessions.record_scope, 'oficial') = 'oficial'
         {service_from}
         {service_to}
     """.format(
@@ -12016,6 +12025,7 @@ def fetch_technician_recent_audits(technician_id, filters=None, limit=8):
             audits.installation_type
         FROM audits
         WHERE audits.technician_id = ?
+          AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
         {audit_from}
         {audit_to}
         ORDER BY audits.audit_date DESC, audits.id DESC
@@ -12055,6 +12065,7 @@ def fetch_technician_recent_qc(technician_id, filters=None, limit=8):
             qc_sessions.location
         FROM qc_sessions
         WHERE qc_sessions.technician_id = ?
+          AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
         {qc_from}
         {qc_to}
         ORDER BY qc_sessions.qc_date DESC, qc_sessions.id DESC
@@ -12095,6 +12106,7 @@ def fetch_technician_recent_service(technician_id, filters=None, limit=8):
             service_sessions.record_scope
         FROM service_sessions
         WHERE service_sessions.technician_id = ?
+          AND COALESCE(service_sessions.record_scope, 'oficial') = 'oficial'
         {service_from}
         {service_to}
         ORDER BY service_sessions.service_date DESC, service_sessions.id DESC
@@ -12167,6 +12179,7 @@ def fetch_technician_monthly_series(technician_id, filters=None, granularity="mo
             SUM(CASE WHEN audits.result_status = 'Critica' THEN 1 ELSE 0 END) AS audit_critical_count
         FROM audits
         WHERE audits.technician_id = ?
+          AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
         {audit_from}
         {audit_to}
         GROUP BY period_key
@@ -12184,6 +12197,7 @@ def fetch_technician_monthly_series(technician_id, filters=None, granularity="mo
             1.0 * SUM(CASE WHEN qc_sessions.result_status IN ('Aprobada', 'Aprobada con observaciones') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS qc_approval_rate
         FROM qc_sessions
         WHERE qc_sessions.technician_id = ?
+          AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
         {qc_from}
         {qc_to}
         GROUP BY period_key
@@ -12200,6 +12214,7 @@ def fetch_technician_monthly_series(technician_id, filters=None, granularity="mo
             {round_expr_service_avg} AS service_avg_score
         FROM service_sessions
         WHERE service_sessions.technician_id = ?
+          AND COALESCE(service_sessions.record_scope, 'oficial') = 'oficial'
         {service_from}
         {service_to}
         GROUP BY period_key
@@ -12720,6 +12735,7 @@ def fetch_technician_distribution_ranking(technician_id, filters=None, auditor_u
                     FROM technicians
                     LEFT JOIN audits ON audits.technician_id = technicians.id
                     WHERE technicians.{col_name} {op} ?
+                      AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
                     {audit_from}
                     {audit_to}
                     GROUP BY technicians.id
@@ -12742,6 +12758,7 @@ def fetch_technician_distribution_ranking(technician_id, filters=None, auditor_u
                     FROM technicians
                     LEFT JOIN qc_sessions ON qc_sessions.technician_id = technicians.id
                     WHERE technicians.{col_name} = ?
+                      AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
                     {qc_from}
                     {qc_to}
                     GROUP BY technicians.id
@@ -12856,6 +12873,7 @@ def fetch_technician_findings_trend(technician_id, filters=None, limit_months=6)
         FROM audits
         JOIN audit_items ON audit_items.audit_id = audits.id
         WHERE audits.technician_id = ?
+          AND COALESCE(audits.record_scope, 'oficial') = 'oficial'
           AND audit_items.status = 'no_cumple'
         {af}
         {at}
@@ -12870,6 +12888,7 @@ def fetch_technician_findings_trend(technician_id, filters=None, limit_months=6)
         FROM qc_sessions
         JOIN qc_items ON qc_items.qc_session_id = qc_sessions.id
         WHERE qc_sessions.technician_id = ?
+          AND COALESCE(qc_sessions.record_scope, 'oficial') = 'oficial'
           AND qc_items.status = 'nc_mayor'
         {qf}
         {qt}
