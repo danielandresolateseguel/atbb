@@ -9063,12 +9063,14 @@ def fetch_qc_reports_technician_ranking(filters=None, auditor_user_id=None, supe
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+    name_expr = "COALESCE(technicians.name, qc_sessions.technician_display_name, 'Sin tecnico')"
+    employee_expr = "COALESCE(technicians.employee_code, qc_sessions.technician_employee_code, '')"
     rows = get_db().execute(
         f"""
         SELECT
             qc_sessions.technician_id,
-            COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
-            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS technician_employee_code,
+            {name_expr} AS technician_name,
+            {employee_expr} AS technician_employee_code,
             COUNT(*) AS total_qc,
             AVG(qc_sessions.total_score) AS average_score,
             SUM(CASE WHEN qc_sessions.result_status = 'Rechazada' THEN 1 ELSE 0 END) AS rejected_count,
@@ -9076,9 +9078,9 @@ def fetch_qc_reports_technician_ranking(filters=None, auditor_user_id=None, supe
         FROM qc_sessions
         LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
         {where_sql}
-        GROUP BY qc_sessions.technician_id, technician_name, technician_employee_code
+        GROUP BY qc_sessions.technician_id, {name_expr}, {employee_expr}
         HAVING COUNT(*) >= ?
-        ORDER BY average_score DESC, total_qc DESC, technician_name ASC
+        ORDER BY average_score DESC, total_qc DESC, {name_expr} ASC
         LIMIT ?
         """,
         tuple(list(params) + [int(min_qc), int(limit)]),
@@ -9106,12 +9108,14 @@ def fetch_qc_reports_technician_ranking_by_nc_major(filters=None, auditor_user_i
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+    name_expr = "COALESCE(technicians.name, qc_sessions.technician_display_name, 'Sin tecnico')"
+    employee_expr = "COALESCE(technicians.employee_code, qc_sessions.technician_employee_code, '')"
     rows = get_db().execute(
         f"""
         SELECT
             qc_sessions.technician_id,
-            COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
-            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS technician_employee_code,
+            {name_expr} AS technician_name,
+            {employee_expr} AS technician_employee_code,
             COUNT(DISTINCT qc_sessions.id) AS total_qc,
             SUM(CASE WHEN qc_items.status = 'nc_mayor' THEN 1 ELSE 0 END) AS nc_mayor_count,
             SUM(CASE WHEN qc_items.status = 'nc_menor' THEN 1 ELSE 0 END) AS nc_menor_count,
@@ -9122,9 +9126,9 @@ def fetch_qc_reports_technician_ranking_by_nc_major(filters=None, auditor_user_i
         LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
         LEFT JOIN qc_items ON qc_items.qc_session_id = qc_sessions.id
         {where_sql}
-        GROUP BY qc_sessions.technician_id, technician_name, technician_employee_code
+        GROUP BY qc_sessions.technician_id, {name_expr}, {employee_expr}
         HAVING COUNT(DISTINCT qc_sessions.id) >= ?
-        ORDER BY nc_mayor_count DESC, nc_menor_count DESC, average_score ASC, total_qc DESC, technician_name ASC
+        ORDER BY nc_mayor_count DESC, nc_menor_count DESC, average_score ASC, total_qc DESC, {name_expr} ASC
         LIMIT ?
         """,
         tuple(list(params) + [int(min_qc), int(limit)]),
