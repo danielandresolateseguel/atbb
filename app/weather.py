@@ -724,12 +724,25 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
         updated_at_raw = row["updated_at"]
         if not updated_at_raw:
             return None
+        updated_ts = None
         try:
             if hasattr(updated_at_raw, "timestamp"):
-                updated_ts = float(updated_at_raw.timestamp())
+                dt_aware = updated_at_raw if getattr(updated_at_raw, "tzinfo", None) else updated_at_raw.replace(tzinfo=timezone.utc)
+                updated_ts = float(dt_aware.astimezone(timezone.utc).timestamp())
             else:
-                updated_ts = float(datetime.fromisoformat(str(updated_at_raw).replace("Z", "")).timestamp())
+                s = str(updated_at_raw).strip()
+                if " " in s and "+" not in s and "Z" not in s and len(s.split(" ")[-1]) == 8 and ":" not in s.split(" ")[-1]:
+                    pass
+                s_norm = s.replace("Z", "+00:00")
+                if s_norm.endswith("+00:00") is False and "+" not in s_norm[10:] and "-" not in s_norm[10:]:
+                    s_norm = s_norm + "+00:00"
+                dt = datetime.fromisoformat(s_norm)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                updated_ts = float(dt.astimezone(timezone.utc).timestamp())
         except Exception:
+            updated_ts = None
+        if updated_ts is None:
             return None
         payload = None
         try:
@@ -742,10 +755,21 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
             return None
         effective_ttl = int(ttl_seconds or _WEATHER_CACHE_TTL_SECONDS_DEFAULT)
         if payload and payload.get("error"):
-            effective_ttl = int(payload.get("_error_ttl_seconds") or
-                                _get_config("WEATHER_ERROR_TTL_SECONDS") or
-                                _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT))
-        if (time.time() - updated_ts) > effective_ttl:
+            configured_error_ttl = int(
+                _get_config("WEATHER_ERROR_TTL_SECONDS") or
+                _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT)
+            )
+            effective_ttl = int(payload.get("_error_ttl_seconds") or configured_error_ttl)
+        age = time.time() - updated_ts
+        is_expired = age > effective_ttl
+        if is_expired:
+            try:
+                current_app.logger.info(
+                    f"weather cache EXPIRED center=%s age=%.1fs ttl=%ds error=%s",
+                    center_name, age, effective_ttl, bool(payload and payload.get("error")),
+                )
+            except Exception:
+                pass
             return None
         return payload
     except Exception:
@@ -927,7 +951,30 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         prev_ok = cached_ok if (cached_ok and not cached_ok.get("error")) else None
         todo_fetch.append((n, name, region, lat, lng, prev_ok))
 
-    if todo_fetch:
+    n_total_centers = len(seen_order)
+    n_cached_ok_err = sum(
+        1 for n in seen_order
+        if isinstance(seen.get(n), dict) and (
+            (seen[n].get("current") and not seen[n].get("error")) or
+            seen[n].get("error")
+        )
+    )
+
+    batch_allowed = True
+    if todo_fetch and n_total_centers >= 5:
+        already_cached_ratio = (n_cached_ok_err + (n_total_centers - (n_cached_ok_err + len(todo_fetch) + len(unresolved)))) / max(1, n_total_centers)
+        if already_cached_ratio >= 0.5 and len(todo_fetch) > 0:
+            try:
+                current_app.logger.info(
+                    "weather: skipping HTTP batch por doppelganger guard (cached_ratio=%.2f todo_fetch=%d total=%d). Usamos cached_error existente.",
+                    already_cached_ratio, len(todo_fetch), n_total_centers,
+                )
+            except Exception:
+                pass
+            batch_allowed = False
+
+    batch_exception_logged = False
+    if todo_fetch and batch_allowed:
         locations = [(lat, lng) for (_, _, _, lat, lng, _) in todo_fetch]
         batch_raws = []
         batch_err = None
@@ -935,10 +982,37 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             batch_raws = _fetch_open_meteo_batch(locations, forecast_days=4)
         except Exception as exc:
             try:
-                current_app.logger.warning(f"weather: batch fetch open-meteo fail for {len(locations)} centers: {exc}")
+                if not batch_exception_logged:
+                    current_app.logger.warning(f"weather: batch fetch open-meteo fail for {len(locations)} centers: {exc}")
+                    batch_exception_logged = True
             except Exception:
                 pass
             batch_err = f"API indisponible: {exc}"
+    else:
+        batch_err = "Skipped por cache TTL / doppelganger guard; reintento en proximo request."
+
+    if todo_fetch and not batch_allowed:
+        # Para los que tenian cached_err VACIO (no encontrado o sin cache): si habia un cached_ok
+        # viejo se perdio; pero si batch_allowed=False por doppelganger guard, usamos fallback.
+        for (norm_name, orig_name, region, lat, lng, prev_ok) in todo_fetch:
+            if prev_ok and isinstance(prev_ok, dict) and not prev_ok.get("error"):
+                seen[norm_name] = prev_ok
+                continue
+            payload = {
+                "center_name": orig_name,
+                "region": region,
+                "weather_date": today,
+                "latitude": lat,
+                "longitude": lng,
+                "fetched_at_epoch": int(time.time()),
+                "current": None,
+                "forecast_daily": [],
+                "error": batch_err,
+                "_error_ttl_seconds": error_ttl,
+            }
+            seen[norm_name] = payload
+            _save_cached_report(norm_name, region, today, payload, ttl_seconds=error_ttl)
+        todo_fetch = []
         for idx, (norm_name, orig_name, region, lat, lng, prev_ok) in enumerate(todo_fetch):
             payload = {
                 "center_name": orig_name,
