@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from flask import current_app
 
 _WEATHER_CACHE_TTL_SECONDS_DEFAULT = 1800
-_WEATHER_ERROR_TTL_SECONDS_DEFAULT = 600
+_WEATHER_ERROR_TTL_SECONDS_DEFAULT = 3600
 _ARG_TZ_OFFSET = timezone(timedelta(hours=-3), name="America/Argentina/Buenos_Aires")
 
 def _now_arg():
