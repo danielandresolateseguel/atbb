@@ -694,7 +694,12 @@ def build_forecast_daily(raw_daily, region_name=None):
     return out
 
 
-def _load_cached_report(center_name, weather_date, ttl_seconds):
+def _load_cached_report(center_name, weather_date, ttl_seconds, log_suffix=""):
+    """Lee cache DB.
+
+    ttl_seconds: si el payload es OK usa este; si es ERROR usa el effective_ttl
+    calculado internamente (WEATHER_ERROR_TTL_SECONDS).
+    """
     try:
         from app.models import get_db, is_postgres
     except Exception:
@@ -731,8 +736,6 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
                 updated_ts = float(dt_aware.astimezone(timezone.utc).timestamp())
             else:
                 s = str(updated_at_raw).strip()
-                if " " in s and "+" not in s and "Z" not in s and len(s.split(" ")[-1]) == 8 and ":" not in s.split(" ")[-1]:
-                    pass
                 s_norm = s.replace("Z", "+00:00")
                 if s_norm.endswith("+00:00") is False and "+" not in s_norm[10:] and "-" not in s_norm[10:]:
                     s_norm = s_norm + "+00:00"
@@ -753,20 +756,22 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
                 payload = raw
         except Exception:
             return None
-        effective_ttl = int(ttl_seconds or _WEATHER_CACHE_TTL_SECONDS_DEFAULT)
-        if payload and payload.get("error"):
-            configured_error_ttl = int(
-                _get_config("WEATHER_ERROR_TTL_SECONDS") or
-                _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT)
-            )
+        configured_ok_ttl = int(ttl_seconds or _WEATHER_CACHE_TTL_SECONDS_DEFAULT)
+        configured_error_ttl = int(
+            _get_config("WEATHER_ERROR_TTL_SECONDS") or
+            _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT)
+        )
+        is_error_payload = bool(payload and payload.get("error"))
+        effective_ttl = configured_error_ttl if is_error_payload else configured_ok_ttl
+        if is_error_payload:
             effective_ttl = int(payload.get("_error_ttl_seconds") or configured_error_ttl)
         age = time.time() - updated_ts
         is_expired = age > effective_ttl
         if is_expired:
             try:
                 current_app.logger.info(
-                    f"weather cache EXPIRED center=%s age=%.1fs ttl=%ds error=%s",
-                    center_name, age, effective_ttl, bool(payload and payload.get("error")),
+                    "weather cache EXPIRED center=%s age=%.1fs ttl=%ds error=%s%s",
+                    center_name, age, effective_ttl, is_error_payload, log_suffix,
                 )
             except Exception:
                 pass
@@ -938,17 +943,17 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             continue
         region = coords.get("region")
         lat, lng = coords["lat"], coords["lng"]
-        cached_ok = _load_cached_report(n, today, ttl_ok)
-        if cached_ok and not cached_ok.get("error"):
-            seen[n] = cached_ok
-            continue
-        cached_err = None
-        if not cached_ok:
-            cached_err = _load_cached_report(n, today, error_ttl)
-        if cached_err and cached_err.get("error"):
-            seen[n] = cached_err
-            continue
-        prev_ok = cached_ok if (cached_ok and not cached_ok.get("error")) else None
+        cached = _load_cached_report(n, today, ttl_ok)
+        prev_ok = None
+        if cached is not None:
+            if not cached.get("error"):
+                prev_ok = cached
+                seen[n] = cached
+                continue
+            if cached.get("error"):
+                seen[n] = cached
+                continue
+        prev_ok = None
         todo_fetch.append((n, name, region, lat, lng, prev_ok))
 
     n_total_centers = len(seen_order)
@@ -1053,7 +1058,9 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         if not isinstance(val, dict):
             continue
         cur = val.get("current") or {}
-        if cur.get("blocks_installation"):
+        if val.get("error"):
+            operative.append(val)
+        elif cur.get("blocks_installation"):
             critical.append(val)
         elif cur.get("risk_level") == "medio":
             caution.append(val)
