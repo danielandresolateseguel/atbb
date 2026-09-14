@@ -192,14 +192,20 @@
                                 <div class="operative-grid">
                                     {% for report in weather_summary.operative %}
                                         {% set cur = report.current or {} %}
-                                        <article class="operative-card">
+                                        <article class="operative-card{% if report.error %} operative-card-error{% endif %}">
                                             <div class="operative-card-title">
-                                                <span class="weather-emoji-big">{{ cur.weather_icon or "☀️" }}</span>
+                                                <span class="weather-emoji-big">{% if report.error %}⚠️{% else %}{{ cur.weather_icon or "☀️" }}{% endif %}</span>
                                                 <div>
                                                     <strong>{{ report.center_name }}</strong>
                                                     {% if report.region %}<span class="weather-region-chip">{{ report.region }}</span>{% endif %}
                                                 </div>
                                             </div>
+                                            {% if report.error %}
+                                                <div class="operative-card-sub" style="color:#b91c1c;font-weight:600;">
+                                                    Sin datos meteorológicos (API momentáneamente indisponible). Reintentando...
+                                                </div>
+                                                <span class="risk-pill risk-pill-warn risk-pill-sm">SIN DATOS</span>
+                                            {% else %}
                                             <div class="operative-card-sub">
                                                 {{ cur.weather_label or "" }}
                                                 {% if cur.temp_c is not none %}· {{ cur.temp_c }} °C{% endif %}
@@ -227,6 +233,7 @@
                                                         {% endfor %}
                                                     </div>
                                                 </details>
+                                            {% endif %}
                                             {% endif %}
                                         </article>
                                     {% endfor %}

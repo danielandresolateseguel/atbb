@@ -3,9 +3,18 @@ import os
 import time
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from flask import current_app
+
+_ARG_TZ_OFFSET = timezone(timedelta(hours=-3), name="America/Argentina/Buenos_Aires")
+_WEATHER_ERROR_TTL_SECONDS_DEFAULT = 90
+
+def _now_arg():
+    return datetime.now(tz=_ARG_TZ_OFFSET)
+
+def _today_arg_iso():
+    return _now_arg().date().isoformat()
 
 
 _WEATHER_CACHE_TTL_SECONDS_DEFAULT = 1800
@@ -322,13 +331,34 @@ def _evaluate_risk(current, region_name=None, zonda_wind_threshold_kmh=None):
         "wind_block_kmh": float(_get_config("WEATHER_WIND_BLOCK_KMH") or _env_int("WEATHER_WIND_BLOCK_KMH", 70)),
         "zonda_wind_block_kmh": float(zonda_wind_threshold_kmh or _get_config("WEATHER_ZONDA_WIND_BLOCK_KMH") or _env_int("WEATHER_ZONDA_WIND_BLOCK_KMH", 50)),
     }
+    current = current or {}
 
-    temp_c = current.get("temperature_2m")
-    humidity = current.get("relative_humidity_2m")
-    precip_mm = float(current.get("precipitation") or 0.0)
-    snow_cm = float(current.get("snowfall") or 0.0)
-    wind_kmh = float(current.get("wind_speed_10m") or 0.0)
-    code = int(current.get("weather_code") or 0)
+    def _f(v, default=0.0):
+        try:
+            if v is None:
+                return default
+            fv = float(v)
+            if fv != fv:  # NaN
+                return default
+            return fv
+        except (TypeError, ValueError):
+            return default
+
+    temp_raw = current.get("temperature_2m")
+    humidity_raw = current.get("relative_humidity_2m")
+    temp_c = None if temp_raw is None else float(temp_raw)
+    humidity = None if humidity_raw is None else int(round(float(humidity_raw)))
+    precip_mm = _f(current.get("precipitation"))
+    snow_cm = _f(current.get("snowfall"))
+    wind_kmh = _f(current.get("wind_speed_10m"))
+    try:
+        code = current.get("weather_code")
+        if code is None:
+            code = 0
+        else:
+            code = int(code)
+    except (TypeError, ValueError):
+        code = 0
 
     reasons = []
     risk_points = 0
@@ -517,7 +547,7 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
         return None
 
 
-def _save_cached_report(center_name, region, weather_date, payload):
+def _save_cached_report(center_name, region, weather_date, payload, ttl_seconds=None):
     try:
         from app.models import get_db, is_postgres
     except Exception:
@@ -577,11 +607,13 @@ def get_center_weather_report(center_name, supervisor_scope_names=None, force_re
     lat = coords["lat"]
     lng = coords["lng"]
 
-    today = date.today().isoformat()
+    today = _today_arg_iso()
     ttl = _get_ttl_seconds()
     cached = None if force_refresh else _load_cached_report(center_name, today, ttl)
-    if cached:
+    if cached and not cached.get("error"):
         return cached
+
+    fallback_on_error = cached and cached.get("error") is None
 
     payload = {
         "center_name": center_name,
@@ -594,10 +626,14 @@ def get_center_weather_report(center_name, supervisor_scope_names=None, force_re
         "forecast_daily": [],
         "error": None,
     }
+    error_ttl = int(_get_config("WEATHER_ERROR_TTL_SECONDS") or
+               _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT))
     try:
         raw = _fetch_open_meteo(lat, lng, forecast_days=4)
         current_raw = raw.get("current") or {}
         daily_raw = raw.get("daily") or {}
+        if not current_raw and fallback_on_error:
+            return cached
         current_eval = _evaluate_risk(current_raw, region_name=region)
         payload["current"] = current_eval
         payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
@@ -608,8 +644,14 @@ def get_center_weather_report(center_name, supervisor_scope_names=None, force_re
         except Exception:
             pass
         payload["error"] = f"API indisponible: {exc}"
+        payload["_error_ttl_seconds"] = error_ttl
+        if fallback_on_error:
+            return cached
 
-    _save_cached_report(center_name, region, today, payload)
+    if payload.get("error"):
+        _save_cached_report(center_name, region, today, payload, ttl_seconds=error_ttl)
+    else:
+        _save_cached_report(center_name, region, today, payload, ttl_seconds=ttl)
     return payload
 
 
@@ -665,5 +707,5 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             "total": len(critical) + len(caution) + len(operative),
         },
         "unresolved_centers": unresolved,
-        "generated_at": datetime.now().strftime("%H:%M hs."),
+        "generated_at": _now_arg().strftime("%H:%M hs."),
     }
