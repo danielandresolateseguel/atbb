@@ -487,29 +487,31 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
                "Accept": "application/json"}
 
     last_exc = None
-    for attempt in range(3):
+    for attempt in range(2):
         try:
-            raw = _http_get_json(url, headers, timeout=30)
+            raw = _http_get_json(url, headers, timeout=20)
             if not raw:
                 raise RuntimeError("Empty response from Open-Meteo")
             break
         except urllib.error.HTTPError as he:
             last_exc = he
-            if he.code == 429:
-                retry_after = 30
+            # NO HACER time.sleep() aqui: Gunicorn/Render tiene timeout 30s y
+            # cualquier sleep largo mata el worker (WORKER TIMEOUT -> 500).
+            # Los reintentos pasan por TTL cache de errores (5 min) en el
+            # proximo request del usuario.
+            if he.code == 429 and attempt == 0:
                 try:
-                    retry_after = max(retry_after, int(he.headers.get("Retry-After") or 0))
+                    current_app.logger.info(
+                        f"weather: 429 attempt {attempt+1}; retry inline quick without sleep, "
+                        "then defer next retry to next request via error cache TTL."
+                    )
                 except Exception:
                     pass
-                if attempt < 2:
-                    sleep_s = min(retry_after * (attempt + 2), 60) + (hash(url + str(attempt)) % 7)
-                    time.sleep(sleep_s)
-                    continue
+                continue
             raise
         except Exception as e:
             last_exc = e
-            if attempt < 2:
-                time.sleep(2.0 + attempt * 3.0 + (hash(url + str(attempt)) % 5))
+            if attempt == 0:
                 continue
             raise
     else:
