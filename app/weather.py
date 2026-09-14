@@ -482,30 +482,32 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
         "forecast_days": fd,
     })
     url = f"https://api.open-meteo.com/v1/forecast?{params}"
-    req = urllib.request.Request(url, headers={"User-Agent": "SoftBerardi-Weather/1.1 (+https://atbb.onrender.com)"})
+    headers = {"User-Agent": "SoftBerardi-Weather/1.2 (+https://atbb.onrender.com)",
+               "Accept": "application/json"}
 
     last_exc = None
-    for attempt in range(2):
+    for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=18) as resp:
-                raw = json.loads(resp.read().decode("utf-8"))
+            raw = _http_get_json(url, headers, timeout=25)
+            if not raw:
+                raise RuntimeError("Empty response from Open-Meteo")
             break
         except urllib.error.HTTPError as he:
             last_exc = he
             if he.code == 429:
-                retry_after = None
+                retry_after = 2
                 try:
-                    retry_after = int(he.headers.get("Retry-After") or 0) or 2
+                    retry_after = int(he.headers.get("Retry-After") or 0) or retry_after
                 except Exception:
-                    retry_after = 2
-                if attempt == 0:
-                    time.sleep(min(retry_after, 5))
+                    pass
+                if attempt < 2:
+                    time.sleep(min(retry_after + attempt, 6))
                     continue
             raise
         except Exception as e:
             last_exc = e
-            if attempt == 0:
-                time.sleep(1.2)
+            if attempt < 2:
+                time.sleep(1.2 + attempt * 1.5)
                 continue
             raise
     else:
@@ -536,6 +538,115 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
         else:
             out.append({"current": current, "daily": daily, "timezone": raw.get("timezone")})
     return out
+
+
+def _http_get_json(url, headers, timeout=25):
+    """Primero urllib, fallback requests si está disponible."""
+    last_exc = None
+    # 1) urllib stdlib
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            code = getattr(resp, "status", None) or resp.getcode() or 200
+            if code >= 400:
+                raise urllib.error.HTTPError(url, code, "", resp.headers, None)
+            raw_bytes = resp.read()
+        return json.loads(raw_bytes.decode("utf-8"))
+    except Exception as exc:
+        last_exc = exc
+    # 2) fallback requests opcional
+    try:
+        import requests  # noqa: WPS433
+        r = requests.get(url, headers=headers, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        pass
+    raise last_exc
+
+
+_WEATHER_TABLE_ENSURED_KEY = "__center_weather_cache_ensured__"
+
+
+def _ensure_center_weather_cache_table():
+    """Garantiza que center_weather_cache exista, sin depender de init_db().
+    Idempotente: chequea app_ctx globals para no correr en cada request.
+    """
+    try:
+        from flask import g as flask_g
+    except Exception:
+        flask_g = None
+    try:
+        from app.models import get_db, is_postgres
+    except Exception:
+        return False
+    if flask_g is not None:
+        already = getattr(flask_g, _WEATHER_TABLE_ENSURED_KEY, False)
+        if already:
+            return True
+    try:
+        db = get_db()
+        if is_postgres():
+            try:
+                db.execute("ROLLBACK")
+            except Exception:
+                pass
+            cur = db.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'center_weather_cache'
+                ) AS exists_
+                """
+            )
+            row = cur.fetchone()
+            exists = bool(row and (row.get("exists_") or row[0] if isinstance(row, (list, tuple)) else row.get("exists_")))
+            if not exists:
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS center_weather_cache (
+                        id SERIAL PRIMARY KEY,
+                        center_name TEXT NOT NULL,
+                        region TEXT,
+                        weather_date DATE NOT NULL,
+                        raw_json TEXT NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        UNIQUE(center_name, weather_date)
+                    )
+                    """
+                )
+                try:
+                    db.commit()
+                except Exception:
+                    try: db.execute("ROLLBACK")
+                    except Exception: pass
+        else:
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS center_weather_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    center_name TEXT NOT NULL,
+                    region TEXT,
+                    weather_date TEXT NOT NULL,
+                    raw_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(center_name, weather_date)
+                )
+                """
+            )
+            try:
+                db.commit()
+            except Exception:
+                pass
+        if flask_g is not None:
+            setattr(flask_g, _WEATHER_TABLE_ENSURED_KEY, True)
+        return True
+    except Exception:
+        try:
+            current_app.logger.exception("weather: _ensure_center_weather_cache_table failed")
+        except Exception:
+            pass
+        return False
 
 
 def build_forecast_daily(raw_daily, region_name=None):
@@ -584,6 +695,7 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
         from app.models import get_db, is_postgres
     except Exception:
         return None
+    _ensure_center_weather_cache_table()
     try:
         placeholder = "%s" if is_postgres() else "?"
         db = get_db()
@@ -645,6 +757,7 @@ def _save_cached_report(center_name, region, weather_date, payload, ttl_seconds=
         from app.models import get_db, is_postgres
     except Exception:
         return None
+    _ensure_center_weather_cache_table()
     try:
         payload_json = json.dumps(payload, ensure_ascii=False)
         db = get_db()
