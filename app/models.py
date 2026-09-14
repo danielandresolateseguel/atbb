@@ -1025,6 +1025,16 @@ def init_db():
             ping_ms REAL,
             FOREIGN KEY (service_session_id) REFERENCES service_sessions (id)
         );
+
+        CREATE TABLE IF NOT EXISTS center_weather_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            center_name TEXT NOT NULL,
+            region TEXT,
+            weather_date TEXT NOT NULL,
+            raw_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(center_name, weather_date)
+        );
         """
     )
     try:
@@ -1577,6 +1587,20 @@ def init_db_postgres():
             download_mbps DOUBLE PRECISION,
             upload_mbps DOUBLE PRECISION,
             ping_ms DOUBLE PRECISION
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS center_weather_cache (
+            id SERIAL PRIMARY KEY,
+            center_name TEXT NOT NULL,
+            region TEXT,
+            weather_date DATE NOT NULL,
+            raw_json TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(center_name, weather_date)
         )
         """
     )

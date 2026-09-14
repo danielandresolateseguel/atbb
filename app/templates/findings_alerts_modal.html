@@ -1,46 +1,296 @@
-{% if show_findings_alerts_modal and findings_alerts_modal_stats is defined and findings_alerts_modal_urls is defined and findings_alerts_modal_stats and findings_alerts_modal_urls %}
+{% if show_findings_alerts_modal %}
     <div class="pending-modal-backdrop" data-findings-alerts-modal>
-        <div class="pending-modal" role="dialog" aria-modal="true" aria-labelledby="findings_alerts_modal_title">
+        <div class="pending-modal pending-modal-large" role="dialog" aria-modal="true" aria-labelledby="findings_alerts_modal_title">
             <div class="pending-modal-heading">
-                <h3 id="findings_alerts_modal_title">Pendientes para atender</h3>
-                <p>Accesos directos para filtrar y resolver las advertencias actuales. Se ocultará por 4 horas al confirmar.</p>
+                <h3 id="findings_alerts_modal_title">Panel operativo del día</h3>
+                <p>
+                    Estado climático por provincia / centro y alertas de gestión que requieren seguimiento.
+                    Se ocultará por 4 horas al confirmar.
+                    {% if weather_summary and weather_summary.generated_at %}
+                        <span style="font-weight:700;color:#0f172a;">· Pronóstico actualizado {{ weather_summary.generated_at }}</span>
+                    {% endif %}
+                </p>
             </div>
             <div class="pending-modal-body">
-                <section class="alert-stack pending-modal-alerts">
-                    {% if findings_alerts_modal_stats["reopened_count"] %}
-                        <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['reopened'] }}">
-                            <strong>Atención inmediata</strong>
-                            <p>Hay {{ findings_alerts_modal_stats["reopened_count"] }} hallazgo(s) reabierto(s) que requieren nueva respuesta.</p>
-                        </a>
-                    {% endif %}
-                    {% if findings_alerts_modal_stats["escalated_treatment_count"] %}
-                        <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['escalated_treatment'] }}">
-                            <strong>Tratamientos escalados</strong>
-                            <p>Hay {{ findings_alerts_modal_stats["escalated_treatment_count"] }} hallazgo(s) con {{ findings_alerts_modal_stats["treatment_escalation_days"] }} o más día(s) sin novedades.</p>
-                        </a>
-                    {% endif %}
-                    {% if findings_alerts_modal_stats["stale_treatment_count"] %}
-                        <a class="alert-card alert-warning alert-link" href="{{ findings_alerts_modal_urls['stale_treatment'] }}">
-                            <strong>Sin novedades</strong>
-                            <p>Hay {{ findings_alerts_modal_stats["stale_treatment_count"] }} hallazgo(s) en tratamiento con {{ findings_alerts_modal_stats["treatment_alert_days"] }} o más día(s) sin actualización.</p>
-                        </a>
-                    {% endif %}
-                    {% if findings_alerts_modal_stats["overdue_validation_count"] %}
-                        <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['overdue_validation'] }}">
-                            <strong>CER-PVE vencidos</strong>
-                            <p>Hay {{ findings_alerts_modal_stats["overdue_validation_count"] }} hallazgo(s) con más de {{ findings_alerts_modal_stats["pending_validation_alert_days"] }} día(s) esperando validación.</p>
-                        </a>
-                    {% endif %}
-                    {% if findings_alerts_modal_stats["overdue_effectiveness_count"] %}
-                        <a class="alert-card alert-warning alert-link" href="{{ findings_alerts_modal_urls['overdue_effectiveness'] }}">
-                            <strong>Eficacia vencida</strong>
-                            <p>Hay {{ findings_alerts_modal_stats["overdue_effectiveness_count"] }} hallazgo(s) validados con control de eficacia vencido.</p>
-                        </a>
-                    {% endif %}
-                </section>
+
+                {# =============== SECCIÓN 1: CLIMA =============== #}
+                {% if weather_summary and weather_summary.totals is defined %}
+                    {% set totals = weather_summary.totals or {} %}
+                    <section class="weather-section">
+                        <div class="weather-kpi-row">
+                            <div class="weather-kpi weather-kpi-crit">
+                                <div class="weather-kpi-num">{{ totals.critico or 0 }}</div>
+                                <div class="weather-kpi-label">🔴 Bloqueado / Crítico</div>
+                                <div class="weather-kpi-sub">No apto para instalaciones</div>
+                            </div>
+                            <div class="weather-kpi weather-kpi-warn">
+                                <div class="weather-kpi-num">{{ totals.medio or 0 }}</div>
+                                <div class="weather-kpi-label">🟡 Precaución</div>
+                                <div class="weather-kpi-sub">Lluvia leve / viento moderado</div>
+                            </div>
+                            <div class="weather-kpi weather-kpi-ok">
+                                <div class="weather-kpi-num">{{ totals.bajo or 0 }}</div>
+                                <div class="weather-kpi-label">🟢 Operativo</div>
+                                <div class="weather-kpi-sub">Sin riesgos para trabajar</div>
+                            </div>
+                        </div>
+
+                        {# PROVINCIAS CRÍTICAS (BLOQUEADAS) #}
+                        {% if weather_summary.critically_blocked %}
+                            <div class="block-sep">
+                                <div class="block-sep-title block-sep-title-crit">
+                                    🔴 Provincias / Centros BLOQUEADOS hoy
+                                </div>
+                            </div>
+                            <section class="alert-stack pending-modal-alerts weather-alert-stack">
+                                {% for report in weather_summary.critically_blocked %}
+                                    {% set cur = report.current or {} %}
+                                    <article class="alert-card alert-critical weather-card">
+                                        <div class="weather-card-head">
+                                            <div>
+                                                <div class="weather-card-title">
+                                                    <span class="weather-emoji-big">{{ cur.weather_icon or "🌡️" }}</span>
+                                                    <strong>{{ report.center_name }}</strong>
+                                                    {% if report.region %}
+                                                        <span class="weather-region-chip">{{ report.region }}</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="weather-card-sub">
+                                                    {{ cur.weather_label or "" }}
+                                                    {% if cur.temp_c is not none %}· {{ cur.temp_c }} °C{% endif %}
+                                                    {% if cur.humidity is not none %}· {{ cur.humidity }}% HR{% endif %}
+                                                    · 💨 {{ cur.wind_kmh or 0 }} km/h
+                                                    {% if cur.precip_mm and cur.precip_mm > 0 %}· 💧 {{ cur.precip_mm }}mm{% endif %}
+                                                    {% if cur.snow_cm and cur.snow_cm > 0 %}· ❄️ {{ cur.snow_cm }}cm{% endif %}
+                                                    {% if cur.is_zonda_region %}<span class="zonda-tag">⚠ Región susceptible a Zonda</span>{% endif %}
+                                                </div>
+                                            </div>
+                                            <div class="weather-card-risk">
+                                                <span class="risk-pill risk-pill-crit">SIN INSTALAR</span>
+                                            </div>
+                                        </div>
+                                        {% if cur.reasons %}
+                                            <ul class="weather-reasons">
+                                                {% for r in cur.reasons %}
+                                                    <li>• {{ r }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        {% endif %}
+                                        {% if report.forecast_daily %}
+                                            <details class="weather-forecast-details">
+                                                <summary>📅 Pronóstico próximos {{ report.forecast_daily[1:] | length }} días</summary>
+                                                <div class="weather-forecast-grid">
+                                                    {% for day in report.forecast_daily[1:] %}
+                                                        <div class="forecast-day{% if day.blocks_installation %} forecast-day-blocked{% elif day.risk_level == 'medio' %} forecast-day-warn{% endif %}">
+                                                            <div class="forecast-day-date">{{ day.date }}</div>
+                                                            <div class="forecast-day-icon">{{ day.weather_icon or "🌡️" }}</div>
+                                                            <div class="forecast-day-label">{{ day.weather_label }}</div>
+                                                            {% if day.temp_max_c is not none and day.temp_min_c is not none %}
+                                                                <div class="forecast-day-temp">{{ day.temp_max_c }}° / {{ day.temp_min_c }}°</div>
+                                                            {% endif %}
+                                                            <div class="forecast-day-wind">💨 {{ day.wind_max_kmh or 0 }} km/h</div>
+                                                            {% if day.precip_prob_pct is not none %}
+                                                                <div class="forecast-day-prob">🌧 {{ day.precip_prob_pct }}%</div>
+                                                            {% endif %}
+                                                            {% if day.blocks_installation %}
+                                                                <span class="risk-pill risk-pill-crit risk-pill-sm">Bloqueado</span>
+                                                            {% elif day.risk_level == 'medio' %}
+                                                                <span class="risk-pill risk-pill-warn risk-pill-sm">Precaución</span>
+                                                            {% else %}
+                                                                <span class="risk-pill risk-pill-ok risk-pill-sm">Operativo</span>
+                                                            {% endif %}
+                                                        </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </details>
+                                        {% endif %}
+                                    </article>
+                                {% endfor %}
+                            </section>
+                        {% endif %}
+
+                        {# PROVINCIAS PRECAUCIÓN #}
+                        {% if weather_summary.caution %}
+                            <div class="block-sep">
+                                <div class="block-sep-title block-sep-title-warn">
+                                    🟡 Provincias / Centros con precaución hoy
+                                </div>
+                            </div>
+                            <section class="alert-stack pending-modal-alerts weather-alert-stack">
+                                {% for report in weather_summary.caution %}
+                                    {% set cur = report.current or {} %}
+                                    <article class="alert-card alert-warning weather-card">
+                                        <div class="weather-card-head">
+                                            <div>
+                                                <div class="weather-card-title">
+                                                    <span class="weather-emoji-big">{{ cur.weather_icon or "🌡️" }}</span>
+                                                    <strong>{{ report.center_name }}</strong>
+                                                    {% if report.region %}
+                                                        <span class="weather-region-chip">{{ report.region }}</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="weather-card-sub">
+                                                    {{ cur.weather_label or "" }}
+                                                    {% if cur.temp_c is not none %}· {{ cur.temp_c }} °C{% endif %}
+                                                    {% if cur.humidity is not none %}· {{ cur.humidity }}% HR{% endif %}
+                                                    · 💨 {{ cur.wind_kmh or 0 }} km/h
+                                                    {% if cur.precip_mm and cur.precip_mm > 0 %}· 💧 {{ cur.precip_mm }}mm{% endif %}
+                                                    {% if cur.is_zonda_region %}<span class="zonda-tag">⚠ Región susceptible a Zonda</span>{% endif %}
+                                                </div>
+                                            </div>
+                                            <div class="weather-card-risk">
+                                                <span class="risk-pill risk-pill-warn">PRECAUCIÓN</span>
+                                            </div>
+                                        </div>
+                                        {% if cur.reasons %}
+                                            <ul class="weather-reasons">
+                                                {% for r in cur.reasons %}
+                                                    <li>• {{ r }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        {% endif %}
+                                        {% if report.forecast_daily %}
+                                            <details class="weather-forecast-details">
+                                                <summary>📅 Pronóstico próximos {{ report.forecast_daily[1:] | length }} días</summary>
+                                                <div class="weather-forecast-grid">
+                                                    {% for day in report.forecast_daily[1:] %}
+                                                        <div class="forecast-day{% if day.blocks_installation %} forecast-day-blocked{% elif day.risk_level == 'medio' %} forecast-day-warn{% endif %}">
+                                                            <div class="forecast-day-date">{{ day.date }}</div>
+                                                            <div class="forecast-day-icon">{{ day.weather_icon or "🌡️" }}</div>
+                                                            <div class="forecast-day-label">{{ day.weather_label }}</div>
+                                                            {% if day.temp_max_c is not none and day.temp_min_c is not none %}
+                                                                <div class="forecast-day-temp">{{ day.temp_max_c }}° / {{ day.temp_min_c }}°</div>
+                                                            {% endif %}
+                                                            <div class="forecast-day-wind">💨 {{ day.wind_max_kmh or 0 }} km/h</div>
+                                                            {% if day.precip_prob_pct is not none %}
+                                                                <div class="forecast-day-prob">🌧 {{ day.precip_prob_pct }}%</div>
+                                                            {% endif %}
+                                                            {% if day.blocks_installation %}
+                                                                <span class="risk-pill risk-pill-crit risk-pill-sm">Bloqueado</span>
+                                                            {% elif day.risk_level == 'medio' %}
+                                                                <span class="risk-pill risk-pill-warn risk-pill-sm">Precaución</span>
+                                                            {% else %}
+                                                                <span class="risk-pill risk-pill-ok risk-pill-sm">Operativo</span>
+                                                            {% endif %}
+                                                        </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </details>
+                                        {% endif %}
+                                    </article>
+                                {% endfor %}
+                            </section>
+                        {% endif %}
+
+                        {# PROVINCIAS OPERATIVAS (desplegables) #}
+                        {% if weather_summary.operative %}
+                            <details class="operative-details" open>
+                                <summary>
+                                    🟢 {{ totals.bajo or 0 }} Provincia(s) / Centro(s) operativos — sin riesgos hoy
+                                    <span class="operative-summary-sub">Desplegar para priorizar</span>
+                                </summary>
+                                <div class="operative-grid">
+                                    {% for report in weather_summary.operative %}
+                                        {% set cur = report.current or {} %}
+                                        <article class="operative-card">
+                                            <div class="operative-card-title">
+                                                <span class="weather-emoji-big">{{ cur.weather_icon or "☀️" }}</span>
+                                                <div>
+                                                    <strong>{{ report.center_name }}</strong>
+                                                    {% if report.region %}<span class="weather-region-chip">{{ report.region }}</span>{% endif %}
+                                                </div>
+                                            </div>
+                                            <div class="operative-card-sub">
+                                                {{ cur.weather_label or "" }}
+                                                {% if cur.temp_c is not none %}· {{ cur.temp_c }} °C{% endif %}
+                                                · 💨 {{ cur.wind_kmh or 0 }} km/h
+                                                {% if cur.precip_mm and cur.precip_mm > 0 %}· 💧 {{ cur.precip_mm }}mm{% endif %}
+                                            </div>
+                                            <span class="risk-pill risk-pill-ok risk-pill-sm">LISTO PARA TRABAJAR</span>
+                                            {% if report.forecast_daily %}
+                                                <details class="weather-forecast-details">
+                                                    <summary>Pronóstico próximos {{ report.forecast_daily[1:] | length }} días</summary>
+                                                    <div class="weather-forecast-grid">
+                                                        {% for day in report.forecast_daily[1:] %}
+                                                            <div class="forecast-day{% if day.blocks_installation %} forecast-day-blocked{% elif day.risk_level == 'medio' %} forecast-day-warn{% endif %}">
+                                                                <div class="forecast-day-date">{{ day.date }}</div>
+                                                                <div class="forecast-day-icon">{{ day.weather_icon or "🌡️" }}</div>
+                                                                <div class="forecast-day-label">{{ day.weather_label }}</div>
+                                                                {% if day.temp_max_c is not none and day.temp_min_c is not none %}
+                                                                    <div class="forecast-day-temp">{{ day.temp_max_c }}° / {{ day.temp_min_c }}°</div>
+                                                                {% endif %}
+                                                                <div class="forecast-day-wind">💨 {{ day.wind_max_kmh or 0 }} km/h</div>
+                                                                {% if day.precip_prob_pct is not none %}
+                                                                    <div class="forecast-day-prob">🌧 {{ day.precip_prob_pct }}%</div>
+                                                                {% endif %}
+                                                            </div>
+                                                        {% endfor %}
+                                                    </div>
+                                                </details>
+                                            {% endif %}
+                                        </article>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                        {% endif %}
+
+                        {% if weather_summary.unresolved_centers %}
+                            <div class="unresolved-chips">
+                                <span>ℹ Centros sin coordenadas (agregar a <code>WEATHER_CENTER_COORDINATES</code>):</span>
+                                {% for c in weather_summary.unresolved_centers %}
+                                    <span class="unresolved-chip">{{ c }}</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </section>
+                {% endif %}
+
+                {# =============== SECCIÓN 2: HALLAZGOS PENDIENTES =============== #}
+                {% if findings_alerts_modal_stats is defined and findings_alerts_modal_urls is defined and findings_alerts_modal_stats and findings_alerts_modal_urls %}
+                    <div class="block-sep">
+                        <div class="block-sep-title block-sep-title-hall">
+                            ⚠️ Pendientes para atender (hallazgos)
+                        </div>
+                    </div>
+                    <section class="alert-stack pending-modal-alerts">
+                        {% if findings_alerts_modal_stats["reopened_count"] %}
+                            <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['reopened'] }}">
+                                <strong>Atención inmediata</strong>
+                                <p>Hay {{ findings_alerts_modal_stats["reopened_count"] }} hallazgo(s) reabierto(s) que requieren nueva respuesta.</p>
+                            </a>
+                        {% endif %}
+                        {% if findings_alerts_modal_stats["escalated_treatment_count"] %}
+                            <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['escalated_treatment'] }}">
+                                <strong>Tratamientos escalados</strong>
+                                <p>Hay {{ findings_alerts_modal_stats["escalated_treatment_count"] }} hallazgo(s) con {{ findings_alerts_modal_stats["treatment_escalation_days"] }} o más día(s) sin novedades.</p>
+                            </a>
+                        {% endif %}
+                        {% if findings_alerts_modal_stats["stale_treatment_count"] %}
+                            <a class="alert-card alert-warning alert-link" href="{{ findings_alerts_modal_urls['stale_treatment'] }}">
+                                <strong>Sin novedades</strong>
+                                <p>Hay {{ findings_alerts_modal_stats["stale_treatment_count"] }} hallazgo(s) en tratamiento con {{ findings_alerts_modal_stats["treatment_alert_days"] }} o más día(s) sin actualización.</p>
+                            </a>
+                        {% endif %}
+                        {% if findings_alerts_modal_stats["overdue_validation_count"] %}
+                            <a class="alert-card alert-critical alert-link" href="{{ findings_alerts_modal_urls['overdue_validation'] }}">
+                                <strong>CER-PVE vencidos</strong>
+                                <p>Hay {{ findings_alerts_modal_stats["overdue_validation_count"] }} hallazgo(s) con más de {{ findings_alerts_modal_stats["pending_validation_alert_days"] }} día(s) esperando validación.</p>
+                            </a>
+                        {% endif %}
+                        {% if findings_alerts_modal_stats["overdue_effectiveness_count"] %}
+                            <a class="alert-card alert-warning alert-link" href="{{ findings_alerts_modal_urls['overdue_effectiveness'] }}">
+                                <strong>Eficacia vencida</strong>
+                                <p>Hay {{ findings_alerts_modal_stats["overdue_effectiveness_count"] }} hallazgo(s) validados con control de eficacia vencido.</p>
+                            </a>
+                        {% endif %}
+                    </section>
+                {% endif %}
+
             </div>
             <div class="pending-modal-actions">
-                <a class="button button-secondary" href="{{ url_for('main.findings_list') }}" data-findings-alerts-view>Ver pendientes</a>
+                {% if findings_alerts_modal_urls %}
+                    <a class="button button-secondary" href="{{ url_for('main.findings_list') }}" data-findings-alerts-view>Ver pendientes</a>
+                {% endif %}
                 <button class="button button-primary" type="button" data-findings-alerts-ack>Entendido</button>
             </div>
         </div>

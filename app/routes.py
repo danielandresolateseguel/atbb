@@ -27,6 +27,12 @@ except ImportError:
     ImageFont = None
 
 from app.checklist import AUDIT_CHECKLIST_SECTIONS, CHECKLIST_SECTIONS, QC_SECTION_KEY
+from app.spreadsheets import parse_tabular_upload
+
+try:
+    from app import weather as weather_module
+except Exception:
+    weather_module = None
 from app.models import (
     count_active_admins,
     count_users,
@@ -229,7 +235,6 @@ from app.models import (
     is_postgres,
     get_db,
 )
-from app.spreadsheets import parse_tabular_upload
 
 
 main = Blueprint("main", __name__)
@@ -1745,9 +1750,18 @@ def inject_auth_context():
     show_findings_alerts_modal = False
     findings_alerts_modal_stats = None
     findings_alerts_modal_urls = None
+    weather_summary = None
+    weather_has_alerts = False
 
+    weather_enabled = False
     try:
-        if user and user.get("role") in {"supervisor", "auditor"} and can_view_findings():
+        weather_enabled = bool(current_app.config.get("WEATHER_ENABLED", True)) and weather_module is not None
+    except Exception:
+        weather_enabled = False
+
+    modal_viewer_roles = {"admin", "gerente", "supervisor", "auditor"}
+    try:
+        if user and user.get("role") in modal_viewer_roles:
             now = int(time.time())
             next_show_raw = session.get("findings_alerts_next_show_at")
             next_show_at = 0
@@ -1755,40 +1769,112 @@ def inject_auth_context():
                 next_show_at = int(next_show_raw) if next_show_raw is not None else 0
             except (TypeError, ValueError):
                 next_show_at = 0
-            if now >= next_show_at:
+
+            stats = {}
+            has_finding_alerts = False
+            try:
+                if can_view_findings():
+                    try:
+                        stats = fetch_finding_stats(
+                            None,
+                            auditor_user_id=current_auditor_user_id(),
+                            supervisor_scope_names=current_supervisor_scope_names(),
+                        )
+                    except Exception:
+                        current_app.logger.exception("Error al calcular estadísticas de alertas de hallazgos")
+                        stats = {}
+                    has_finding_alerts = any(
+                        (
+                            stats.get("reopened_count"),
+                            stats.get("escalated_treatment_count"),
+                            stats.get("stale_treatment_count"),
+                            stats.get("overdue_validation_count"),
+                            stats.get("overdue_effectiveness_count"),
+                        )
+                    )
+            except Exception:
+                has_finding_alerts = False
+
+            if weather_enabled:
                 try:
-                    stats = fetch_finding_stats(
-                        None,
-                        auditor_user_id=current_auditor_user_id(),
-                        supervisor_scope_names=current_supervisor_scope_names(),
-                    )
+                    supervisor_scope_names = current_supervisor_scope_names() if user.get("role") == "supervisor" else None
+                    centers = fetch_distinct_centers() or []
+                    if supervisor_scope_names:
+                        from app.models import normalize_supervisor_scope_names
+                        scope_names_norm = normalize_supervisor_scope_names(supervisor_scope_names) or []
+                        scoped_centers = []
+                        try:
+                            db = get_db()
+                            placeholder = "%s" if is_postgres() else "?"
+                            if scope_names_norm:
+                                placeholders = ", ".join([placeholder] * len(scope_names_norm))
+                                rows = db.execute(
+                                    f"SELECT DISTINCT COALESCE(center_name,'') AS center_name FROM technicians WHERE COALESCE(center_name,'') <> '' AND UPPER(TRIM(COALESCE(supervisor_name,''))) IN ({placeholders})",
+                                    [s.upper().strip() for s in scope_names_norm],
+                                ).fetchall()
+                                scoped_centers = [r["center_name"] for r in rows if r and r.get("center_name")]
+                        except Exception:
+                            current_app.logger.exception("weather: error filtrando centros por scope")
+                        centers = scoped_centers or centers
+                    if centers:
+                        try:
+                            weather_summary = weather_module.summarize_centers_weather(
+                                centers,
+                                supervisor_scope_names=supervisor_scope_names,
+                            )
+                        except Exception:
+                            current_app.logger.exception("inject_auth_context: error llamando summarize_centers_weather")
+                            weather_summary = {
+                                "critically_blocked": [],
+                                "caution": [],
+                                "operative": [],
+                                "totals": {"critico": 0, "medio": 0, "bajo": 0, "total": len(centers)},
+                                "unresolved_centers": list(centers),
+                                "generated_at": None,
+                            }
+                        totals = (weather_summary or {}).get("totals") or {}
+                        weather_has_alerts = bool(totals.get("critico") or totals.get("medio"))
+                    else:
+                        current_app.logger.warning("weather: fetch_distinct_centers devolvió lista vacía, no se puede calcular clima")
+                        weather_summary = {
+                            "critically_blocked": [],
+                            "caution": [],
+                            "operative": [],
+                            "totals": {"critico": 0, "medio": 0, "bajo": 0, "total": 0},
+                            "unresolved_centers": [],
+                            "generated_at": None,
+                            "_empty_centers": True,
+                        }
                 except Exception:
-                    current_app.logger.exception("Error al calcular estadísticas de alertas de hallazgos")
-                    session["findings_alerts_next_show_at"] = now + (15 * 60)
-                    stats = {}
-                has_alerts = any(
-                    (
-                        stats.get("reopened_count"),
-                        stats.get("escalated_treatment_count"),
-                        stats.get("stale_treatment_count"),
-                        stats.get("overdue_validation_count"),
-                        stats.get("overdue_effectiveness_count"),
-                    )
-                )
-                if has_alerts:
-                    show_findings_alerts_modal = True
-                    findings_alerts_modal_stats = stats
-                    findings_alerts_modal_urls = {
-                        "reopened": url_for("main.findings_list", quick_filter="reopened", page=1),
-                        "escalated_treatment": url_for("main.findings_list", quick_filter="escalated_treatment", page=1),
-                        "stale_treatment": url_for("main.findings_list", quick_filter="stale_treatment", page=1),
-                        "overdue_validation": url_for("main.findings_list", quick_filter="overdue_validation", page=1),
-                        "overdue_effectiveness": url_for("main.findings_list", quick_filter="overdue_effectiveness", page=1),
+                    current_app.logger.exception("inject_auth_context: error en resumen climatico")
+                    weather_summary = {
+                        "critically_blocked": [],
+                        "caution": [],
+                        "operative": [],
+                        "totals": {"critico": 0, "medio": 0, "bajo": 0, "total": 0},
+                        "unresolved_centers": [],
+                        "generated_at": None,
                     }
+                    weather_has_alerts = False
+
+            if now >= next_show_at:
+                totals_weather = (weather_summary or {}).get("totals") or {}
+                has_weather_data = bool(totals_weather.get("total"))
+                if has_finding_alerts or weather_has_alerts or has_weather_data:
+                    show_findings_alerts_modal = True
+                    if has_finding_alerts:
+                        findings_alerts_modal_stats = stats
+                        findings_alerts_modal_urls = {
+                            "reopened": url_for("main.findings_list", quick_filter="reopened", page=1),
+                            "escalated_treatment": url_for("main.findings_list", quick_filter="escalated_treatment", page=1),
+                            "stale_treatment": url_for("main.findings_list", quick_filter="stale_treatment", page=1),
+                            "overdue_validation": url_for("main.findings_list", quick_filter="overdue_validation", page=1),
+                            "overdue_effectiveness": url_for("main.findings_list", quick_filter="overdue_effectiveness", page=1),
+                        }
                 else:
                     session["findings_alerts_next_show_at"] = now + (15 * 60)
     except Exception:
-        current_app.logger.exception("inject_auth_context: error en alertas hallazgos")
+        current_app.logger.exception("inject_auth_context: error en alertas hallazgos / clima")
 
     supervisor_has_empty_scope = False
     try:
@@ -1826,6 +1912,8 @@ def inject_auth_context():
         "show_findings_alerts_modal": show_findings_alerts_modal,
         "findings_alerts_modal_stats": findings_alerts_modal_stats,
         "findings_alerts_modal_urls": findings_alerts_modal_urls,
+        "weather_summary": weather_summary,
+        "weather_has_alerts": weather_has_alerts,
         "can_import": _safe(can_import),
         "can_create_audit": _safe(can_create_audit),
         "can_view_supply_requests": _safe(can_view_supply_requests),
@@ -4492,6 +4580,130 @@ def service_report_pdf(service_session_id):
         current_app.logger.exception("Error generando PDF Service %s", service_session_id)
         flash(str(exc), "error")
         return redirect(url_for("main.service_report", service_session_id=service_session_id, print=1))
+
+
+@main.route("/qc/<int:qc_session_id>/report")
+def qc_report(qc_session_id):
+    if not can_view_qc():
+        abort(403)
+
+    if is_technician():
+        session_row = fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None)
+        if not session_row:
+            abort(404)
+        if int(session_row.get("technician_id") or 0) != int(current_technician_id() or 0):
+            abort(404)
+    elif is_auditor():
+        session_row = fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None)
+        if not session_row:
+            abort(404)
+        if (
+            session_row.get("auditor_user_id") != current_user()["id"]
+            and (session_row.get("auditor_name") or "") != (current_user().get("username") or "")
+        ):
+            abort(404)
+    else:
+        session_row = fetch_qc_session_detail(
+            qc_session_id,
+            supervisor_scope_names=current_supervisor_scope_names(),
+        )
+        if not session_row:
+            abort(404)
+
+    expires_in_seconds = 3600 if request.args.get("print") == "1" else 900
+    items = fetch_qc_items(qc_session_id)
+    grouped_items = build_grouped_audit_items(items)
+    tnps_response = fetch_tnps_response_for_qc(qc_session_id)
+    tnps_source = "qc"
+    if not tnps_response and session_row.get("audit_id"):
+        tnps_response = fetch_tnps_response_for_audit(session_row["audit_id"])
+        tnps_source = "audit"
+
+    response = make_response(
+        render_template(
+            "qc_report.html",
+            qc=session_row,
+            items=items,
+            grouped_items=grouped_items,
+            tnps_response=tnps_response,
+            tnps_source=tnps_source,
+            print_mode=request.args.get("print") == "1",
+            inline_css="",
+            expires_in_seconds=expires_in_seconds,
+        )
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@main.route("/qc/<int:qc_session_id>/report.pdf")
+def qc_report_pdf(qc_session_id):
+    if not can_view_qc():
+        abort(403)
+
+    if is_technician():
+        session_row = fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None)
+        if not session_row:
+            abort(404)
+        if int(session_row.get("technician_id") or 0) != int(current_technician_id() or 0):
+            abort(404)
+    elif is_auditor():
+        session_row = fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None)
+        if not session_row:
+            abort(404)
+        if (
+            session_row.get("auditor_user_id") != current_user()["id"]
+            and (session_row.get("auditor_name") or "") != (current_user().get("username") or "")
+        ):
+            abort(404)
+    else:
+        session_row = fetch_qc_session_detail(
+            qc_session_id,
+            supervisor_scope_names=current_supervisor_scope_names(),
+        )
+        if not session_row:
+            abort(404)
+
+    items = fetch_qc_items(qc_session_id)
+    grouped_items = build_grouped_audit_items(items)
+    tnps_response = fetch_tnps_response_for_qc(qc_session_id)
+    tnps_source = "qc"
+    if not tnps_response and session_row.get("audit_id"):
+        tnps_response = fetch_tnps_response_for_audit(session_row["audit_id"])
+        tnps_source = "audit"
+
+    css_path = Path(current_app.root_path) / "static" / "css" / "main.css"
+    inline_css = css_path.read_text(encoding="utf-8") if css_path.exists() else ""
+
+    date_suffix = (session_row.get("qc_date") or "sin_fecha").strip().replace("/", "-")
+    sa_number = (session_row.get("sa_number") or "").strip()
+    filename = secure_filename(f"qc_{qc_session_id}_SA{sa_number}_{date_suffix}.pdf") or f"qc_{qc_session_id}.pdf"
+    filename_override = (request.args.get("filename") or "").strip()
+    if filename_override:
+        normalized_override = secure_filename(filename_override) or filename
+        if not normalized_override.lower().endswith(".pdf"):
+            normalized_override = f"{normalized_override}.pdf"
+        filename = normalized_override
+
+    html = render_template(
+        "qc_report.html",
+        qc=session_row,
+        items=items,
+        grouped_items=grouped_items,
+        tnps_response=tnps_response,
+        tnps_source=tnps_source,
+        print_mode=True,
+        inline_css=inline_css,
+        expires_in_seconds=3600,
+    )
+    try:
+        return build_pdf_from_html_response(html, filename)
+    except Exception as exc:
+        current_app.logger.exception("Error generando PDF QC %s", qc_session_id)
+        flash(str(exc), "error")
+        return redirect(url_for("main.qc_report", qc_session_id=qc_session_id, print=1))
 
 
 @main.route("/qc")
