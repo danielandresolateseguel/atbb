@@ -6976,11 +6976,22 @@ def ack_findings_alerts():
 def weather_reset_cache_today():
     """Endpoint admin-only para limpiar center_weather_cache del día actual.
     No requiere Shell/psql. Útil para salir de 429 TooManyRequests en Render.
+
+    Query params:
+      ?force=1  -> borra TODO (cache OK + cache de errores).
+      default   -> borra SOLO el cache OK (preserva el TTL de errores para
+                   no re-activar el 429 stampede). Usa ?force=1 solo si
+                   estás seguro que la IP Render ya se enfrió en Open-Meteo.
     """
     user = current_user()
     if not user or user.get("role") != "admin":
         return jsonify({"error": "unauthorized (admin only)"}), 403
+    force_mode = (request.args.get("force", "").strip() in {"1", "true", "yes"}) or (
+        request.method == "POST" and request.form.get("force") in {"1", "true", "yes"}
+    )
     deleted = 0
+    deleted_errors = 0
+    deleted_ok = 0
     try:
         try:
             from app.models import get_db, is_postgres
@@ -7004,14 +7015,55 @@ def weather_reset_cache_today():
         if today is None:
             from datetime import date as _date
             today = _date.today().isoformat()
-        cur = db.execute(
-            f"DELETE FROM center_weather_cache WHERE weather_date = {placeholder}",
-            (today,),
-        )
-        try:
-            deleted = int(getattr(cur, "rowcount", 0) or 0)
-        except Exception:
-            deleted = 0
+
+        if force_mode:
+            cur = db.execute(
+                f"DELETE FROM center_weather_cache WHERE weather_date = {placeholder}",
+                (today,),
+            )
+            try:
+                deleted = int(getattr(cur, "rowcount", 0) or 0)
+            except Exception:
+                deleted = 0
+        else:
+            # SMART mode: borramos solo rows cuyo raw_json NO es error payload,
+            # preservando error TTL cache para no volver a pegar 429.
+            # Detectamos el error payload por 2 keys: "__error__" y "error" (por compat).
+            def _is_error_json_pg(raw_json_text: str) -> bool:
+                try:
+                    obj = json.loads(raw_json_text or "{}")
+                except Exception:
+                    return False
+                return bool(obj.get("__error__") or obj.get("error"))
+
+            cur_all = db.execute(
+                f"SELECT id, raw_json FROM center_weather_cache WHERE weather_date = {placeholder}",
+                (today,),
+            )
+            rows = cur_all.fetchall() or []
+            ok_ids = []
+            err_ids = []
+            for r in rows:
+                rid = r.get("id")
+                raw = r.get("raw_json") or ""
+                if _is_error_json_pg(raw):
+                    err_ids.append(rid)
+                else:
+                    ok_ids.append(rid)
+            if ok_ids:
+                in_ph = ", ".join([placeholder] * len(ok_ids))
+                cur_ok = db.execute(
+                    f"DELETE FROM center_weather_cache WHERE id IN ({in_ph})",
+                    ok_ids,
+                )
+                try:
+                    deleted_ok = int(getattr(cur_ok, "rowcount", 0) or 0)
+                except Exception:
+                    deleted_ok = 0
+            if err_ids:
+                deleted_errors = len(err_ids)
+            deleted = deleted_ok
+
         try:
             db.commit()
         except Exception:
@@ -7021,13 +7073,25 @@ def weather_reset_cache_today():
                 except Exception:
                     pass
             deleted = 0
+            deleted_ok = 0
+            deleted_errors = 0
     except Exception as exc:
         try:
             current_app.logger.exception("weather_reset_cache_today failed")
         except Exception:
             pass
         return jsonify({"error": f"db_error: {exc}", "deleted": 0}), 500
-    return jsonify({"ok": True, "date": str(today), "deleted_rows": deleted})
+    resp = {
+        "ok": True,
+        "date": str(today),
+        "deleted_rows": deleted,
+        "mode": ("force_all" if force_mode else "smart_ok_only"),
+    }
+    if not force_mode:
+        resp["deleted_ok_cache"] = deleted_ok
+        resp["preserved_error_cache_count"] = deleted_errors
+    return jsonify(resp)
+
 
 
 @main.route("/findings/<int:finding_id>")
