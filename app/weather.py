@@ -434,9 +434,33 @@ def _evaluate_risk(current, region_name=None, zonda_wind_threshold_kmh=None):
 
 
 def _fetch_open_meteo(lat, lng, forecast_days=4):
+    """Llama a Open-Meteo SINGLE location (compat). Para multi-location usar _fetch_open_meteo_batch."""
+    out = _fetch_open_meteo_batch([(lat, lng)], forecast_days=forecast_days)
+    if not out:
+        raise RuntimeError("Empty batch response from Open-Meteo")
+    return out[0]
+
+
+def _fetch_open_meteo_batch(locations, forecast_days=4):
+    """Llama a Open-Meteo BATCH endpoint (una sola HTTP call para N locations <=100).
+    locations: [(lat, lng), ...]
+    Retorna list[dict] en el mismo orden, cada uno con keys 'current' y 'daily' igual que el endpoint single.
+    """
+    if not locations:
+        return []
+    locations = list(locations)
+    if len(locations) > 100:
+        chunked = []
+        for i in range(0, len(locations), 100):
+            chunked.extend(_fetch_open_meteo_batch(locations[i:i+100], forecast_days=forecast_days))
+        return chunked
+
+    lats_str = ",".join([f"{float(lat):.5f}" for lat, _ in locations])
+    lngs_str = ",".join([f"{float(lng):.5f}" for _, lng in locations])
+    fd = max(1, min(7, int(forecast_days)))
     params = urllib.parse.urlencode({
-        "latitude": lat,
-        "longitude": lng,
+        "latitude": lats_str,
+        "longitude": lngs_str,
         "current": ",".join([
             "temperature_2m",
             "relative_humidity_2m",
@@ -455,12 +479,63 @@ def _fetch_open_meteo(lat, lng, forecast_days=4):
             "precipitation_probability_max",
         ]),
         "timezone": "auto",
-        "forecast_days": max(1, min(7, int(forecast_days))),
+        "forecast_days": fd,
     })
     url = f"https://api.open-meteo.com/v1/forecast?{params}"
-    req = urllib.request.Request(url, headers={"User-Agent": "SoftBerardi-Weather/1.0 (+https://atbb.onrender.com)"})
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    req = urllib.request.Request(url, headers={"User-Agent": "SoftBerardi-Weather/1.1 (+https://atbb.onrender.com)"})
+
+    last_exc = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=18) as resp:
+                raw = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as he:
+            last_exc = he
+            if he.code == 429:
+                retry_after = None
+                try:
+                    retry_after = int(he.headers.get("Retry-After") or 0) or 2
+                except Exception:
+                    retry_after = 2
+                if attempt == 0:
+                    time.sleep(min(retry_after, 5))
+                    continue
+            raise
+        except Exception as e:
+            last_exc = e
+            if attempt == 0:
+                time.sleep(1.2)
+                continue
+            raise
+    else:
+        raise last_exc if last_exc else RuntimeError("Open-Meteo batch fetch failed")
+
+    n = len(locations)
+    out = []
+    for idx in range(n):
+        current = raw.get("current") or {}
+        daily = raw.get("daily") or {}
+        is_batch = isinstance(current.get("temperature_2m"), list) if current else False
+        if is_batch:
+            cur_single = {}
+            for k, v in current.items():
+                cur_single[k] = v[idx] if isinstance(v, list) and len(v) > idx else None
+            daily_single = {}
+            for k, v in daily.items():
+                if isinstance(v, list):
+                    if len(v) == 0:
+                        daily_single[k] = []
+                    elif isinstance(v[0], list):
+                        daily_single[k] = v[idx] if len(v) > idx else []
+                    else:
+                        daily_single[k] = v
+                else:
+                    daily_single[k] = v
+            out.append({"current": cur_single, "daily": daily_single, "timezone": raw.get("timezone")})
+        else:
+            out.append({"current": current, "daily": daily, "timezone": raw.get("timezone")})
+    return out
 
 
 def build_forecast_daily(raw_daily, region_name=None):
@@ -511,7 +586,13 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
         return None
     try:
         placeholder = "%s" if is_postgres() else "?"
-        rows = get_db().execute(
+        db = get_db()
+        if is_postgres():
+            try:
+                db.execute("ROLLBACK")
+            except Exception:
+                pass
+        rows = db.execute(
             f"""
             SELECT id, center_name, region, weather_date, raw_json, updated_at
             FROM center_weather_cache
@@ -534,16 +615,28 @@ def _load_cached_report(center_name, weather_date, ttl_seconds):
                 updated_ts = float(datetime.fromisoformat(str(updated_at_raw).replace("Z", "")).timestamp())
         except Exception:
             return None
-        if (time.time() - updated_ts) > ttl_seconds:
-            return None
+        payload = None
         try:
             raw = row["raw_json"]
             if isinstance(raw, str):
-                return json.loads(raw)
-            return raw
+                payload = json.loads(raw)
+            else:
+                payload = raw
         except Exception:
             return None
+        effective_ttl = int(ttl_seconds or _WEATHER_CACHE_TTL_SECONDS_DEFAULT)
+        if payload and payload.get("error"):
+            effective_ttl = int(payload.get("_error_ttl_seconds") or
+                                _get_config("WEATHER_ERROR_TTL_SECONDS") or
+                                _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT))
+        if (time.time() - updated_ts) > effective_ttl:
+            return None
+        return payload
     except Exception:
+        try:
+            current_app.logger.exception("weather: no se pudo leer cache")
+        except Exception:
+            pass
         return None
 
 
@@ -554,8 +647,14 @@ def _save_cached_report(center_name, region, weather_date, payload, ttl_seconds=
         return None
     try:
         payload_json = json.dumps(payload, ensure_ascii=False)
+        db = get_db()
         if is_postgres():
-            cur = get_db().execute(
+            try:
+                db.execute("ROLLBACK")
+            except Exception:
+                pass
+        if is_postgres():
+            cur = db.execute(
                 """
                 INSERT INTO center_weather_cache
                     (center_name, region, weather_date, raw_json, updated_at)
@@ -569,13 +668,20 @@ def _save_cached_report(center_name, region, weather_date, payload, ttl_seconds=
                 """,
                 (center_name, region, weather_date, payload_json),
             )
-            get_db().commit()
+            try:
+                db.commit()
+            except Exception:
+                try:
+                    db.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
             try:
                 return cur.fetchone()["id"]
             except Exception:
                 return None
         else:
-            get_db().execute(
+            db.execute(
                 """
                 INSERT OR REPLACE INTO center_weather_cache
                     (center_name, region, weather_date, raw_json, updated_at)
@@ -583,7 +689,7 @@ def _save_cached_report(center_name, region, weather_date, payload, ttl_seconds=
                 """,
                 (center_name, region, weather_date, payload_json),
             )
-            get_db().commit()
+            db.commit()
     except Exception:
         try:
             current_app.logger.exception("weather: no se pudo guardar cache")
@@ -662,28 +768,100 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
       - operative: lista con risk_level='bajo'
       - totals: {critico, medio, bajo}
       - unresolved_centers: centros sin coordenadas en el catálogo
+
+    Optimizacion clave: SOLO hace 1 SOLA llamada HTTP (batch) para los centros
+    que NO tienen cache valido. Nunca N llamadas HTTP simultaneas (evita 429).
     """
     critical = []
     caution = []
     operative = []
     unresolved = []
-    fetched = {}
+    today = _today_arg_iso()
+    ttl_ok = _get_ttl_seconds()
+    error_ttl = int(_get_config("WEATHER_ERROR_TTL_SECONDS") or
+               _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT))
+
+    seen = {}
+    todo_fetch = []  # [(norm_name, center_name, region, lat, lng, cached_payload_or_None)]
+    seen_order = []
+
     for name in center_names:
         n = " ".join((name or "").strip().split())
-        if not n or n in fetched:
+        if not n or n in seen:
             continue
-        report = get_center_weather_report(n, supervisor_scope_names=supervisor_scope_names)
-        if not report:
+        seen[n] = True
+        seen_order.append(n)
+        coords = get_center_coordinates(n)
+        if not coords:
             unresolved.append(n)
             continue
-        fetched[n] = True
-        cur = report.get("current") or {}
+        region = coords.get("region")
+        lat, lng = coords["lat"], coords["lng"]
+        cached = _load_cached_report(n, today, ttl_ok)
+        if cached and not cached.get("error"):
+            seen[n] = cached
+            continue
+        prev_ok = cached if (cached and not cached.get("error")) else None
+        todo_fetch.append((n, name, region, lat, lng, prev_ok))
+
+    if todo_fetch:
+        locations = [(lat, lng) for (_, _, _, lat, lng, _) in todo_fetch]
+        batch_raws = []
+        batch_err = None
+        try:
+            batch_raws = _fetch_open_meteo_batch(locations, forecast_days=4)
+        except Exception as exc:
+            try:
+                current_app.logger.warning(f"weather: batch fetch open-meteo fail for {len(locations)} centers: {exc}")
+            except Exception:
+                pass
+            batch_err = f"API indisponible: {exc}"
+        for idx, (norm_name, orig_name, region, lat, lng, prev_ok) in enumerate(todo_fetch):
+            payload = {
+                "center_name": orig_name,
+                "region": region,
+                "weather_date": today,
+                "latitude": lat,
+                "longitude": lng,
+                "fetched_at_epoch": int(time.time()),
+                "current": None,
+                "forecast_daily": [],
+                "error": None,
+            }
+            if batch_err is None and idx < len(batch_raws):
+                raw = batch_raws[idx] or {}
+                current_raw = raw.get("current") or {}
+                daily_raw = raw.get("daily") or {}
+                if not current_raw and prev_ok:
+                    seen[norm_name] = prev_ok
+                    continue
+                current_eval = _evaluate_risk(current_raw, region_name=region)
+                payload["current"] = current_eval
+                payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
+                payload["timezone"] = raw.get("timezone")
+            else:
+                if prev_ok:
+                    seen[norm_name] = prev_ok
+                    continue
+                payload["error"] = batch_err or "Sin datos meteorológicos"
+                payload["_error_ttl_seconds"] = error_ttl
+            if payload.get("error"):
+                _save_cached_report(orig_name, region, today, payload, ttl_seconds=error_ttl)
+            else:
+                _save_cached_report(orig_name, region, today, payload, ttl_seconds=ttl_ok)
+            seen[norm_name] = payload
+
+    for n in seen_order:
+        val = seen.get(n)
+        if not isinstance(val, dict):
+            continue
+        cur = val.get("current") or {}
         if cur.get("blocks_installation"):
-            critical.append(report)
+            critical.append(val)
         elif cur.get("risk_level") == "medio":
-            caution.append(report)
+            caution.append(val)
         else:
-            operative.append(report)
+            operative.append(val)
 
     def _sort_key(r):
         cur = r.get("current") or {}
