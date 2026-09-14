@@ -6972,6 +6972,64 @@ def ack_findings_alerts():
     return jsonify({"ok": True, "next_show_at": session["findings_alerts_next_show_at"]})
 
 
+@main.route("/api/weather/reset-cache", methods=["GET", "POST"])
+def weather_reset_cache_today():
+    """Endpoint admin-only para limpiar center_weather_cache del día actual.
+    No requiere Shell/psql. Útil para salir de 429 TooManyRequests en Render.
+    """
+    user = current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": "unauthorized (admin only)"}), 403
+    deleted = 0
+    try:
+        try:
+            from app.models import get_db, is_postgres
+        except Exception:
+            return jsonify({"error": "models_unavailable"}), 500
+        db = get_db()
+        if is_postgres():
+            try:
+                db.execute("ROLLBACK")
+            except Exception:
+                pass
+        placeholder = "%s" if is_postgres() else "?"
+        today = None
+        if is_postgres():
+            try:
+                cur = db.execute(f"SELECT CURRENT_DATE AS d")
+                row = cur.fetchone()
+                today = row["d"] if row else None
+            except Exception:
+                today = None
+        if today is None:
+            from datetime import date as _date
+            today = _date.today().isoformat()
+        cur = db.execute(
+            f"DELETE FROM center_weather_cache WHERE weather_date = {placeholder}",
+            (today,),
+        )
+        try:
+            deleted = int(getattr(cur, "rowcount", 0) or 0)
+        except Exception:
+            deleted = 0
+        try:
+            db.commit()
+        except Exception:
+            if is_postgres():
+                try:
+                    db.execute("ROLLBACK")
+                except Exception:
+                    pass
+            deleted = 0
+    except Exception as exc:
+        try:
+            current_app.logger.exception("weather_reset_cache_today failed")
+        except Exception:
+            pass
+        return jsonify({"error": f"db_error: {exc}", "deleted": 0}), 500
+    return jsonify({"ok": True, "date": str(today), "deleted_rows": deleted})
+
+
 @main.route("/findings/<int:finding_id>")
 def finding_detail(finding_id):
     # Role dispatch: Technician self-view (antes de can_view_findings para que técnico vea SUS hallazgos)
