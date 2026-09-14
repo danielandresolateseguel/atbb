@@ -1759,6 +1759,17 @@ def inject_auth_context():
     except Exception:
         weather_enabled = False
 
+    def _pg_rollback_safe():
+        try:
+            from app.models import is_postgres, get_db
+            if is_postgres():
+                try:
+                    get_db().execute("ROLLBACK")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     modal_viewer_roles = {"admin", "gerente", "supervisor", "auditor"}
     try:
         if user and user.get("role") in modal_viewer_roles:
@@ -1774,6 +1785,7 @@ def inject_auth_context():
             has_finding_alerts = False
             try:
                 if can_view_findings():
+                    _pg_rollback_safe()
                     try:
                         stats = fetch_finding_stats(
                             None,
@@ -1782,6 +1794,7 @@ def inject_auth_context():
                         )
                     except Exception:
                         current_app.logger.exception("Error al calcular estadísticas de alertas de hallazgos")
+                        _pg_rollback_safe()
                         stats = {}
                     has_finding_alerts = any(
                         (
@@ -1798,12 +1811,20 @@ def inject_auth_context():
             if weather_enabled:
                 try:
                     supervisor_scope_names = current_supervisor_scope_names() if user.get("role") == "supervisor" else None
-                    centers = fetch_distinct_centers() or []
+                    _pg_rollback_safe()
+                    try:
+                        centers = fetch_distinct_centers() or []
+                    except Exception:
+                        current_app.logger.exception("inject_auth_context: error en fetch_distinct_centers")
+                        _pg_rollback_safe()
+                        centers = []
                     if supervisor_scope_names:
                         from app.models import normalize_supervisor_scope_names
                         scope_names_norm = normalize_supervisor_scope_names(supervisor_scope_names) or []
                         scoped_centers = []
                         try:
+                            _pg_rollback_safe()
+                            from app.models import get_db, is_postgres
                             db = get_db()
                             placeholder = "%s" if is_postgres() else "?"
                             if scope_names_norm:
@@ -1815,8 +1836,10 @@ def inject_auth_context():
                                 scoped_centers = [r["center_name"] for r in rows if r and r.get("center_name")]
                         except Exception:
                             current_app.logger.exception("weather: error filtrando centros por scope")
+                            _pg_rollback_safe()
                         centers = scoped_centers or centers
                     if centers:
+                        _pg_rollback_safe()
                         try:
                             weather_summary = weather_module.summarize_centers_weather(
                                 centers,
@@ -1824,6 +1847,7 @@ def inject_auth_context():
                             )
                         except Exception:
                             current_app.logger.exception("inject_auth_context: error llamando summarize_centers_weather")
+                            _pg_rollback_safe()
                             weather_summary = {
                                 "critically_blocked": [],
                                 "caution": [],
@@ -1847,6 +1871,7 @@ def inject_auth_context():
                         }
                 except Exception:
                     current_app.logger.exception("inject_auth_context: error en resumen climatico")
+                    _pg_rollback_safe()
                     weather_summary = {
                         "critically_blocked": [],
                         "caution": [],
@@ -1875,6 +1900,10 @@ def inject_auth_context():
                     session["findings_alerts_next_show_at"] = now + (15 * 60)
     except Exception:
         current_app.logger.exception("inject_auth_context: error en alertas hallazgos / clima")
+        try:
+            _pg_rollback_safe()
+        except Exception:
+            pass
 
     supervisor_has_empty_scope = False
     try:

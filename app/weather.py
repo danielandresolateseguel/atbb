@@ -7,8 +7,9 @@ from datetime import date, datetime, timedelta, timezone
 
 from flask import current_app
 
+_WEATHER_CACHE_TTL_SECONDS_DEFAULT = 1800
+_WEATHER_ERROR_TTL_SECONDS_DEFAULT = 300
 _ARG_TZ_OFFSET = timezone(timedelta(hours=-3), name="America/Argentina/Buenos_Aires")
-_WEATHER_ERROR_TTL_SECONDS_DEFAULT = 90
 
 def _now_arg():
     return datetime.now(tz=_ARG_TZ_OFFSET)
@@ -488,26 +489,27 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
     last_exc = None
     for attempt in range(3):
         try:
-            raw = _http_get_json(url, headers, timeout=25)
+            raw = _http_get_json(url, headers, timeout=30)
             if not raw:
                 raise RuntimeError("Empty response from Open-Meteo")
             break
         except urllib.error.HTTPError as he:
             last_exc = he
             if he.code == 429:
-                retry_after = 2
+                retry_after = 30
                 try:
-                    retry_after = int(he.headers.get("Retry-After") or 0) or retry_after
+                    retry_after = max(retry_after, int(he.headers.get("Retry-After") or 0))
                 except Exception:
                     pass
                 if attempt < 2:
-                    time.sleep(min(retry_after + attempt, 6))
+                    sleep_s = min(retry_after * (attempt + 2), 60) + (hash(url + str(attempt)) % 7)
+                    time.sleep(sleep_s)
                     continue
             raise
         except Exception as e:
             last_exc = e
             if attempt < 2:
-                time.sleep(1.2 + attempt * 1.5)
+                time.sleep(2.0 + attempt * 3.0 + (hash(url + str(attempt)) % 5))
                 continue
             raise
     else:
@@ -910,11 +912,17 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             continue
         region = coords.get("region")
         lat, lng = coords["lat"], coords["lng"]
-        cached = _load_cached_report(n, today, ttl_ok)
-        if cached and not cached.get("error"):
-            seen[n] = cached
+        cached_ok = _load_cached_report(n, today, ttl_ok)
+        if cached_ok and not cached_ok.get("error"):
+            seen[n] = cached_ok
             continue
-        prev_ok = cached if (cached and not cached.get("error")) else None
+        cached_err = None
+        if not cached_ok:
+            cached_err = _load_cached_report(n, today, error_ttl)
+        if cached_err and cached_err.get("error"):
+            seen[n] = cached_err
+            continue
+        prev_ok = cached_ok if (cached_ok and not cached_ok.get("error")) else None
         todo_fetch.append((n, name, region, lat, lng, prev_ok))
 
     if todo_fetch:
