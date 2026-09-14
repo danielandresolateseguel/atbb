@@ -928,14 +928,14 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
                _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT))
 
     seen = {}
-    todo_fetch = []  # [(norm_name, center_name, region, lat, lng, cached_payload_or_None)]
+    todo_fetch = []
     seen_order = []
 
     for name in center_names:
         n = " ".join((name or "").strip().split())
         if not n or n in seen:
             continue
-        seen[n] = True
+        seen[n] = None
         seen_order.append(n)
         coords = get_center_coordinates(n)
         if not coords:
@@ -944,17 +944,14 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         region = coords.get("region")
         lat, lng = coords["lat"], coords["lng"]
         cached = _load_cached_report(n, today, ttl_ok)
-        prev_ok = None
         if cached is not None:
             if not cached.get("error"):
-                prev_ok = cached
                 seen[n] = cached
                 continue
             if cached.get("error"):
                 seen[n] = cached
                 continue
-        prev_ok = None
-        todo_fetch.append((n, name, region, lat, lng, prev_ok))
+        todo_fetch.append((n, name, region, lat, lng))
 
     n_total_centers = len(seen_order)
     n_cached_ok_err = sum(
@@ -980,7 +977,7 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
 
     batch_exception_logged = False
     if todo_fetch and batch_allowed:
-        locations = [(lat, lng) for (_, _, _, lat, lng, _) in todo_fetch]
+        locations = [(lat, lng) for (_, _, _, lat, lng) in todo_fetch]
         batch_raws = []
         batch_err = None
         try:
@@ -995,14 +992,10 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             batch_err = f"API indisponible: {exc}"
     else:
         batch_err = "Skipped por cache TTL / doppelganger guard; reintento en proximo request."
+        batch_raws = None
 
     if todo_fetch and not batch_allowed:
-        # Para los que tenian cached_err VACIO (no encontrado o sin cache): si habia un cached_ok
-        # viejo se perdio; pero si batch_allowed=False por doppelganger guard, usamos fallback.
-        for (norm_name, orig_name, region, lat, lng, prev_ok) in todo_fetch:
-            if prev_ok and isinstance(prev_ok, dict) and not prev_ok.get("error"):
-                seen[norm_name] = prev_ok
-                continue
+        for (norm_name, orig_name, region, lat, lng) in todo_fetch:
             payload = {
                 "center_name": orig_name,
                 "region": region,
@@ -1018,40 +1011,35 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             seen[norm_name] = payload
             _save_cached_report(norm_name, region, today, payload, ttl_seconds=error_ttl)
         todo_fetch = []
-        for idx, (norm_name, orig_name, region, lat, lng, prev_ok) in enumerate(todo_fetch):
-            payload = {
-                "center_name": orig_name,
-                "region": region,
-                "weather_date": today,
-                "latitude": lat,
-                "longitude": lng,
-                "fetched_at_epoch": int(time.time()),
-                "current": None,
-                "forecast_daily": [],
-                "error": None,
-            }
-            if batch_err is None and idx < len(batch_raws):
-                raw = batch_raws[idx] or {}
-                current_raw = raw.get("current") or {}
-                daily_raw = raw.get("daily") or {}
-                if not current_raw and prev_ok:
-                    seen[norm_name] = prev_ok
-                    continue
-                current_eval = _evaluate_risk(current_raw, region_name=region)
-                payload["current"] = current_eval
-                payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
-                payload["timezone"] = raw.get("timezone")
-            else:
-                if prev_ok:
-                    seen[norm_name] = prev_ok
-                    continue
-                payload["error"] = batch_err or "Sin datos meteorológicos"
-                payload["_error_ttl_seconds"] = error_ttl
-            if payload.get("error"):
-                _save_cached_report(orig_name, region, today, payload, ttl_seconds=error_ttl)
-            else:
-                _save_cached_report(orig_name, region, today, payload, ttl_seconds=ttl_ok)
-            seen[norm_name] = payload
+
+    for idx, (norm_name, orig_name, region, lat, lng) in enumerate(todo_fetch):
+        payload = {
+            "center_name": orig_name,
+            "region": region,
+            "weather_date": today,
+            "latitude": lat,
+            "longitude": lng,
+            "fetched_at_epoch": int(time.time()),
+            "current": None,
+            "forecast_daily": [],
+            "error": None,
+        }
+        if batch_err is None and batch_raws is not None and idx < len(batch_raws):
+            raw = batch_raws[idx] or {}
+            current_raw = raw.get("current") or {}
+            daily_raw = raw.get("daily") or {}
+            current_eval = _evaluate_risk(current_raw, region_name=region)
+            payload["current"] = current_eval
+            payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
+            payload["timezone"] = raw.get("timezone")
+        else:
+            payload["error"] = batch_err or "Sin datos meteorológicos"
+            payload["_error_ttl_seconds"] = error_ttl
+        if payload.get("error"):
+            _save_cached_report(norm_name, region, today, payload, ttl_seconds=error_ttl)
+        else:
+            _save_cached_report(norm_name, region, today, payload, ttl_seconds=ttl_ok)
+        seen[norm_name] = payload
 
     for n in seen_order:
         val = seen.get(n)
