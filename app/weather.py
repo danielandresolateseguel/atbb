@@ -459,7 +459,7 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
     lats_str = ",".join([f"{float(lat):.5f}" for lat, _ in locations])
     lngs_str = ",".join([f"{float(lng):.5f}" for _, lng in locations])
     fd = max(1, min(7, int(forecast_days)))
-    params = urllib.parse.urlencode({
+    params_dict = {
         "latitude": lats_str,
         "longitude": lngs_str,
         "current": ",".join([
@@ -481,8 +481,26 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
         ]),
         "timezone": "auto",
         "forecast_days": fd,
-    })
-    url = f"https://api.open-meteo.com/v1/forecast?{params}"
+    }
+    api_key = None
+    try:
+        from flask import current_app
+        api_key = current_app.config.get("WEATHER_OPEN_METEO_API_KEY") if current_app else None
+    except Exception:
+        api_key = None
+    if not api_key:
+        try:
+            import os as _os
+            api_key = _os.getenv("WEATHER_OPEN_METEO_API_KEY") or None
+        except Exception:
+            api_key = None
+    if api_key:
+        params_dict["apikey"] = api_key
+        base_host = "customer-api.open-meteo.com"
+    else:
+        base_host = "api.open-meteo.com"
+    params = urllib.parse.urlencode(params_dict)
+    url = f"https://{base_host}/v1/forecast?{params}"
     headers = {"User-Agent": "SoftBerardi-Weather/1.2 (+https://atbb.onrender.com)",
                "Accept": "application/json"}
 
