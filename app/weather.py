@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from flask import current_app
 
-_WEATHER_CACHE_TTL_SECONDS_DEFAULT = 1800
+_WEATHER_CACHE_TTL_SECONDS_DEFAULT = 10800
 _WEATHER_ERROR_TTL_SECONDS_DEFAULT = 3600
 _ARG_TZ_OFFSET = timezone(timedelta(hours=-3), name="America/Argentina/Buenos_Aires")
 
@@ -17,8 +17,15 @@ def _now_arg():
 def _today_arg_iso():
     return _now_arg().date().isoformat()
 
-
-_WEATHER_CACHE_TTL_SECONDS_DEFAULT = 1800
+def _epoch_to_arg_str(epoch_seconds):
+    try:
+        epoch_int = int(epoch_seconds or 0)
+        if epoch_int <= 0:
+            return ""
+        dt = datetime.fromtimestamp(epoch_int, tz=timezone.utc).astimezone(_ARG_TZ_OFFSET)
+        return dt.strftime("%H:%M hs.")
+    except Exception:
+        return ""
 
 _WEATHER_CODE_LABELS = {
     0: "Despejado",
@@ -1285,6 +1292,7 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
     ttl_ok = _get_ttl_seconds()
     error_ttl = int(_get_config("WEATHER_ERROR_TTL_SECONDS") or
                _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT))
+    max_fetched_epoch = 0
 
     seen = {}
     todo_fetch = []
@@ -1458,6 +1466,12 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         val = seen.get(n)
         if not isinstance(val, dict):
             continue
+        try:
+            f_epoch = int(val.get("fetched_at_epoch") or 0)
+            if f_epoch > max_fetched_epoch:
+                max_fetched_epoch = f_epoch
+        except Exception:
+            pass
         cur = val.get("current") or {}
         if isinstance(cur, dict):
             try:
@@ -1498,6 +1512,12 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
     caution.sort(key=_sort_key)
     operative.sort(key=lambda r: (r.get("region") or "", r.get("center_name") or ""))
 
+    if max_fetched_epoch <= 0:
+        max_fetched_epoch = int(time.time())
+    last_data_update_arg = _epoch_to_arg_str(max_fetched_epoch) or _now_arg().strftime("%H:%M hs.")
+    next_refresh_epoch = max_fetched_epoch + int(ttl_ok or _WEATHER_CACHE_TTL_SECONDS_DEFAULT)
+    next_refresh_arg = _epoch_to_arg_str(next_refresh_epoch)
+
     return {
         "critically_blocked": critical,
         "caution": caution,
@@ -1510,4 +1530,6 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         },
         "unresolved_centers": unresolved,
         "generated_at": _now_arg().strftime("%H:%M hs."),
+        "last_data_update_arg": last_data_update_arg,
+        "next_refresh_arg": next_refresh_arg,
     }

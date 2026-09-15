@@ -6,7 +6,12 @@
                 <p>
                     Estado climático por provincia / centro y alertas de gestión que requieren seguimiento.
                     Se ocultará por 4 horas al confirmar.
-                    {% if weather_summary and weather_summary.generated_at %}
+                    {% if weather_summary and weather_summary.last_data_update_arg %}
+                        <span style="font-weight:700;color:#0f172a;">· Datos actualizados {{ weather_summary.last_data_update_arg }}</span>
+                        {% if weather_summary.next_refresh_arg %}
+                            <span style="font-weight:500;color:#475569;"> (próximo refresco: {{ weather_summary.next_refresh_arg }})</span>
+                        {% endif %}
+                    {% elif weather_summary and weather_summary.generated_at %}
                         <span style="font-weight:700;color:#0f172a;">· Pronóstico actualizado {{ weather_summary.generated_at }}</span>
                     {% endif %}
                 </p>
