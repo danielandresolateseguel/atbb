@@ -649,6 +649,7 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
             "days": fd,
             "aqi": "no",
             "alerts": "no",
+            "lang": "es",
         })
         url = f"https://api.weatherapi.com/v1/forecast.json?{params}"
         try:
@@ -675,8 +676,8 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
             condition = cur["condition"]
             code_wa = int(condition.get("code") or 0)
             text_wa = str(condition.get("text") or "")
-            weather_label = text_wa
             weather_code_om = _weatherapi_code_to_om(code_wa, text_wa)
+            weather_label = weather_label(weather_code_om)
         precip_mm = _cp(cur.get("precip_mm"), 0.0)
         snow_cm = 0.0
         wind_kmh = _cp(cur.get("wind_kph"), 0.0)
@@ -1033,9 +1034,6 @@ def build_forecast_daily(raw_daily, region_name=None):
         }
         risk = _evaluate_risk(synthetic_current, region_name=region_name)
         day_label = risk["weather_label"]
-        if idx < len(texts) and texts[idx]:
-            # Overwrite WMO label with WeatherAPI human text (cuando hay)
-            day_label = str(texts[idx])
         out.append({
             "date": times[idx] if idx < len(times) else None,
             "risk_level": risk["risk_level"],
@@ -1465,16 +1463,21 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             try:
                 cur_code = cur.get("weather_code")
                 cur["weather_svg_icon"] = weather_svg_icon(cur_code, size_px=48)
+                cur["weather_label"] = weather_label(cur_code)
             except Exception:
                 cur["weather_svg_icon"] = weather_svg_icon(0, size_px=48)
+                if isinstance(cur, dict):
+                    cur["weather_label"] = weather_label(0)
         forecast = val.get("forecast_daily") or []
         for day in forecast:
             if isinstance(day, dict):
                 try:
                     day_code = day.get("weather_code")
                     day["weather_svg_icon"] = weather_svg_icon(day_code, size_px=32)
+                    day["weather_label"] = weather_label(day_code)
                 except Exception:
                     day["weather_svg_icon"] = weather_svg_icon(0, size_px=32)
+                    day["weather_label"] = weather_label(0)
         if val.get("error"):
             operative.append(val)
         elif cur.get("blocks_installation"):
