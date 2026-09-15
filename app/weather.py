@@ -671,13 +671,13 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
             return v if v is not None else default
 
         weather_code_om = 0
-        weather_label = ""
+        _wa_current_label = ""
         if isinstance(cur.get("condition"), dict):
             condition = cur["condition"]
             code_wa = int(condition.get("code") or 0)
             text_wa = str(condition.get("text") or "")
             weather_code_om = _weatherapi_code_to_om(code_wa, text_wa)
-            weather_label = weather_label(weather_code_om)
+            _wa_current_label = weather_label(weather_code_om)
         precip_mm = _cp(cur.get("precip_mm"), 0.0)
         snow_cm = 0.0
         wind_kmh = _cp(cur.get("wind_kph"), 0.0)
@@ -718,7 +718,7 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
             daily_om["wind_speed_10m_max"].append(float(day.get("maxwind_kph") or 0.0))
             daily_om["precipitation_probability_max"].append(int(day.get("daily_chance_of_rain") or 0))
         out.append({"current": current_om, "daily": daily_om, "timezone": tz,
-                    "_wa_weather_label": weather_label})
+                    "_wa_weather_label": _wa_current_label})
     if not out and last_exc:
         raise last_exc
     return out
