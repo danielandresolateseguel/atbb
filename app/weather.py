@@ -313,6 +313,180 @@ def weather_icon(code):
     return _WEATHER_CODE_ICON.get(c, "🌡️")
 
 
+def weather_svg_icon(code, size_px=48):
+    try:
+        c = int(code or 0)
+    except (TypeError, ValueError):
+        c = 0
+    s = int(max(16, size_px))
+    sz = f'width="{s}px" height="{s}px"'
+    cls = 'class="weather-icon-svg"'
+    def _(body):
+        return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" {sz} {cls}>{body}</svg>'
+    if c == 0:
+        return _("""
+<defs><radialGradient id="sun" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFD93D"/><stop offset="100%" stop-color="#FF9F1C"/></radialGradient></defs>
+<circle cx="32" cy="32" r="14" fill="url(#sun)"/>
+<g stroke="#FF9F1C" stroke-width="3" stroke-linecap="round">
+<line x1="32" y1="8" x2="32" y2="16"/><line x1="32" y1="48" x2="32" y2="56"/>
+<line x1="8" y1="32" x2="16" y2="32"/><line x1="48" y1="32" x2="56" y2="32"/>
+<line x1="15" y1="15" x2="21" y2="21"/><line x1="43" y1="43" x2="49" y2="49"/>
+<line x1="15" y1="49" x2="21" y2="43"/><line x1="43" y1="21" x2="49" y2="15"/>
+</g>""")
+    if c == 1:
+        return _("""
+<defs><radialGradient id="sun2" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFD93D"/><stop offset="100%" stop-color="#FF9F1C"/></radialGradient>
+<linearGradient id="cloud2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#DCE4EC"/></linearGradient></defs>
+<circle cx="22" cy="22" r="11" fill="url(#sun2)"/>
+<g stroke="#FF9F1C" stroke-width="2" stroke-linecap="round" opacity="0.9">
+<line x1="22" y1="4" x2="22" y2="10"/><line x1="4" y1="22" x2="10" y2="22"/>
+<line x1="10" y1="10" x2="14" y2="14"/><line x1="30" y1="30" x2="34" y2="34"/>
+<line x1="10" y1="34" x2="14" y2="30"/><line x1="30" y1="14" x2="34" y2="10"/>
+</g>
+<path d="M22 44 C16 44, 10 39, 14 32 C12 26, 20 22, 26 26 C30 20, 42 22, 44 30 C54 30, 54 44, 44 44 Z" fill="url(#cloud2)" stroke="#B8C4D0" stroke-width="1.5"/>""")
+    if c == 2:
+        return _("""
+<defs><radialGradient id="sun3" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFD93D"/><stop offset="100%" stop-color="#FF9F1C"/></radialGradient>
+<linearGradient id="cloud3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#D3DBE5"/></linearGradient></defs>
+<circle cx="24" cy="24" r="10" fill="url(#sun3)"/>
+<g stroke="#FF9F1C" stroke-width="2" stroke-linecap="round" opacity="0.85">
+<line x1="24" y1="8" x2="24" y2="12"/><line x1="8" y1="24" x2="12" y2="24"/>
+<line x1="13" y1="13" x2="16" y2="16"/><line x1="32" y1="32" x2="35" y2="35"/>
+<line x1="13" y1="35" x2="16" y2="32"/><line x1="32" y1="16" x2="35" y2="13"/>
+</g>
+<path d="M20 46 C12 46, 6 40, 10 32 C8 24, 18 20, 24 24 C28 18, 42 20, 46 30 C56 30, 56 46, 44 46 Z" fill="url(#cloud3)" stroke="#AEBAC8" stroke-width="1.5"/>""")
+    if c == 3:
+        return _("""
+<defs><linearGradient id="cloud4a" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#E9EEF5"/><stop offset="100%" stop-color="#B9C3CF"/></linearGradient>
+<linearGradient id="cloud4b" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F3F6FB"/><stop offset="100%" stop-color="#CBD3DE"/></linearGradient></defs>
+<path d="M8 42 C2 42, -2 36, 4 30 C2 24, 12 20, 18 24 C22 16, 38 18, 40 28 C52 28, 52 42, 40 42 Z" fill="url(#cloud4a)" stroke="#9AA6B4" stroke-width="1.4"/>
+<path d="M22 52 C16 52, 10 48, 12 42 C10 36, 20 32, 26 36 C30 30, 44 32, 48 42 C58 42, 58 52, 46 52 Z" fill="url(#cloud4b)" stroke="#9AA6B4" stroke-width="1.4"/>""")
+    if c == 45:
+        return _("""
+<defs><linearGradient id="fog" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#CBD5E1" stop-opacity="0.4"/><stop offset="100%" stop-color="#94A3B8" stop-opacity="0.8"/></linearGradient></defs>
+<circle cx="22" cy="22" r="9" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5" opacity="0.9"/>
+<g stroke="#64748B" stroke-width="3.2" stroke-linecap="round" opacity="0.85">
+<line x1="8" y1="34" x2="56" y2="34"/><line x1="4" y1="42" x2="60" y2="42"/>
+<line x1="10" y1="50" x2="54" y2="50"/><line x1="6" y1="58" x2="58" y2="58"/>
+</g>""")
+    if c == 48:
+        return _("""
+<circle cx="22" cy="22" r="9" fill="#E0F2FE" stroke="#0EA5E9" stroke-width="1.5" opacity="0.9"/>
+<g stroke="#0369A1" stroke-width="3.2" stroke-linecap="round" opacity="0.75">
+<line x1="8" y1="34" x2="56" y2="34"/><line x1="4" y1="42" x2="60" y2="42"/>
+<line x1="10" y1="50" x2="54" y2="50"/>
+</g>
+<g fill="#DBEAFE">
+<circle cx="14" cy="34" r="1.6"/><circle cx="32" cy="42" r="1.6"/><circle cx="50" cy="50" r="1.6"/>
+<circle cx="44" cy="34" r="1.4"/><circle cx="20" cy="50" r="1.4"/>
+</g>""")
+    if c in (51, 53):
+        return _("""
+<defs><linearGradient id="cld1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#C7D2DE"/></linearGradient>
+<linearGradient id="rain1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60A5FA"/><stop offset="100%" stop-color="#2563EB"/></linearGradient></defs>
+<path d="M10 34 C4 34, -2 28, 4 22 C2 16, 12 12, 18 16 C22 10, 38 12, 42 22 C54 22, 54 34, 42 34 Z" fill="url(#cld1)" stroke="#8DA0B6" stroke-width="1.6"/>
+<g stroke="url(#rain1)" stroke-width="2.6" stroke-linecap="round" fill="none">
+<line x1="18" y1="40" x2="15" y2="50"/><line x1="28" y1="40" x2="25" y2="50"/>
+<line x1="38" y1="40" x2="35" y2="50"/><line x1="48" y1="40" x2="45" y2="50"/>
+<line x1="23" y1="50" x2="20" y2="60"/><line x1="33" y1="50" x2="30" y2="60"/><line x1="43" y1="50" x2="40" y2="60"/>
+</g>""")
+    if c in (55, 56, 57):
+        return _("""
+<defs><linearGradient id="cld2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F1F5F9"/><stop offset="100%" stop-color="#9FB2C7"/></linearGradient>
+<linearGradient id="rain2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3B82F6"/><stop offset="100%" stop-color="#1D4ED8"/></linearGradient></defs>
+<path d="M10 34 C4 34, -2 28, 4 22 C2 16, 12 12, 18 16 C22 10, 38 12, 42 22 C54 22, 54 34, 42 34 Z" fill="url(#cld2)" stroke="#64748B" stroke-width="1.7"/>
+<g fill="url(#rain2)">
+<path d="M18 40 C18 40 13 50 15 54 C17 58 21 54 18 40 Z"/>
+<path d="M28 40 C28 40 23 50 25 54 C27 58 31 54 28 40 Z"/>
+<path d="M38 40 C38 40 33 50 35 54 C37 58 41 54 38 40 Z"/>
+<path d="M48 40 C48 40 43 50 45 54 C47 58 51 54 48 40 Z"/>
+</g>
+<g stroke="url(#rain2)" stroke-width="2.4" stroke-linecap="round" opacity="0.85">
+<line x1="24" y1="54" x2="21" y2="62"/><line x1="34" y1="54" x2="31" y2="62"/><line x1="44" y1="54" x2="41" y2="62"/>
+</g>""")
+    if c in (61, 63, 80, 81):
+        return _("""
+<defs><linearGradient id="cld3" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#B9C5D4"/></linearGradient>
+<linearGradient id="rain3" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#38BDF8"/><stop offset="100%" stop-color="#0284C7"/></linearGradient></defs>
+<path d="M10 32 C4 32, -2 26, 4 20 C2 14, 12 10, 18 14 C22 8, 38 10, 42 20 C54 20, 54 32, 42 32 Z" fill="url(#cld3)" stroke="#64748B" stroke-width="1.7"/>
+<g fill="url(#rain3)">
+<path d="M14 40 C14 40 8 52 11 57 C14 62 19 56 14 40 Z"/>
+<path d="M26 40 C26 40 20 52 23 57 C26 62 31 56 26 40 Z"/>
+<path d="M38 40 C38 40 32 52 35 57 C38 62 43 56 38 40 Z"/>
+<path d="M50 40 C50 40 44 52 47 57 C50 62 55 56 50 40 Z"/>
+</g>""")
+    if c in (65, 82):
+        return _("""
+<defs><linearGradient id="cld4" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#E2E8F0"/><stop offset="100%" stop-color="#64748B"/></linearGradient>
+<linearGradient id="rain4" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1D4ED8"/><stop offset="100%" stop-color="#1E3A8A"/></linearGradient></defs>
+<path d="M10 32 C4 32, -2 26, 4 20 C2 14, 12 10, 18 14 C22 8, 38 10, 42 20 C54 20, 54 32, 42 32 Z" fill="url(#cld4)" stroke="#334155" stroke-width="1.8"/>
+<g fill="url(#rain4)" opacity="0.95">
+<path d="M10 40 C10 40 3 54 7 60 C11 66 16 58 10 40 Z"/>
+<path d="M22 40 C22 40 15 54 19 60 C23 66 28 58 22 40 Z"/>
+<path d="M34 40 C34 40 27 54 31 60 C35 66 40 58 34 40 Z"/>
+<path d="M46 40 C46 40 39 54 43 60 C47 66 52 58 46 40 Z"/>
+<path d="M56 40 C56 40 49 54 53 60 C57 66 62 58 56 40 Z"/>
+</g>""")
+    if c in (66, 67):
+        return _("""
+<defs><linearGradient id="cldfr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#C9DAEA"/></linearGradient>
+<linearGradient id="rainfr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#93C5FD"/><stop offset="100%" stop-color="#2563EB"/></linearGradient></defs>
+<path d="M10 32 C4 32, -2 26, 4 20 C2 14, 12 10, 18 14 C22 8, 38 10, 42 20 C54 20, 54 32, 42 32 Z" fill="url(#cldfr)" stroke="#64748B" stroke-width="1.6"/>
+<g stroke="url(#rainfr)" stroke-width="2.6" stroke-linecap="round">
+<line x1="16" y1="40" x2="12" y2="52"/><line x1="26" y1="40" x2="22" y2="52"/>
+<line x1="36" y1="40" x2="32" y2="52"/><line x1="46" y1="40" x2="42" y2="52"/>
+</g>
+<g stroke="#60A5FA" stroke-width="1.4" fill="#DBEAFE">
+<polygon points="14,56 12,60 16,60"/><polygon points="24,56 22,60 26,60"/>
+<polygon points="34,56 32,60 36,60"/><polygon points="44,56 42,60 46,60"/>
+</g>""")
+    if c in (71, 73, 85):
+        return _("""
+<defs><linearGradient id="cldsn" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#C7D2FE"/></linearGradient></defs>
+<path d="M10 32 C4 32, -2 26, 4 20 C2 14, 12 10, 18 14 C22 8, 38 10, 42 20 C54 20, 54 32, 42 32 Z" fill="url(#cldsn)" stroke="#818CF8" stroke-width="1.6"/>
+<g fill="#FFFFFF" stroke="#818CF8" stroke-width="1">
+<circle cx="16" cy="44" r="2.4"/><circle cx="28" cy="42" r="2.4"/><circle cx="40" cy="44" r="2.4"/><circle cx="52" cy="42" r="2.4"/>
+<circle cx="22" cy="54" r="2.4"/><circle cx="34" cy="56" r="2.4"/><circle cx="46" cy="54" r="2.4"/><circle cx="58" cy="56" r="2.4"/>
+<circle cx="12" cy="60" r="1.8"/><circle cx="50" cy="62" r="1.8"/>
+</g>""")
+    if c in (75, 86):
+        return _("""
+<defs><linearGradient id="cldsn2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F8FAFC"/><stop offset="100%" stop-color="#A5B4FC"/></linearGradient></defs>
+<path d="M10 32 C4 32, -2 26, 4 20 C2 14, 12 10, 18 14 C22 8, 38 10, 42 20 C54 20, 54 32, 42 32 Z" fill="url(#cldsn2)" stroke="#4F46E5" stroke-width="1.8"/>
+<g fill="#EFF6FF" stroke="#6366F1" stroke-width="1.2">
+<circle cx="12" cy="42" r="3"/><circle cx="24" cy="40" r="3"/><circle cx="36" cy="42" r="3"/><circle cx="48" cy="40" r="3"/>
+<circle cx="18" cy="52" r="3"/><circle cx="30" cy="54" r="3"/><circle cx="42" cy="52" r="3"/><circle cx="54" cy="54" r="3"/>
+<circle cx="8" cy="58" r="2.4"/><circle cx="26" cy="62" r="2.4"/><circle cx="46" cy="58" r="2.4"/><circle cx="60" cy="62" r="2.4"/>
+</g>
+<g stroke="#BFDBFE" stroke-width="1.6" stroke-linecap="round" fill="none" opacity="0.7">
+<line x1="8" y1="48" x2="56" y2="48"/><line x1="10" y1="44" x2="58" y2="44"/>
+</g>""")
+    if c == 77:
+        return _("""
+<defs><linearGradient id="cldh" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F1F5F9"/><stop offset="100%" stop-color="#CBD5E1"/></linearGradient></defs>
+<path d="M10 32 C4 32, -2 26, 4 20 C2 14, 12 10, 18 14 C22 8, 38 10, 42 20 C54 20, 54 32, 42 32 Z" fill="url(#cldh)" stroke="#475569" stroke-width="1.7"/>
+<g fill="#FFFFFF" stroke="#475569" stroke-width="1.4">
+<polygon points="14,42 17,46 14,50 11,46"/>
+<polygon points="26,40 29,44 26,48 23,44"/>
+<polygon points="38,42 41,46 38,50 35,46"/>
+<polygon points="50,40 53,44 50,48 47,44"/>
+<polygon points="20,54 23,58 20,62 17,58"/>
+<polygon points="32,56 35,60 32,64 29,60"/>
+<polygon points="44,54 47,58 44,62 41,58"/>
+</g>""")
+    if c in (95, 96, 99):
+        return _("""
+<defs><linearGradient id="cldst" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#CBD5E1"/><stop offset="100%" stop-color="#475569"/></linearGradient>
+<linearGradient id="bolt" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FDE047"/><stop offset="50%" stop-color="#FBBF24"/><stop offset="100%" stop-color="#D97706"/></linearGradient></defs>
+<path d="M10 30 C4 30, -2 24, 4 18 C2 12, 12 8, 18 12 C22 6, 38 8, 42 18 C54 18, 54 30, 42 30 Z" fill="url(#cldst)" stroke="#1E293B" stroke-width="1.8"/>
+<polygon points="30,30 20,48 28,48 24,62 42,40 34,40 40,30" fill="url(#bolt)" stroke="#B45309" stroke-width="1.2"/>
+<g fill="#2563EB" opacity="0.9">
+<path d="M12 38 C12 38 6 50 10 56 C14 62 18 54 12 38 Z"/>
+<path d="M50 38 C50 38 44 50 48 56 C52 62 56 54 50 38 Z"/>
+</g>""")
+    return weather_svg_icon(0, size_px=size_px)
+
+
 def _is_zonda_candidate(region_name):
     if not region_name:
         return False
@@ -1287,6 +1461,20 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         if not isinstance(val, dict):
             continue
         cur = val.get("current") or {}
+        if isinstance(cur, dict):
+            try:
+                cur_code = cur.get("weather_code")
+                cur["weather_svg_icon"] = weather_svg_icon(cur_code, size_px=48)
+            except Exception:
+                cur["weather_svg_icon"] = weather_svg_icon(0, size_px=48)
+        forecast = val.get("forecast_daily") or []
+        for day in forecast:
+            if isinstance(day, dict):
+                try:
+                    day_code = day.get("weather_code")
+                    day["weather_svg_icon"] = weather_svg_icon(day_code, size_px=32)
+                except Exception:
+                    day["weather_svg_icon"] = weather_svg_icon(0, size_px=32)
         if val.get("error"):
             operative.append(val)
         elif cur.get("blocks_installation"):

@@ -49,7 +49,7 @@
                                         <div class="weather-card-head">
                                             <div>
                                                 <div class="weather-card-title">
-                                                    <span class="weather-emoji-big">{{ cur.weather_icon or "🌡️" }}</span>
+                                                    <span class="weather-emoji-big">{{ cur.weather_svg_icon|safe if cur.weather_svg_icon else "🌡️" }}</span>
                                                     <strong>{{ report.center_name }}</strong>
                                                     {% if report.region %}
                                                         <span class="weather-region-chip">{{ report.region }}</span>
@@ -83,7 +83,7 @@
                                                     {% for day in report.forecast_daily[1:] %}
                                                         <div class="forecast-day{% if day.blocks_installation %} forecast-day-blocked{% elif day.risk_level == 'medio' %} forecast-day-warn{% endif %}">
                                                             <div class="forecast-day-date">{{ day.date }}</div>
-                                                            <div class="forecast-day-icon">{{ day.weather_icon or "🌡️" }}</div>
+                                                            <div class="forecast-day-icon">{{ day.weather_svg_icon|safe if day.weather_svg_icon else "🌡️" }}</div>
                                                             <div class="forecast-day-label">{{ day.weather_label }}</div>
                                                             {% if day.temp_max_c is not none and day.temp_min_c is not none %}
                                                                 <div class="forecast-day-temp">{{ day.temp_max_c }}° / {{ day.temp_min_c }}°</div>
@@ -123,7 +123,7 @@
                                         <div class="weather-card-head">
                                             <div>
                                                 <div class="weather-card-title">
-                                                    <span class="weather-emoji-big">{{ cur.weather_icon or "🌡️" }}</span>
+                                                    <span class="weather-emoji-big">{{ cur.weather_svg_icon|safe if cur.weather_svg_icon else "🌡️" }}</span>
                                                     <strong>{{ report.center_name }}</strong>
                                                     {% if report.region %}
                                                         <span class="weather-region-chip">{{ report.region }}</span>
@@ -156,7 +156,7 @@
                                                     {% for day in report.forecast_daily[1:] %}
                                                         <div class="forecast-day{% if day.blocks_installation %} forecast-day-blocked{% elif day.risk_level == 'medio' %} forecast-day-warn{% endif %}">
                                                             <div class="forecast-day-date">{{ day.date }}</div>
-                                                            <div class="forecast-day-icon">{{ day.weather_icon or "🌡️" }}</div>
+                                                            <div class="forecast-day-icon">{{ day.weather_svg_icon|safe if day.weather_svg_icon else "🌡️" }}</div>
                                                             <div class="forecast-day-label">{{ day.weather_label }}</div>
                                                             {% if day.temp_max_c is not none and day.temp_min_c is not none %}
                                                                 <div class="forecast-day-temp">{{ day.temp_max_c }}° / {{ day.temp_min_c }}°</div>
@@ -194,7 +194,7 @@
                                         {% set cur = report.current or {} %}
                                         <article class="operative-card{% if report.error %} operative-card-error{% endif %}">
                                             <div class="operative-card-title">
-                                                <span class="weather-emoji-big">{% if report.error %}⚠️{% else %}{{ cur.weather_icon or "☀️" }}{% endif %}</span>
+                                                <span class="weather-emoji-big">{% if report.error %}⚠️{% else %}{{ cur.weather_svg_icon|safe if cur.weather_svg_icon else "☀️" }}{% endif %}</span>
                                                 <div>
                                                     <strong>{{ report.center_name }}</strong>
                                                     {% if report.region %}<span class="weather-region-chip">{{ report.region }}</span>{% endif %}
@@ -220,7 +220,7 @@
                                                         {% for day in report.forecast_daily[1:] %}
                                                             <div class="forecast-day{% if day.blocks_installation %} forecast-day-blocked{% elif day.risk_level == 'medio' %} forecast-day-warn{% endif %}">
                                                                 <div class="forecast-day-date">{{ day.date }}</div>
-                                                                <div class="forecast-day-icon">{{ day.weather_icon or "🌡️" }}</div>
+                                                                <div class="forecast-day-icon">{{ day.weather_svg_icon|safe if day.weather_svg_icon else "🌡️" }}</div>
                                                                 <div class="forecast-day-label">{{ day.weather_label }}</div>
                                                                 {% if day.temp_max_c is not none and day.temp_min_c is not none %}
                                                                     <div class="forecast-day-temp">{{ day.temp_max_c }}° / {{ day.temp_min_c }}°</div>

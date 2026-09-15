@@ -2329,6 +2329,21 @@ body.has-modal {
 .weather-emoji-big {
     font-size: 1.6rem;
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.weather-icon-svg {
+    display: inline-block;
+    vertical-align: middle;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+}
+
+.weather-emoji-big .weather-icon-svg {
+    width: 48px;
+    height: 48px;
 }
 
 .weather-region-chip {
@@ -2455,6 +2470,14 @@ body.has-modal {
     font-size: 1.3rem;
     line-height: 1;
     margin: 0.15rem 0 0.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.forecast-day-icon .weather-icon-svg {
+    width: 32px;
+    height: 32px;
 }
 .forecast-day-label {
     font-weight: 700;
