@@ -519,6 +519,7 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
         daily_om = {
             "time": [],
             "weather_code": [],
+            "weather_texts": [],
             "temperature_2m_max": [],
             "temperature_2m_min": [],
             "precipitation_sum": [],
@@ -534,6 +535,7 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
             code_wa_d = int((dcond or {}).get("code") or 0)
             text_wa_d = str((dcond or {}).get("text") or "")
             daily_om["weather_code"].append(int(_weatherapi_code_to_om(code_wa_d, text_wa_d)))
+            daily_om["weather_texts"].append(text_wa_d)
             daily_om["temperature_2m_max"].append(float(day.get("maxtemp_c") or 0.0))
             daily_om["temperature_2m_min"].append(float(day.get("mintemp_c") or 0.0))
             daily_om["precipitation_sum"].append(float(day.get("totalprecip_mm") or 0.0))
@@ -550,45 +552,48 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
 def _weatherapi_code_to_om(wa_code, wa_text=""):
     """Mapeo WeatherAPI condition code -> WMO-like Open-Meteo weather code
        (para que la regla _evaluate_risk detecte bloqueos por WMO 95+ tormenta etc).
+    - ORDEN IMPORTANTE: mapear PRIMERO los codigos ESPECIFICOS (sunny, cloudy) ya que
+      1003/1006/1009 estaban sobrepuestos en el bloque Niebla/Escarcha y devolvia 48.
     """
-    # Tormenta fuerte / con truenos / granizo -> 95/96/99
-    if wa_code in (1087, 1273, 1276, 1279, 1282):
-        return 95 if wa_code in (1087, 1273) else 99
-    # Nieve fuerte -> 86/88
-    if wa_code in (1066, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1261, 1264):
-        return 86 if wa_code in (1210, 1213, 1066) else 88
-    # Lluvia pesada / chubascos fuertes -> 65/67/82
-    if wa_code in (1153, 1180, 1183, 1186, 1189, 1192, 1195, 1198, 1201, 1204, 1207, 1240, 1243, 1246, 1249, 1252):
-        if wa_code in (1195, 1246, 1201):
-            return 65
-        if wa_code in (1243, 1189, 1192):
-            return 82
-        return 61
-    # Niebla / neblina -> 45/48
-    if wa_code in (1003, 1006, 1009, 1030, 1135, 1147):
-        return 45 if wa_code in (1030, 1135) else 48
-    # Nubes / parcial nublado -> 1/2/3
+    wa_code = int(wa_code or 0)
+    # 1) Soleado / Cielos limpios
     if wa_code == 1000:
         return 0
+    # 2) Nubes (especificos WeatherAPI - NO OVERLAP con niebla/escarcha!)
     if wa_code == 1003:
         return 1
     if wa_code == 1006:
         return 2
     if wa_code == 1009:
         return 3
-    # Llovizna / lluvia ligera -> 51/53/55 / 61
-    if wa_code in (1063, 1072, 1150, 1153, 1168, 1171, 1180, 1183, 1186, 1189):
+    # 3) Tormenta fuerte / con truenos / granizo -> 95/99
+    if wa_code in (1087, 1273, 1276, 1279, 1282):
+        return 95 if wa_code in (1087, 1273) else 99
+    # 4) Nieve fuerte -> 86/88
+    if wa_code in (1066, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1261, 1264):
+        return 86 if wa_code in (1210, 1213, 1066) else 88
+    # 5) Lluvia pesada / chubascos fuertes -> 65/82 / 61
+    if wa_code in (1153, 1180, 1183, 1186, 1189, 1192, 1195, 1198, 1201, 1204, 1207, 1240, 1243, 1246, 1249, 1252):
+        if wa_code in (1195, 1246, 1201):
+            return 65
+        if wa_code in (1243, 1189, 1192):
+            return 82
+        return 61
+    # 6) Llovizna / lluvia ligera -> 51 / 61
+    if wa_code in (1063, 1072, 1150, 1168, 1171, 1180, 1183, 1186):
         return 51 if wa_code in (1150, 1072) else 61
-    # lluvia muy ligera o frizzling -> 51
-    # Por ultimo text heuristica
+    # 7) Niebla / neblina (SOLO los codigos EXCLUSIVOS niebla, NO 1003/1006/1009!)
+    if wa_code in (1030, 1135, 1147):
+        return 45 if wa_code in (1030, 1135) else 48
+    # 8) Por ultimo text heuristica
     t = (wa_text or "").lower()
     if any(k in t for k in ("tormenta", "thunder", "storm")): return 95
     if any(k in t for k in ("nieve", "snow")): return 86
     if any(k in t for k in ("lluvia fuerte", "heavy rain", "downpour")): return 65
     if any(k in t for k in ("lluvia", "rain", "shower")): return 61
     if any(k in t for k in ("niebla", "fog", "mist")): return 45
-    if any(k in t for k in ("nublado", "cloud")): return 2
-    if any(k in t for k in ("soleado", "sunny", "clear")): return 0
+    if any(k in t for k in ("nublado", "cloud", "overcast")): return 2
+    if any(k in t for k in ("soleado", "sunny", "clear", "limpio")): return 0
     return 3
 
 
@@ -835,6 +840,7 @@ def build_forecast_daily(raw_daily, region_name=None):
         return []
     times = raw_daily.get("time") or []
     codes = raw_daily.get("weather_code") or []
+    texts = raw_daily.get("weather_texts") or []  # WeatherAPI real text (optional)
     tmax = raw_daily.get("temperature_2m_max") or []
     tmin = raw_daily.get("temperature_2m_min") or []
     precip = raw_daily.get("precipitation_sum") or []
@@ -852,13 +858,17 @@ def build_forecast_daily(raw_daily, region_name=None):
             "wind_speed_10m": wind_max[idx] if idx < len(wind_max) else 0,
         }
         risk = _evaluate_risk(synthetic_current, region_name=region_name)
+        day_label = risk["weather_label"]
+        if idx < len(texts) and texts[idx]:
+            # Overwrite WMO label with WeatherAPI human text (cuando hay)
+            day_label = str(texts[idx])
         out.append({
             "date": times[idx] if idx < len(times) else None,
             "risk_level": risk["risk_level"],
             "risk_label": risk["risk_label"],
             "blocks_installation": risk["blocks_installation"],
             "weather_code": risk["weather_code"],
-            "weather_label": risk["weather_label"],
+            "weather_label": day_label,
             "weather_icon": risk["weather_icon"],
             "temp_max_c": round(tmax[idx], 1) if idx < len(tmax) and tmax[idx] is not None else None,
             "temp_min_c": round(tmin[idx], 1) if idx < len(tmin) and tmin[idx] is not None else None,
@@ -1242,8 +1252,8 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
                 tz_raw = raw.get("timezone")
                 current_eval = _evaluate_risk(current_raw, region_name=region)
                 wa_label = raw.get("_wa_weather_label")
-                if wa_label and isinstance(current_eval, dict) and not current_eval.get("weather_label"):
-                    current_eval["weather_label"] = wa_label
+                if wa_label and isinstance(current_eval, dict):
+                    current_eval["weather_label"] = str(wa_label)
                 payload["current"] = current_eval
                 payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
                 payload["timezone"] = tz_raw
