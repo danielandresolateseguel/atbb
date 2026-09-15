@@ -439,7 +439,157 @@ def _fetch_open_meteo(lat, lng, forecast_days=4):
     out = _fetch_open_meteo_batch([(lat, lng)], forecast_days=forecast_days)
     if not out:
         raise RuntimeError("Empty batch response from Open-Meteo")
-    return out[0]
+    return out
+
+
+def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
+    """WeatherAPI.com adapter: devuelve LISTA de [{current,daily,timezone}] en formato COMPATIBLE Open-Meteo
+       para que luego el pipeline comun (normalization, _evaluate_risk, build_forecast_daily) procese igual.
+    - Locations: [(lat, lng), ...]
+    - Si WEATHERAPI_COM_KEY no existe -> lanza RuntimeError para que el caller haga fallback al Open-Meteo.
+    - Por cada location hace 1 request GET current+forecast (FREE tier permite 1M/mes).
+    """
+    import os as _os
+    api_key = None
+    try:
+        from flask import current_app
+        api_key = (current_app.config.get("WEATHERAPI_COM_KEY") if current_app else None)
+    except Exception:
+        api_key = None
+    if not api_key:
+        try:
+            api_key = _os.getenv("WEATHERAPI_COM_KEY") or None
+        except Exception:
+            api_key = None
+    if not api_key:
+        raise RuntimeError("WEATHERAPI_COM_KEY not configured; fallback to Open-Meteo")
+    fd = max(1, min(7, int(forecast_days)))
+    out = []
+    headers = {"User-Agent": "SoftBerardi-Weather/1.3 (+https://atbb.onrender.com)",
+               "Accept": "application/json"}
+    last_exc = None
+    for (lat, lng) in locations:
+        params = urllib.parse.urlencode({
+            "key": api_key,
+            "q": f"{float(lat):.5f},{float(lng):.5f}",
+            "days": fd,
+            "aqi": "no",
+            "alerts": "no",
+        })
+        url = f"https://api.weatherapi.com/v1/forecast.json?{params}"
+        try:
+            raw = _http_get_json(url, headers, timeout=20)
+        except Exception as e:
+            last_exc = e
+            out.append({"current": {}, "daily": {}, "timezone": None})
+            continue
+        if not isinstance(raw, dict):
+            out.append({"current": {}, "daily": {}, "timezone": None})
+            continue
+        cur = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+        fc = raw.get("forecast") if isinstance(raw.get("forecast"), dict) else {}
+        fcdays = fc.get("forecastday") if isinstance(fc.get("forecastday"), list) else []
+        loc = raw.get("location") if isinstance(raw.get("location"), dict) else {}
+        tz = loc.get("tz_id") if isinstance(loc, dict) else None
+
+        def _cp(v, default=None):
+            return v if v is not None else default
+
+        weather_code_om = 0
+        weather_label = ""
+        if isinstance(cur.get("condition"), dict):
+            condition = cur["condition"]
+            code_wa = int(condition.get("code") or 0)
+            text_wa = str(condition.get("text") or "")
+            weather_label = text_wa
+            weather_code_om = _weatherapi_code_to_om(code_wa, text_wa)
+        precip_mm = _cp(cur.get("precip_mm"), 0.0)
+        snow_cm = 0.0
+        wind_kmh = _cp(cur.get("wind_kph"), 0.0)
+        temp_c = _cp(cur.get("temp_c"), 0.0)
+        humidity = _cp(cur.get("humidity"), 0)
+        current_om = {
+            "temperature_2m": float(temp_c),
+            "relative_humidity_2m": float(humidity),
+            "precipitation": float(precip_mm),
+            "snowfall": float(snow_cm),
+            "weather_code": int(weather_code_om),
+            "wind_speed_10m": float(wind_kmh),
+        }
+        daily_om = {
+            "time": [],
+            "weather_code": [],
+            "temperature_2m_max": [],
+            "temperature_2m_min": [],
+            "precipitation_sum": [],
+            "snowfall_sum": [],
+            "wind_speed_10m_max": [],
+            "precipitation_probability_max": [],
+        }
+        for d in fcdays:
+            if not isinstance(d, dict): continue
+            daily_om["time"].append(d.get("date") or "")
+            day = d.get("day") if isinstance(d.get("day"), dict) else {}
+            dcond = day.get("condition") if isinstance(day.get("condition"), dict) else {}
+            code_wa_d = int((dcond or {}).get("code") or 0)
+            text_wa_d = str((dcond or {}).get("text") or "")
+            daily_om["weather_code"].append(int(_weatherapi_code_to_om(code_wa_d, text_wa_d)))
+            daily_om["temperature_2m_max"].append(float(day.get("maxtemp_c") or 0.0))
+            daily_om["temperature_2m_min"].append(float(day.get("mintemp_c") or 0.0))
+            daily_om["precipitation_sum"].append(float(day.get("totalprecip_mm") or 0.0))
+            daily_om["snowfall_sum"].append(float(day.get("totalsnow_cm") or 0.0))
+            daily_om["wind_speed_10m_max"].append(float(day.get("maxwind_kph") or 0.0))
+            daily_om["precipitation_probability_max"].append(int(day.get("daily_chance_of_rain") or 0))
+        out.append({"current": current_om, "daily": daily_om, "timezone": tz,
+                    "_wa_weather_label": weather_label})
+    if not out and last_exc:
+        raise last_exc
+    return out
+
+
+def _weatherapi_code_to_om(wa_code, wa_text=""):
+    """Mapeo WeatherAPI condition code -> WMO-like Open-Meteo weather code
+       (para que la regla _evaluate_risk detecte bloqueos por WMO 95+ tormenta etc).
+    """
+    # Tormenta fuerte / con truenos / granizo -> 95/96/99
+    if wa_code in (1087, 1273, 1276, 1279, 1282):
+        return 95 if wa_code in (1087, 1273) else 99
+    # Nieve fuerte -> 86/88
+    if wa_code in (1066, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1261, 1264):
+        return 86 if wa_code in (1210, 1213, 1066) else 88
+    # Lluvia pesada / chubascos fuertes -> 65/67/82
+    if wa_code in (1153, 1180, 1183, 1186, 1189, 1192, 1195, 1198, 1201, 1204, 1207, 1240, 1243, 1246, 1249, 1252):
+        if wa_code in (1195, 1246, 1201):
+            return 65
+        if wa_code in (1243, 1189, 1192):
+            return 82
+        return 61
+    # Niebla / neblina -> 45/48
+    if wa_code in (1003, 1006, 1009, 1030, 1135, 1147):
+        return 45 if wa_code in (1030, 1135) else 48
+    # Nubes / parcial nublado -> 1/2/3
+    if wa_code == 1000:
+        return 0
+    if wa_code == 1003:
+        return 1
+    if wa_code == 1006:
+        return 2
+    if wa_code == 1009:
+        return 3
+    # Llovizna / lluvia ligera -> 51/53/55 / 61
+    if wa_code in (1063, 1072, 1150, 1153, 1168, 1171, 1180, 1183, 1186, 1189):
+        return 51 if wa_code in (1150, 1072) else 61
+    # lluvia muy ligera o frizzling -> 51
+    # Por ultimo text heuristica
+    t = (wa_text or "").lower()
+    if any(k in t for k in ("tormenta", "thunder", "storm")): return 95
+    if any(k in t for k in ("nieve", "snow")): return 86
+    if any(k in t for k in ("lluvia fuerte", "heavy rain", "downpour")): return 65
+    if any(k in t for k in ("lluvia", "rain", "shower")): return 61
+    if any(k in t for k in ("niebla", "fog", "mist")): return 45
+    if any(k in t for k in ("nublado", "cloud")): return 2
+    if any(k in t for k in ("soleado", "sunny", "clear")): return 0
+    return 3
 
 
 def _fetch_open_meteo_batch(locations, forecast_days=4):
@@ -1008,11 +1158,40 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         batch_raws = []
         batch_err = None
         try:
-            batch_raws = _fetch_open_meteo_batch(locations, forecast_days=4)
+            try:
+                batch_raws = _fetch_weatherapi_single_or_batch(locations, forecast_days=4)
+                try:
+                    current_app.logger.info(f"weather: provider=weatherapi.com OK {len(batch_raws)} centers fetch success.")
+                except Exception:
+                    pass
+            except RuntimeError:
+                # WEATHERAPI_COM_KEY no configurado: fallback al pipeline Open-Meteo.
+                try:
+                    from flask import current_app as _capp
+                    om_key = _capp.config.get("WEATHER_OPEN_METEO_API_KEY") if _capp else None
+                except Exception:
+                    om_key = None
+                try:
+                    import os as _os
+                    if not om_key:
+                        om_key = _os.getenv("WEATHER_OPEN_METEO_API_KEY") or None
+                except Exception:
+                    pass
+                if om_key:
+                    try:
+                        current_app.logger.info("weather: provider=open-meteo-customer via apikey")
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        current_app.logger.info("weather: provider=open-meteo-anonymous (sujeto a ban Render IP)")
+                    except Exception:
+                        pass
+                batch_raws = _fetch_open_meteo_batch(locations, forecast_days=4)
         except Exception as exc:
             try:
                 if not batch_exception_logged:
-                    current_app.logger.warning(f"weather: batch fetch open-meteo fail for {len(locations)} centers: {exc}")
+                    current_app.logger.warning(f"weather: batch fetch fail for {len(locations)} centers: {exc}")
                     batch_exception_logged = True
             except Exception:
                 pass
@@ -1062,6 +1241,9 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
                 daily_raw = raw.get("daily") if isinstance(raw.get("daily"), dict) else {}
                 tz_raw = raw.get("timezone")
                 current_eval = _evaluate_risk(current_raw, region_name=region)
+                wa_label = raw.get("_wa_weather_label")
+                if wa_label and isinstance(current_eval, dict) and not current_eval.get("weather_label"):
+                    current_eval["weather_label"] = wa_label
                 payload["current"] = current_eval
                 payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
                 payload["timezone"] = tz_raw
