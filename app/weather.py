@@ -520,8 +520,11 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
     n = len(locations)
     out = []
     for idx in range(n):
-        current = raw.get("current") or {}
-        daily = raw.get("daily") or {}
+        if not isinstance(raw, dict):
+            out.append({"current": {}, "daily": {}, "timezone": None})
+            continue
+        current = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+        daily = raw.get("daily") if isinstance(raw.get("daily"), dict) else {}
         is_batch = isinstance(current.get("temperature_2m"), list) if current else False
         if is_batch:
             cur_single = {}
@@ -538,9 +541,15 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
                         daily_single[k] = v
                 else:
                     daily_single[k] = v
-            out.append({"current": cur_single, "daily": daily_single, "timezone": raw.get("timezone")})
+            tz = raw.get("timezone")
+            if isinstance(tz, list):
+                tz = tz[idx] if len(tz) > idx else None
+            out.append({"current": cur_single, "daily": daily_single, "timezone": tz})
         else:
-            out.append({"current": current, "daily": daily, "timezone": raw.get("timezone")})
+            tz = raw.get("timezone")
+            if isinstance(tz, list):
+                tz = tz[idx] if len(tz) > idx else None
+            out.append({"current": current, "daily": daily, "timezone": tz})
     return out
 
 
@@ -654,7 +663,7 @@ def _ensure_center_weather_cache_table():
 
 
 def build_forecast_daily(raw_daily, region_name=None):
-    if not raw_daily:
+    if not raw_daily or not isinstance(raw_daily, dict):
         return []
     times = raw_daily.get("time") or []
     codes = raw_daily.get("weather_code") or []
@@ -1024,15 +1033,37 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             "forecast_daily": [],
             "error": None,
         }
+        parse_fail = False
         if batch_err is None and batch_raws is not None and idx < len(batch_raws):
-            raw = batch_raws[idx] or {}
-            current_raw = raw.get("current") or {}
-            daily_raw = raw.get("daily") or {}
-            current_eval = _evaluate_risk(current_raw, region_name=region)
-            payload["current"] = current_eval
-            payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
-            payload["timezone"] = raw.get("timezone")
-        else:
+            try:
+                raw = batch_raws[idx]
+                if not isinstance(raw, dict):
+                    parse_fail = True
+                    raise ValueError(f"batch_raws[{idx}] no es dict: {type(raw).__name__} -> {raw!r}")
+                current_raw = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+                daily_raw = raw.get("daily") if isinstance(raw.get("daily"), dict) else {}
+                tz_raw = raw.get("timezone")
+                current_eval = _evaluate_risk(current_raw, region_name=region)
+                payload["current"] = current_eval
+                payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
+                payload["timezone"] = tz_raw
+                if isinstance(payload["current"], dict) and not payload["current"].get("blocks_installation"):
+                    ok_keys = {"temperature_c", "humidity_pct", "precip_mm", "wind_kmh", "weather_code", "weather_label"}
+                    if not any(k in payload["current"] for k in ok_keys) and not payload["current"].get("reasons"):
+                        parse_fail = True
+            except Exception as inner:
+                try:
+                    current_app.logger.warning(
+                        "weather: parseo batch_raws[%d] (%s) falla: %s -> fallback error payload",
+                        idx, orig_name, str(inner), exc_info=False,
+                    )
+                except Exception:
+                    pass
+                parse_fail = True
+        if parse_fail:
+            payload["error"] = "Datos meteorológicos inválidos; reintento en próxima hora."
+            payload["_error_ttl_seconds"] = error_ttl
+        elif batch_err is not None:
             payload["error"] = batch_err or "Sin datos meteorológicos"
             payload["_error_ttl_seconds"] = error_ttl
         if payload.get("error"):
