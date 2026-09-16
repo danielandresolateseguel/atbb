@@ -246,14 +246,6 @@
                             </details>
                         {% endif %}
 
-                        {% if weather_summary.unresolved_centers %}
-                            <div class="unresolved-chips">
-                                <span>ℹ Centros sin coordenadas (agregar a <code>WEATHER_CENTER_COORDINATES</code>):</span>
-                                {% for c in weather_summary.unresolved_centers %}
-                                    <span class="unresolved-chip">{{ c }}</span>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
                     </section>
                 {% endif %}
 
