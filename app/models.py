@@ -8225,10 +8225,12 @@ def append_qc_visibility_filters(where_clauses, params, include_pruebas=False, t
             params.append(official_from_date)
 
 
-def build_qc_sessions_where_sql(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+def build_qc_sessions_where_sql(filters=None, auditor_user_id=None, supervisor_scope_names=None, extra_clauses=None, extra_params=None):
     filters = filters or {}
     where_clauses = []
     params = []
+    extra_clauses = list(extra_clauses or [])
+    extra_params = list(extra_params or [])
 
     append_qc_visibility_filters(where_clauses, params, include_pruebas=filters.get("include_pruebas"), table_alias="qc_sessions")
     append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names, audit_table_alias="qc_sessions")
@@ -8242,6 +8244,15 @@ def build_qc_sessions_where_sql(filters=None, auditor_user_id=None, supervisor_s
     status = (filters.get("status") or "").strip()
     technician_id = filters.get("technician_id")
     q = (filters.get("q") or "").strip()
+    auditor = (filters.get("auditor") or "").strip()
+    location = (filters.get("location") or "").strip()
+    installation_type = (filters.get("installation_type") or "").strip()
+    min_score_raw = (filters.get("min_score") or "").strip()
+    max_score_raw = (filters.get("max_score") or "").strip()
+    qc_live_installation = _normalize_bool(filters.get("qc_live_installation"))
+    supervisor = (filters.get("supervisor") or "").strip()
+    center = (filters.get("center") or "").strip()
+    has_critical_nc = _normalize_bool(filters.get("has_critical_nc"))
 
     if from_date:
         where_clauses.append("qc_sessions.qc_date >= ?")
@@ -8255,6 +8266,87 @@ def build_qc_sessions_where_sql(filters=None, auditor_user_id=None, supervisor_s
     if technician_id:
         where_clauses.append("qc_sessions.technician_id = ?")
         params.append(technician_id)
+
+    if auditor:
+        auditor_value = f"%{auditor}%"
+        if is_postgres():
+            where_clauses.append("COALESCE(qc_sessions.auditor_name, '') ILIKE ?")
+            params.append(auditor_value)
+        else:
+            where_clauses.append("LOWER(COALESCE(qc_sessions.auditor_name, '')) LIKE ?")
+            params.append(auditor_value.lower())
+
+    if location:
+        where_clauses.append("COALESCE(qc_sessions.location, '') = ?")
+        params.append(location)
+
+    if installation_type:
+        where_clauses.append("COALESCE(qc_sessions.installation_type, '') = ?")
+        params.append(installation_type)
+
+    if min_score_raw:
+        try:
+            min_score = float(min_score_raw)
+            where_clauses.append("COALESCE(qc_sessions.total_score, 0) >= ?")
+            params.append(min_score)
+        except ValueError:
+            pass
+    if max_score_raw:
+        try:
+            max_score = float(max_score_raw)
+            where_clauses.append("COALESCE(qc_sessions.total_score, 0) <= ?")
+            params.append(max_score)
+        except ValueError:
+            pass
+
+    if qc_live_installation:
+        where_clauses.append("COALESCE(qc_sessions.qc_live_installation, 0) = 1")
+
+    if supervisor:
+        supervisor_value = f"%{supervisor}%"
+        if is_postgres():
+            where_clauses.append(
+                "COALESCE(qc_sessions.technician_supervisor_snapshot, technicians.supervisor_name, '') ILIKE ?"
+            )
+            params.append(supervisor_value)
+        else:
+            where_clauses.append(
+                "LOWER(COALESCE(qc_sessions.technician_supervisor_snapshot, technicians.supervisor_name, '')) LIKE ?"
+            )
+            params.append(supervisor_value.lower())
+
+    if center:
+        center_value = f"%{center}%"
+        if is_postgres():
+            where_clauses.append(
+                "COALESCE(qc_sessions.technician_center_snapshot, technicians.center_name, '') ILIKE ?"
+            )
+            params.append(center_value)
+        else:
+            where_clauses.append(
+                "LOWER(COALESCE(qc_sessions.technician_center_snapshot, technicians.center_name, '')) LIKE ?"
+            )
+            params.append(center_value.lower())
+
+    if has_critical_nc:
+        if is_postgres():
+            where_clauses.append(
+                "EXISTS ("
+                "SELECT 1 FROM qc_items "
+                "WHERE qc_items.qc_session_id = qc_sessions.id "
+                "AND qc_items.is_critical = 1 "
+                "AND qc_items.status IN ('nc_menor', 'nc_mayor')"
+                ")"
+            )
+        else:
+            where_clauses.append(
+                "EXISTS ("
+                "SELECT 1 FROM qc_items "
+                "WHERE qc_items.qc_session_id = qc_sessions.id "
+                "AND qc_items.is_critical = 1 "
+                "AND qc_items.status IN ('nc_menor', 'nc_mayor')"
+                ")"
+            )
 
     if q:
         like_value = f"%{q}%"
@@ -8280,17 +8372,23 @@ def build_qc_sessions_where_sql(filters=None, auditor_user_id=None, supervisor_s
             lowered = like_value.lower()
             params.extend([lowered] * 4)
 
+    if extra_clauses:
+        where_clauses.extend(extra_clauses)
+        params.extend(extra_params)
+
     where_sql = ""
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
     return where_sql, tuple(params)
 
 
-def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300):
+def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300, offset=0, extra_clauses=None, extra_params=None):
     where_sql, params = build_qc_sessions_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
+        extra_clauses=extra_clauses,
+        extra_params=extra_params,
     )
     filters = filters or {}
     sort_key = (filters.get("sort") or "").strip()
@@ -8332,6 +8430,10 @@ def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names
     else:
         order_sql = "ORDER BY qc_sessions.created_at DESC"
     created_at_expr = "qc_sessions.created_at"
+    try:
+        offset_int = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset_int = 0
     rows = get_db().execute(
         f"""
         SELECT
@@ -8353,9 +8455,9 @@ def fetch_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names
         LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
         {where_sql}
         {order_sql}
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        tuple(list(params) + [limit]),
+        tuple(list(params) + [int(limit), offset_int]),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -8394,6 +8496,194 @@ def fetch_qc_sessions_for_audit(audit_id, auditor_user_id=None, supervisor_scope
         tuple(list(params) + [limit]),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def count_qc_sessions(filters=None, auditor_user_id=None, supervisor_scope_names=None, extra_clauses=None, extra_params=None):
+    where_sql, params = build_qc_sessions_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+        extra_clauses=extra_clauses,
+        extra_params=extra_params,
+    )
+    row = get_db().execute(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+    if not row:
+        return 0
+    return int(row["cnt"] if isinstance(row, dict) else row[0] or 0)
+
+
+def fetch_distinct_qc_auditors(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["auditor"] = ""
+    where_sql, params = build_qc_sessions_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(qc_sessions.auditor_name, '')) AS auditor_name
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(qc_sessions.auditor_name, '')) != ''
+        ORDER BY auditor_name ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["auditor_name"] for row in rows]
+
+
+def fetch_distinct_qc_locations(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["location"] = ""
+    where_sql, params = build_qc_sessions_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(qc_sessions.location, '')) AS location
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(qc_sessions.location, '')) != ''
+        ORDER BY location ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["location"] for row in rows]
+
+
+def fetch_distinct_qc_installation_types(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["installation_type"] = ""
+    where_sql, params = build_qc_sessions_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(qc_sessions.installation_type, '')) AS installation_type
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(qc_sessions.installation_type, '')) != ''
+        ORDER BY installation_type ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["installation_type"] for row in rows]
+
+
+def fetch_distinct_qc_supervisors(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["supervisor"] = ""
+    where_sql, params = build_qc_sessions_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(qc_sessions.technician_supervisor_snapshot, technicians.supervisor_name, '')) AS supervisor_name
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(qc_sessions.technician_supervisor_snapshot, technicians.supervisor_name, '')) != ''
+        ORDER BY supervisor_name ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["supervisor_name"] for row in rows]
+
+
+def fetch_distinct_qc_centers(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    option_filters = dict(filters or {})
+    option_filters["center"] = ""
+    where_sql, params = build_qc_sessions_where_sql(
+        option_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    rows = get_db().execute(
+        f"""
+        SELECT DISTINCT TRIM(COALESCE(qc_sessions.technician_center_snapshot, technicians.center_name, '')) AS center_name
+        FROM qc_sessions
+        LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+        {where_sql}
+        {"AND" if where_sql else "WHERE"} TRIM(COALESCE(qc_sessions.technician_center_snapshot, technicians.center_name, '')) != ''
+        ORDER BY center_name ASC
+        """,
+        params,
+    ).fetchall()
+    return [dict(row)["center_name"] for row in rows]
+
+
+def fetch_qc_quick_filter_stats(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    def _count_with_extra(extra_clauses=None, extra_params=None):
+        where_sql, params = build_qc_sessions_where_sql(
+            filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+            extra_clauses=extra_clauses,
+            extra_params=extra_params,
+        )
+        row = get_db().execute(
+            f"""
+            SELECT COUNT(*) AS cnt
+            FROM qc_sessions
+            LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
+            {where_sql}
+            """,
+            params,
+        ).fetchone()
+        if not row:
+            return 0
+        return int(row["cnt"] if isinstance(row, dict) else row[0] or 0)
+
+    total = _count_with_extra()
+    aprobadas = _count_with_extra(["qc_sessions.result_status = ?"], ["Aprobada"])
+    aprobadas_obs = _count_with_extra(["qc_sessions.result_status = ?"], ["Aprobada con observaciones"])
+    rechazadas = _count_with_extra(["qc_sessions.result_status = ?"], ["Rechazada"])
+
+    nc_critical_extra = [
+        (
+            "EXISTS ("
+            "SELECT 1 FROM qc_items "
+            "WHERE qc_items.qc_session_id = qc_sessions.id "
+            "AND qc_items.is_critical = 1 "
+            "AND qc_items.status IN ('nc_menor', 'nc_mayor')"
+            ")"
+        )
+    ]
+    nc_criticas = _count_with_extra(nc_critical_extra)
+
+    en_vivo = _count_with_extra(["COALESCE(qc_sessions.qc_live_installation, 0) = 1"])
+    bajo_promedio_extra = [
+        "COALESCE(qc_sessions.total_score, 0) < (SELECT COALESCE(AVG(qc_sessions_2.total_score), 0) FROM qc_sessions AS qc_sessions_2 WHERE COALESCE(qc_sessions_2.total_score, 0) > 0)"
+    ]
+    bajo_promedio = _count_with_extra(bajo_promedio_extra)
+
+    return {
+        "total_qc": total,
+        "aprobadas": aprobadas,
+        "aprobadas_con_obs": aprobadas_obs,
+        "rechazadas": rechazadas,
+        "nc_criticas": nc_criticas,
+        "en_vivo": en_vivo,
+        "bajo_promedio": bajo_promedio,
+    }
 
 
 def fetch_qc_session_detail(qc_session_id, supervisor_scope_names=None):
@@ -9044,13 +9334,26 @@ def fetch_qc_reports_status_breakdown(filters=None, auditor_user_id=None, superv
     return breakdown
 
 
-def fetch_qc_reports_time_series(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=120):
+def fetch_qc_reports_time_series(filters=None, auditor_user_id=None, supervisor_scope_names=None, granularity=None, limit=120):
     where_sql, params = build_qc_sessions_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
-    period_expr = "SUBSTRING(qc_sessions.qc_date FROM 1 FOR 7)" if is_postgres() else "substr(qc_sessions.qc_date, 1, 7)"
+    granularity = (granularity or "").strip().lower() or "month"
+    if granularity not in {"month", "week"}:
+        granularity = "month"
+    if granularity == "month":
+        period_expr = "SUBSTRING(qc_sessions.qc_date FROM 1 FOR 7)" if is_postgres() else "substr(qc_sessions.qc_date, 1, 7)"
+    else:
+        if is_postgres():
+            period_expr = (
+                "TO_CHAR(DATE_TRUNC('week', to_date(SUBSTRING(qc_sessions.qc_date FROM 1 FOR 10), 'YYYY-MM-DD')), 'YYYY-IW')"
+            )
+        else:
+            period_expr = (
+                "strftime('%Y-W%W', date(substr(qc_sessions.qc_date, 1, 10)))"
+            )
     rows = get_db().execute(
         f"""
         SELECT
@@ -9081,14 +9384,26 @@ def fetch_qc_reports_time_series(filters=None, auditor_user_id=None, supervisor_
     return series
 
 
-def fetch_qc_reports_technician_ranking(filters=None, auditor_user_id=None, supervisor_scope_names=None, min_qc=3, limit=200):
+def fetch_qc_reports_technician_ranking(filters=None, auditor_user_id=None, supervisor_scope_names=None, min_qc=3, sort_by=None, limit=200):
     where_sql, params = build_qc_sessions_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+    sort_by = (sort_by or "").strip().lower() or "score_desc"
+    allowed_sorts = {"score_desc", "total_desc", "rejected_desc", "last_qc_asc"}
+    if sort_by not in allowed_sorts:
+        sort_by = "score_desc"
     name_expr = "COALESCE(technicians.name, qc_sessions.technician_display_name, 'Sin tecnico')"
     employee_expr = "COALESCE(technicians.employee_code, qc_sessions.technician_employee_code, '')"
+    if sort_by == "score_desc":
+        order_sql = f"ORDER BY average_score DESC, total_qc DESC, {name_expr} ASC"
+    elif sort_by == "total_desc":
+        order_sql = f"ORDER BY total_qc DESC, average_score DESC, {name_expr} ASC"
+    elif sort_by == "rejected_desc":
+        order_sql = f"ORDER BY rejected_count DESC, average_score ASC, total_qc DESC, {name_expr} ASC"
+    else:
+        order_sql = f"ORDER BY last_qc_date ASC, total_qc DESC, {name_expr} ASC"
     rows = get_db().execute(
         f"""
         SELECT
@@ -9104,7 +9419,7 @@ def fetch_qc_reports_technician_ranking(filters=None, auditor_user_id=None, supe
         {where_sql}
         GROUP BY qc_sessions.technician_id, {name_expr}, {employee_expr}
         HAVING COUNT(*) >= ?
-        ORDER BY average_score DESC, total_qc DESC, {name_expr} ASC
+        {order_sql}
         LIMIT ?
         """,
         tuple(list(params) + [int(min_qc), int(limit)]),

@@ -8,3 +8,6 @@ app/static/uploads/
 .dbg/
 debug-*.md
 _external/
+.trae/
+trae-sandbox.cmd
+trae-sandbox.ps1

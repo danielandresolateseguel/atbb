@@ -154,6 +154,13 @@ from app.models import (
     fetch_qc_technician_extra_summary,
     fetch_qc_technician_nc_breakdown,
     fetch_qc_technician_nc_summary,
+    count_qc_sessions,
+    fetch_distinct_qc_auditors,
+    fetch_distinct_qc_locations,
+    fetch_distinct_qc_installation_types,
+    fetch_distinct_qc_supervisors,
+    fetch_distinct_qc_centers,
+    fetch_qc_quick_filter_stats,
     fetch_tnps_response_for_qc,
     count_audit_picker_audits,
     import_checklist_del_dia,
@@ -4751,6 +4758,16 @@ def qc_sessions():
         "include_pruebas": "1" if request.args.get("include_pruebas") else "",
         "sort": request.args.get("sort", "").strip(),
         "dir": request.args.get("dir", "").strip(),
+        "auditor": request.args.get("auditor", "").strip(),
+        "location": request.args.get("location", "").strip(),
+        "installation_type": request.args.get("installation_type", "").strip(),
+        "min_score": request.args.get("min_score", "").strip(),
+        "max_score": request.args.get("max_score", "").strip(),
+        "qc_live_installation": "1" if request.args.get("qc_live_installation") else "",
+        "supervisor": request.args.get("supervisor", "").strip(),
+        "center": request.args.get("center", "").strip(),
+        "has_critical_nc": "1" if request.args.get("has_critical_nc") else "",
+        "quick_filter": request.args.get("quick_filter", "").strip(),
     }
 
     technician_id = None
@@ -4770,14 +4787,129 @@ def qc_sessions():
         "include_pruebas": filters["include_pruebas"],
         "sort": filters["sort"],
         "dir": filters["dir"],
+        "auditor": filters["auditor"],
+        "location": filters["location"],
+        "installation_type": filters["installation_type"],
+        "min_score": filters["min_score"],
+        "max_score": filters["max_score"],
+        "qc_live_installation": filters["qc_live_installation"],
+        "supervisor": filters["supervisor"],
+        "center": filters["center"],
+        "has_critical_nc": filters["has_critical_nc"],
     }
+
+    quick_filter = (filters.get("quick_filter") or "").strip().lower()
+    extra_clauses = []
+    extra_params = []
+    if quick_filter == "aprobadas":
+        extra_clauses.append("qc_sessions.result_status = ?")
+        extra_params.append("Aprobada")
+    elif quick_filter == "aprobadas_obs":
+        extra_clauses.append("qc_sessions.result_status = ?")
+        extra_params.append("Aprobada con observaciones")
+    elif quick_filter == "rechazadas":
+        extra_clauses.append("qc_sessions.result_status = ?")
+        extra_params.append("Rechazada")
+    elif quick_filter == "nc_criticas":
+        extra_clauses.append(
+            "EXISTS ("
+            "SELECT 1 FROM qc_items "
+            "WHERE qc_items.qc_session_id = qc_sessions.id "
+            "AND qc_items.is_critical = 1 "
+            "AND qc_items.status IN ('nc_menor', 'nc_mayor')"
+            ")"
+        )
+    elif quick_filter == "en_vivo":
+        extra_clauses.append("COALESCE(qc_sessions.qc_live_installation, 0) = 1")
+    elif quick_filter == "bajo_promedio":
+        extra_clauses.append(
+            "COALESCE(qc_sessions.total_score, 0) < ("
+            "SELECT COALESCE(AVG(qc_sessions_2.total_score), 0) "
+            "FROM qc_sessions AS qc_sessions_2 "
+            "WHERE COALESCE(qc_sessions_2.total_score, 0) > 0)"
+        )
+
+    page_raw = (request.args.get("page") or "").strip()
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw))
+        except ValueError:
+            page = 1
+    page_size_raw = (request.args.get("page_size") or "").strip()
+    page_size = 25
+    if page_size_raw:
+        try:
+            ps = int(page_size_raw)
+            if ps in {10, 25, 50, 100}:
+                page_size = ps
+        except ValueError:
+            pass
+
+    supervisor_scope_names = current_supervisor_scope_names()
+
+    findings_total = count_qc_sessions(
+        query_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+        extra_clauses=extra_clauses if extra_clauses else None,
+        extra_params=extra_params if extra_clauses else None,
+    )
+
+    page_count = max(1, (findings_total + page_size - 1) // page_size) if findings_total else 1
+    if page > page_count:
+        page = page_count
+    offset = (page - 1) * page_size
 
     sessions = fetch_qc_sessions(
         query_filters,
         auditor_user_id=auditor_user_id,
-        supervisor_scope_names=current_supervisor_scope_names(),
+        supervisor_scope_names=supervisor_scope_names,
+        limit=page_size,
+        offset=offset,
+        extra_clauses=extra_clauses if extra_clauses else None,
+        extra_params=extra_params if extra_clauses else None,
     )
+
     technicians = fetch_technicians()
+
+    panel_filters = dict(query_filters)
+    panel_filters["sort"] = ""
+    panel_filters["dir"] = ""
+
+    auditor_options = fetch_distinct_qc_auditors(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    ) if auditor_user_id is None else []
+
+    location_options = fetch_distinct_qc_locations(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    installation_type_options = fetch_distinct_qc_installation_types(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    supervisor_options = fetch_distinct_qc_supervisors(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    center_options = fetch_distinct_qc_centers(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+
+    finding_stats = fetch_qc_quick_filter_stats(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+
     filter_active = any(
         [
             filters["from_date"],
@@ -4786,12 +4918,145 @@ def qc_sessions():
             filters["technician_id"],
             filters["q"],
             filters["include_pruebas"],
+            filters["auditor"],
+            filters["location"],
+            filters["installation_type"],
+            filters["min_score"],
+            filters["max_score"],
+            filters["qc_live_installation"],
+            filters["supervisor"],
+            filters["center"],
+            filters["has_critical_nc"],
+            filters["quick_filter"],
         ]
     )
+    advanced_filters_active = any(
+        [
+            filters["location"],
+            filters["installation_type"],
+            filters["min_score"],
+            filters["max_score"],
+            filters["qc_live_installation"],
+            filters["supervisor"],
+            filters["center"],
+            filters["has_critical_nc"],
+            filters["q"],
+        ]
+    )
+
+    has_prev_page = page > 1
+    has_next_page = (offset + page_size) < findings_total
+
+    pages_window_findings = []
+    if page_count <= 9:
+        pages_window_findings = list(range(1, page_count + 1))
+    else:
+        pages_window_findings.append(1)
+        if page - 2 > 2:
+            pages_window_findings.append(None)
+        start = max(2, page - 2)
+        end = min(page_count - 1, page + 2)
+        for p in range(start, end + 1):
+            pages_window_findings.append(p)
+        if page + 2 < page_count - 1:
+            pages_window_findings.append(None)
+        pages_window_findings.append(page_count)
+
+    def build_quick_filter_url(quick_filter_key):
+        query = {key: value for key, value in filters.items() if value}
+        query.pop("quick_filter", None)
+        for field_name in ("status", "has_critical_nc", "qc_live_installation"):
+            query.pop(field_name, None)
+        query["page"] = 1
+        if quick_filter_key:
+            query["quick_filter"] = quick_filter_key
+        return url_for("main.qc_sessions", **query)
+
+    active_quick_filter = filters["quick_filter"]
+    quick_filter_cards = [
+        {
+            "key": "",
+            "label": "Total QC",
+            "value": finding_stats["total_qc"],
+            "helper": "Todos los registros según ámbito.",
+            "tone": "neutral",
+            "href": build_quick_filter_url(""),
+            "active": not active_quick_filter,
+        },
+        {
+            "key": "aprobadas",
+            "label": "Aprobadas",
+            "value": finding_stats["aprobadas"],
+            "helper": "Resultado Aprobada.",
+            "tone": "ok",
+            "href": build_quick_filter_url("aprobadas"),
+            "active": active_quick_filter == "aprobadas",
+        },
+        {
+            "key": "aprobadas_obs",
+            "label": "C/ observaciones",
+            "value": finding_stats["aprobadas_con_obs"],
+            "helper": "Aprobada con observaciones.",
+            "tone": "primary",
+            "href": build_quick_filter_url("aprobadas_obs"),
+            "active": active_quick_filter == "aprobadas_obs",
+        },
+        {
+            "key": "rechazadas",
+            "label": "Rechazadas",
+            "value": finding_stats["rechazadas"],
+            "helper": "Resultado Rechazada.",
+            "tone": "danger",
+            "href": build_quick_filter_url("rechazadas"),
+            "active": active_quick_filter == "rechazadas",
+        },
+        {
+            "key": "nc_criticas",
+            "label": "NC críticas",
+            "value": finding_stats["nc_criticas"],
+            "helper": "Con items críticos no conformes.",
+            "tone": "danger",
+            "href": build_quick_filter_url("nc_criticas"),
+            "active": active_quick_filter == "nc_criticas",
+        },
+        {
+            "key": "en_vivo",
+            "label": "En vivo",
+            "value": finding_stats["en_vivo"],
+            "helper": "Instalaciones en vivo.",
+            "tone": "warning",
+            "href": build_quick_filter_url("en_vivo"),
+            "active": active_quick_filter == "en_vivo",
+        },
+        {
+            "key": "bajo_promedio",
+            "label": "Bajo promedio",
+            "value": finding_stats["bajo_promedio"],
+            "helper": "Puntaje por debajo del promedio general.",
+            "tone": "warning",
+            "href": build_quick_filter_url("bajo_promedio"),
+            "active": active_quick_filter == "bajo_promedio",
+        },
+    ]
 
     return render_template(
         "qc_sessions.html",
         sessions=sessions,
+        findings_total=findings_total,
+        page=page,
+        page_size=page_size,
+        page_count=page_count,
+        pages_window_findings=pages_window_findings,
+        has_prev_page=has_prev_page,
+        has_next_page=has_next_page,
+        quick_filter_cards=quick_filter_cards,
+        finding_stats=finding_stats,
+        auditor_options=auditor_options,
+        location_options=location_options,
+        installation_type_options=installation_type_options,
+        supervisor_options=supervisor_options,
+        center_options=center_options,
+        advanced_filters_active=advanced_filters_active,
         filters=filters,
         technicians=technicians,
         filter_active=filter_active,
@@ -5102,6 +5367,17 @@ def qc_reports():
         "technician_id": request.args.get("technician_id", "").strip(),
         "min_n": request.args.get("min_n", "").strip(),
         "include_pruebas": "1" if request.args.get("include_pruebas") else "",
+        "auditor": request.args.get("auditor", "").strip(),
+        "location": request.args.get("location", "").strip(),
+        "installation_type": request.args.get("installation_type", "").strip(),
+        "min_score": request.args.get("min_score", "").strip(),
+        "max_score": request.args.get("max_score", "").strip(),
+        "qc_live_installation": "1" if request.args.get("qc_live_installation") else "",
+        "supervisor": request.args.get("supervisor", "").strip(),
+        "center": request.args.get("center", "").strip(),
+        "has_critical_nc": "1" if request.args.get("has_critical_nc") else "",
+        "granularity": request.args.get("granularity", "").strip(),
+        "ranking_sort": request.args.get("ranking_sort", "").strip(),
     }
 
     technician_id = None
@@ -5120,44 +5396,132 @@ def qc_reports():
             flash("El mínimo de controles no es válido.", "error")
             filters["min_n"] = ""
 
+    granularity = (filters.get("granularity") or "").strip().lower() or "month"
+    if granularity not in {"month", "week"}:
+        granularity = "month"
+    ranking_sort = (filters.get("ranking_sort") or "").strip().lower() or "score_desc"
+    if ranking_sort not in {"score_desc", "total_desc", "rejected_desc", "last_qc_asc"}:
+        ranking_sort = "score_desc"
+
     query_filters = {
         "from_date": filters["from_date"],
         "to_date": filters["to_date"],
         "status": filters["status"],
         "technician_id": technician_id,
         "include_pruebas": filters["include_pruebas"],
+        "auditor": filters["auditor"],
+        "location": filters["location"],
+        "installation_type": filters["installation_type"],
+        "min_score": filters["min_score"],
+        "max_score": filters["max_score"],
+        "qc_live_installation": filters["qc_live_installation"],
+        "supervisor": filters["supervisor"],
+        "center": filters["center"],
+        "has_critical_nc": filters["has_critical_nc"],
     }
+
+    supervisor_scope_names = current_supervisor_scope_names()
 
     summary = fetch_qc_reports_management_summary(
         query_filters,
         auditor_user_id=auditor_user_id,
-        supervisor_scope_names=current_supervisor_scope_names(),
+        supervisor_scope_names=supervisor_scope_names,
     )
     status_breakdown = fetch_qc_reports_status_breakdown(
         query_filters,
         auditor_user_id=auditor_user_id,
-        supervisor_scope_names=current_supervisor_scope_names(),
+        supervisor_scope_names=supervisor_scope_names,
     )
     time_series = fetch_qc_reports_time_series(
         query_filters,
         auditor_user_id=auditor_user_id,
-        supervisor_scope_names=current_supervisor_scope_names(),
+        supervisor_scope_names=supervisor_scope_names,
+        granularity=granularity,
     )
     technician_ranking = fetch_qc_reports_technician_ranking(
         query_filters,
         auditor_user_id=auditor_user_id,
-        supervisor_scope_names=current_supervisor_scope_names(),
+        supervisor_scope_names=supervisor_scope_names,
         min_qc=min_n,
+        sort_by=ranking_sort,
     )
 
+    panel_filters = dict(query_filters)
     technicians = fetch_technicians()
-    filter_active = any([filters["from_date"], filters["to_date"], filters["status"], filters["technician_id"], filters["include_pruebas"]])
+    auditor_options = (
+        fetch_distinct_qc_auditors(
+            panel_filters,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+        ) if auditor_user_id is None else []
+    )
+    location_options = fetch_distinct_qc_locations(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    installation_type_options = fetch_distinct_qc_installation_types(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    supervisor_options = fetch_distinct_qc_supervisors(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    center_options = fetch_distinct_qc_centers(
+        panel_filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+
+    filter_active = any(
+        [
+            filters["from_date"],
+            filters["to_date"],
+            filters["status"],
+            filters["technician_id"],
+            filters["include_pruebas"],
+            filters["auditor"],
+            filters["location"],
+            filters["installation_type"],
+            filters["min_score"],
+            filters["max_score"],
+            filters["qc_live_installation"],
+            filters["supervisor"],
+            filters["center"],
+            filters["has_critical_nc"],
+            filters["granularity"] != "month",
+            filters["ranking_sort"] != "score_desc",
+        ]
+    )
+    advanced_filters_active = any(
+        [
+            filters["location"],
+            filters["installation_type"],
+            filters["min_score"],
+            filters["max_score"],
+            filters["qc_live_installation"],
+            filters["supervisor"],
+            filters["center"],
+            filters["has_critical_nc"],
+        ]
+    )
 
     return render_template(
         "qc_reports.html",
         filters=filters,
         technicians=technicians,
         min_n=min_n,
+        granularity=granularity,
+        ranking_sort=ranking_sort,
+        auditor_options=auditor_options,
+        location_options=location_options,
+        installation_type_options=installation_type_options,
+        supervisor_options=supervisor_options,
+        center_options=center_options,
+        advanced_filters_active=advanced_filters_active,
         summary=summary,
         status_breakdown=status_breakdown,
         time_series=time_series,
