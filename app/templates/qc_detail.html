@@ -37,7 +37,9 @@
             </form>
         {% endif %}
         <a class="button button-secondary" href="{{ url_for('main.qc_sessions') }}">Volver</a>
-        <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
+        <a class="button button-secondary" href="{{ url_for('main.qc_report', qc_session_id=qc['id']) }}">Reporte</a>
+        <a class="button button-secondary" href="{{ url_for('main.qc_report_pdf', qc_session_id=qc['id']) }}">Descargar PDF</a>
+        <a class="button button-primary" href="{{ url_for('main.qc_report', qc_session_id=qc['id'], print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
     </div>
 </section>
 

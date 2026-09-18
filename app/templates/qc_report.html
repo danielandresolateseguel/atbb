@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Informe QC {{ qc["id"] }}</title>
+    {% if inline_css %}
+        <style>{{ inline_css|safe }}</style>
+    {% else %}
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% endif %}
+</head>
+<body class="report-body report-key-qc">
+    <main class="report-page">
+        <section class="report-shell">
+            <header class="report-header">
+                <div>
+                    <p class="eyebrow">Control de Calidad de Instalaciones</p>
+                    <h1>Informe QC {{ qc["id"] }}</h1>
+                    <p class="report-subtitle">
+                        {{ qc["qc_date"] }}
+                        {% if qc["sa_number"] %} | SA {{ qc["sa_number"] }}{% endif %}
+                        | {{ qc["technician_name"] or "-" }}{% if qc["technician_employee_code"] %} ({{ qc["technician_employee_code"] }}){% endif %}
+                    </p>
+                </div>
+                <div class="report-actions no-print">
+                    <a class="button button-secondary" href="{{ url_for('main.qc_detail', qc_session_id=qc['id']) }}">Volver</a>
+                    <a class="button button-secondary" href="{{ url_for('main.qc_report_pdf', qc_session_id=qc['id']) }}">PDF</a>
+                    <a class="button button-primary" href="{{ url_for('main.qc_report', qc_session_id=qc['id'], print=1) }}" onclick="window.print(); return false;">Imprimir / Guardar PDF</a>
+                </div>
+            </header>
+
+            <section class="report-hero">
+                <div class="report-score-card">
+                    <div class="info-list">
+                        <p><strong>Resultado:</strong> {{ qc["result_status"] or "-" }}</p>
+                        <p><strong>Puntaje QC:</strong> {{ qc["total_score"] if qc["total_score"] is not none else "-" }}</p>
+                        <p><strong>Sector:</strong> {{ (qc["record_scope"] or "oficial")|capitalize }}</p>
+                        <p><strong>Auditor:</strong> {{ qc["auditor_name"] or qc["auditor_display_name"] or "-" }}</p>
+                    </div>
+                </div>
+                <div class="report-score-card">
+                    <div class="info-list">
+                        <p><strong>Provincia:</strong> {{ qc["location"] or "-" }}</p>
+                        <p><strong>Direcci&oacute;n:</strong> {{ qc["address"] or "-" }}</p>
+                        <p><strong>Tipo:</strong> {{ qc["installation_type"] or "-" }}</p>
+                        <p><strong>Auditor&iacute;a vinculada:</strong>
+                            {% if qc["audit_id"] %}
+                                <a class="table-link" href="{{ url_for('main.audit_detail', audit_id=qc['audit_id']) }}">#{{ qc["audit_id"] }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                {% if qc["qc_live_installation"] %}
+                    <div class="report-score-card">
+                        <div class="info-list">
+                            <p><strong>Instalaci&oacute;n en vivo:</strong> S&iacute;</p>
+                            <p><strong>Duraci&oacute;n total:</strong> {{ qc["installation_duration_minutes"] if qc["installation_duration_minutes"] else "-" }} min</p>
+                            <p><strong>Cable:</strong> {{ (qc["cable_type"] or "-")|replace('drop_', 'Drop ')|replace('bobina', 'Bobina')|upper }}</p>
+                            <p><strong>Metros cable:</strong> {{ qc["cable_meters"] if qc["cable_meters"] is not none else "-" }} m</p>
+                        </div>
+                    </div>
+                {% endif %}
+            </section>
+
+            {% if qc["technician_company"] or qc["technician_supervisor"] or qc["technician_center"] or qc["technician_employee_code"] %}
+                <section class="card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Personal</p>
+                            <h3>T&eacute;cnico</h3>
+                        </div>
+                    </div>
+                    <div class="info-list">
+                        <p><strong>Empresa:</strong> {{ qc["technician_company"] or "-" }}</p>
+                        <p><strong>Supervisor:</strong> {{ qc["technician_supervisor"] or "-" }}</p>
+                        <p><strong>Centro / Regi&oacute;n:</strong> {{ qc["technician_center"] or "-" }}</p>
+                        <p><strong>Legajo:</strong> {{ qc["technician_employee_code"] or "-" }}</p>
+                    </div>
+                </section>
+            {% endif %}
+
+            <section class="card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Cierre</p>
+                        <h3>Notas generales</h3>
+                    </div>
+                </div>
+                <div class="info-list">
+                    <p>{{ qc["general_notes"] or "-" }}</p>
+                </div>
+            </section>
+
+            {% if tnps_response %}
+                <section class="card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Experiencia</p>
+                            <h3>TNPS ({{ tnps_source|capitalize }})</h3>
+                        </div>
+                    </div>
+                    <div class="info-list">
+                        {% if tnps_response.get("score") is not none %}<p><strong>Score:</strong> {{ tnps_response["score"] }}</p>{% endif %}
+                        {% if tnps_response.get("score_label") %}<p><strong>Etiqueta:</strong> {{ tnps_response["score_label"] }}</p>{% endif %}
+                        {% if tnps_response.get("reasons") %}<p><strong>Motivos:</strong> {{ tnps_response["reasons"] }}</p>{% endif %}
+                        {% if tnps_response.get("comments") %}<p><strong>Comentarios:</strong> {{ tnps_response["comments"] }}</p>{% endif %}
+                        <p><strong>Fecha TNPS:</strong> {{ tnps_response.get("tnps_date") or tnps_response.get("created_at") or "-" }}</p>
+                    </div>
+                </section>
+            {% endif %}
+
+            <section class="card table-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Checklist</p>
+                        <h3>Items evaluados</h3>
+                    </div>
+                </div>
+                {% if items %}
+                    <div class="table-wrap">
+                        <table class="report-table">
+                            <colgroup>
+                                <col style="width: 33%;">
+                                <col style="width: 7%;">
+                                <col style="width: 12%;">
+                                <col style="width: 8%;">
+                                <col style="width: 20%;">
+                                <col style="width: 20%;">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th class="col-item_label">&Iacute;tem</th>
+                                    <th class="col-critical">Cr&iacute;tico</th>
+                                    <th class="col-status">Estado</th>
+                                    <th class="col-score">Pts</th>
+                                    <th class="col-notes">Notas</th>
+                                    <th class="col-evidence">Evidencia</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in items %}
+                                    <tr class="{% if row['is_critical'] and row['status'] in ['nc_mayor','no_cumple'] %}report-row-nc-critical{% elif row['is_critical'] %}report-row-critical{% elif row['status']=='nc_mayor' %}report-row-nc-major{% elif row['status']=='nc_menor' %}report-row-nc-minor{% endif %}">
+                                        <td class="col-item_label">{{ row.item_label }}</td>
+                                        <td class="col-critical">{% if row.get('is_critical') %}S&iacute;{% else %}No{% endif %}</td>
+                                        <td class="col-status">{{ row.status|replace('_', ' ')|capitalize }}</td>
+                                        <td class="col-score">
+                                            {% if row.get('item_score') is not none and row.get('max_score') %}
+                                                {{ row['item_score'] }} / {{ row['max_score'] }}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </td>
+                                        <td class="col-notes">{{ row.notes or "-" }}</td>
+                                        <td class="col-evidence">
+                                            {% set photos = row.photo_path|audit_photo_paths(expires_in_seconds) %}
+                                            {% if photos %}
+                                                {% for photo_src in photos %}
+                                                    {% if photo_src.startswith("http") %}
+                                                        <a class="table-link" href="{{ photo_src }}" target="_blank" rel="noopener noreferrer">Abrir {{ loop.index }}</a>
+                                                    {% else %}
+                                                        <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank" rel="noopener noreferrer">Abrir {{ loop.index }}</a>
+                                                    {% endif %}
+                                                    {% if not loop.last %} | {% endif %}
+                                                {% endfor %}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="empty-state">Sin &iacute;tems registrados.</p>
+                {% endif %}
+            </section>
+
+            {% set qc_photos = qc["photo_path"]|audit_photo_paths(expires_in_seconds) %}
+            {% if qc_photos %}
+                <section class="card">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">Evidencia</p>
+                            <h3>Fotos generales</h3>
+                        </div>
+                    </div>
+                    <div class="evidence-grid">
+                        {% for photo_src in qc_photos %}
+                            <div class="evidence-item">
+                                {% if photo_src.startswith("http") %}
+                                    <a class="table-link" href="{{ photo_src }}" target="_blank" rel="noopener noreferrer">Abrir foto {{ loop.index }}</a>
+                                    <img src="{{ photo_src }}" alt="Evidencia QC {{ loop.index }}" class="evidence-image">
+                                {% else %}
+                                    <a class="table-link" href="{{ url_for('static', filename=photo_src) }}" target="_blank" rel="noopener noreferrer">Abrir foto {{ loop.index }}</a>
+                                    <img src="{{ url_for('static', filename=photo_src) }}" alt="Evidencia QC {{ loop.index }}" class="evidence-image">
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>
