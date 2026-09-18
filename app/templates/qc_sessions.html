@@ -429,10 +429,18 @@
     (function () {
         let activeController = null;
 
-        function updateSortInputs(url) {
-            const sortInput = document.querySelector("form.audit-filters input[name='sort']");
-            const dirInput = document.querySelector("form.audit-filters input[name='dir']");
-            if (!sortInput || !dirInput) {
+        const PARTIAL_SELECTOR = ".findings-table-card";
+        const SCROLL_TARGET_ATTR = "data-table-scroll-target";
+        const FILTER_FORM_SELECTOR = "form.audit-filters";
+        const PAGE_SIZE_SELECT = ".page-size-select";
+
+        function findPartialRoot() {
+            return document.querySelector(PARTIAL_SELECTOR);
+        }
+
+        function updateFilterFormFields(url) {
+            const form = document.querySelector(FILTER_FORM_SELECTOR);
+            if (!form) {
                 return;
             }
             let params = null;
@@ -441,36 +449,72 @@
             } catch (e) {
                 return;
             }
-            sortInput.value = params.get("sort") || "";
-            dirInput.value = params.get("dir") || "";
+            const syncNames = ["sort", "dir", "quick_filter"];
+            for (const name of syncNames) {
+                const field = form.querySelector("input[name='" + name + "']");
+                if (field) {
+                    field.value = params.get(name) || "";
+                }
+            }
         }
 
-        document.addEventListener("click", async function (event) {
-            const sortLink = event.target.closest("a.table-sort");
-            if (!sortLink) {
+        function saveScrollState() {
+            const scrollTarget = document.querySelector("[" + SCROLL_TARGET_ATTR + "]");
+            try {
+                if (scrollTarget) {
+                    sessionStorage.setItem("qc_scroll_x", String(scrollTarget.scrollLeft || 0));
+                    sessionStorage.setItem("qc_scroll_y", String(scrollTarget.scrollTop || 0));
+                }
+                sessionStorage.setItem("qc_window_y", String(window.scrollY || 0));
+            } catch (e) {
+            }
+        }
+
+        function restoreScrollState() {
+            const scrollTarget = document.querySelector("[" + SCROLL_TARGET_ATTR + "]");
+            try {
+                const x = parseInt(sessionStorage.getItem("qc_scroll_x") || "0", 10);
+                const y = parseInt(sessionStorage.getItem("qc_scroll_y") || "0", 10);
+                if (scrollTarget && Number.isFinite(x) && Number.isFinite(y)) {
+                    scrollTarget.scrollLeft = x;
+                    scrollTarget.scrollTop = y;
+                }
+                const wy = parseInt(sessionStorage.getItem("qc_window_y") || "0", 10);
+                if (Number.isFinite(wy)) {
+                    window.scrollTo(0, wy);
+                }
+            } catch (e) {
+            }
+        }
+
+        function shouldSkipNavigation(event) {
+            if (!event) return true;
+            if (event.defaultPrevented) return true;
+            if (event.button !== undefined && event.button !== 0) return true;
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return true;
+            return false;
+        }
+
+        function isSameOrigin(url) {
+            try {
+                const u = new URL(url, window.location.href);
+                return u.origin === window.location.origin;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        async function loadPartial(url, opts) {
+            opts = opts || {};
+            if (!url || !isSameOrigin(url)) {
+                window.location.href = url;
                 return;
             }
 
-            if (
-                event.defaultPrevented ||
-                event.button !== 0 ||
-                event.metaKey ||
-                event.ctrlKey ||
-                event.shiftKey ||
-                event.altKey
-            ) {
-                return;
-            }
+            const root = findPartialRoot();
+            const statGrid = document.querySelector(".stats-grid-findings");
 
-            event.preventDefault();
-
-            const url = sortLink.href;
-            if (!url) {
-                return;
-            }
-
-            const tableCard = document.querySelector(".table-card");
-            if (!tableCard) {
+            if (!root) {
                 window.location.href = url;
                 return;
             }
@@ -480,6 +524,8 @@
             }
             const controller = new AbortController();
             activeController = controller;
+
+            saveScrollState();
 
             try {
                 const response = await fetch(url, {
@@ -494,14 +540,25 @@
 
                 const html = await response.text();
                 const parsed = new DOMParser().parseFromString(html, "text/html");
-                const nextTableCard = parsed.querySelector(".table-card");
-                if (!nextTableCard) {
-                    throw new Error("missing_table");
+
+                const nextRoot = parsed.querySelector(PARTIAL_SELECTOR);
+                if (!nextRoot) {
+                    throw new Error("missing_partial");
                 }
 
-                const imported = document.importNode(nextTableCard, true);
-                tableCard.replaceWith(imported);
-                updateSortInputs(url);
+                const importedRoot = document.importNode(nextRoot, true);
+                root.replaceWith(importedRoot);
+
+                if (opts.refreshStatGrid && statGrid) {
+                    const nextStatGrid = parsed.querySelector(".stats-grid-findings");
+                    if (nextStatGrid) {
+                        const importedStat = document.importNode(nextStatGrid, true);
+                        statGrid.replaceWith(importedStat);
+                    }
+                }
+
+                updateFilterFormFields(url);
+                restoreScrollState();
                 window.history.replaceState(null, "", url);
             } catch (error) {
                 if (error && error.name === "AbortError") {
@@ -513,6 +570,56 @@
                     activeController = null;
                 }
             }
+        }
+
+        function resolveClickTarget(target) {
+            if (!target) return null;
+
+            const paginationLink = target.closest(".pagination-row a");
+            if (paginationLink) {
+                return { url: paginationLink.href, refreshStatGrid: false, element: paginationLink };
+            }
+
+            const pageChip = target.closest("a.page-chip");
+            if (pageChip) {
+                return { url: pageChip.href, refreshStatGrid: false, element: pageChip };
+            }
+
+            const sortLink = target.closest("a.table-sort");
+            if (sortLink) {
+                return { url: sortLink.href, refreshStatGrid: false, element: sortLink };
+            }
+
+            const kpiCard = target.closest("a.stat-card-link");
+            if (kpiCard) {
+                return { url: kpiCard.href, refreshStatGrid: true, element: kpiCard };
+            }
+
+            return null;
+        }
+
+        document.addEventListener("click", async function (event) {
+            const match = resolveClickTarget(event.target);
+            if (!match) {
+                return;
+            }
+            if (shouldSkipNavigation(event)) {
+                return;
+            }
+            event.preventDefault();
+            await loadPartial(match.url, { refreshStatGrid: match.refreshStatGrid });
+        });
+
+        document.addEventListener("change", async function (event) {
+            const select = event.target && event.target.closest && event.target.closest(PAGE_SIZE_SELECT);
+            if (!select) {
+                return;
+            }
+            const url = select.value;
+            if (!url) {
+                return;
+            }
+            await loadPartial(url, { refreshStatGrid: false });
         });
     })();
 </script>
