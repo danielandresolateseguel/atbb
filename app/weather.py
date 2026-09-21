@@ -713,12 +713,16 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
 
         weather_code_om = 0
         _wa_current_label = ""
+        _debug_wa_code = 0
+        _debug_wa_text = ""
         if isinstance(cur.get("condition"), dict):
             condition = cur["condition"]
             code_wa = int(condition.get("code") or 0)
             text_wa = str(condition.get("text") or "")
             weather_code_om = _weatherapi_code_to_om(code_wa, text_wa)
             _wa_current_label = weather_label(weather_code_om)
+            _debug_wa_code = code_wa
+            _debug_wa_text = text_wa
         precip_mm = _cp(cur.get("precip_mm"), 0.0)
         snow_cm = 0.0
         wind_kmh = _cp(cur.get("wind_kph"), 0.0)
@@ -731,6 +735,16 @@ def _fetch_weatherapi_single_or_batch(locations, forecast_days=4):
             "snowfall": float(snow_cm),
             "weather_code": int(weather_code_om),
             "wind_speed_10m": float(wind_kmh),
+            "_debug": {
+                "provider": "weatherapi.com",
+                "wa_condition_code": int(_debug_wa_code),
+                "wa_condition_text": str(_debug_wa_text),
+                "wa_condition_lang_es_label": str(_wa_current_label),
+                "om_wmo_code": int(weather_code_om),
+                "lat_requested_lat": float(lat),
+                "wa_requested_lng": float(lng),
+                "location_raw_tz_id": tz,
+            },
         }
         daily_om = {
             "time": [],
@@ -868,8 +882,10 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
     if api_key:
         params_dict["apikey"] = api_key
         base_host = "customer-api.open-meteo.com"
+        _debug_provider_label_om = "open-meteo-customer (apikey)"
     else:
         base_host = "api.open-meteo.com"
+        _debug_provider_label_om = "open-meteo-anonymous (ban risk Render IP)"
     params = urllib.parse.urlencode(params_dict)
     url = f"https://{base_host}/v1/forecast?{params}"
     headers = {"User-Agent": "SoftBerardi-Weather/1.2 (+https://atbb.onrender.com)",
@@ -909,6 +925,7 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
     n = len(locations)
     out = []
     for idx in range(n):
+        lat_i, lng_i = locations[idx] if idx < len(locations) else (None, None)
         if not isinstance(raw, dict):
             out.append({"current": {}, "daily": {}, "timezone": None})
             continue
@@ -933,11 +950,42 @@ def _fetch_open_meteo_batch(locations, forecast_days=4):
             tz = raw.get("timezone")
             if isinstance(tz, list):
                 tz = tz[idx] if len(tz) > idx else None
+            wmo_code_raw = cur_single.get("weather_code") if isinstance(cur_single, dict) else None
+            try:
+                wmo_code_int = int(wmo_code_raw or 0)
+            except (TypeError, ValueError):
+                wmo_code_int = 0
+            cur_single["_debug"] = {
+                "provider": _debug_provider_label_om,
+                "open_meteo_host": base_host,
+                "apikey_configured": bool(api_key),
+                "om_wmo_code_current": wmo_code_int,
+                "om_wmo_code_label_es": weather_label(wmo_code_int),
+                "lat_requested": float(lat_i) if isinstance(lat_i, (int, float)) else None,
+                "lng_requested": float(lng_i) if isinstance(lng_i, (int, float)) else None,
+                "location_raw_tz_id": tz,
+            }
             out.append({"current": cur_single, "daily": daily_single, "timezone": tz})
         else:
             tz = raw.get("timezone")
             if isinstance(tz, list):
                 tz = tz[idx] if len(tz) > idx else None
+            wmo_code_raw = current.get("weather_code") if isinstance(current, dict) else None
+            try:
+                wmo_code_int = int(wmo_code_raw or 0)
+            except (TypeError, ValueError):
+                wmo_code_int = 0
+            if isinstance(current, dict):
+                current["_debug"] = {
+                    "provider": _debug_provider_label_om,
+                    "open_meteo_host": base_host,
+                    "apikey_configured": bool(api_key),
+                    "om_wmo_code_current": wmo_code_int,
+                    "om_wmo_code_label_es": weather_label(wmo_code_int),
+                    "lat_requested": float(lat_i) if isinstance(lat_i, (int, float)) else None,
+                    "lng_requested": float(lng_i) if isinstance(lng_i, (int, float)) else None,
+                    "location_raw_tz_id": tz,
+                }
             out.append({"current": current, "daily": daily, "timezone": tz})
     return out
 
@@ -1527,6 +1575,30 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
                 wa_label = raw.get("_wa_weather_label")
                 if wa_label and isinstance(current_eval, dict):
                     current_eval["weather_label"] = str(wa_label)
+                # Propagate debug info cruda adapter WA/OM -> payload final
+                if isinstance(current_eval, dict):
+                    _adapter_debug = None
+                    if isinstance(current_raw, dict) and isinstance(current_raw.get("_debug"), dict):
+                        _adapter_debug = dict(current_raw["_debug"])
+                    _eval_debug = {
+                        "risk_level_eval": current_eval.get("risk_level"),
+                        "blocks_installation_eval": current_eval.get("blocks_installation"),
+                        "umbrales_aplicados": {
+                            "precip_block_mm_config": _get_config("WEATHER_PRECIP_BLOCK_MM"),
+                            "precip_moderate_mm_config": _get_config("WEATHER_PRECIP_MODERATE_MM"),
+                            "snow_block_cm_config": _get_config("WEATHER_SNOW_BLOCK_CM"),
+                            "wind_block_kmh_config": _get_config("WEATHER_WIND_BLOCK_KMH"),
+                            "zonda_wind_block_kmh_config": _get_config("WEATHER_ZONDA_WIND_BLOCK_KMH"),
+                            "is_zonda_region": region in _ZONDA_REGIONES if isinstance(region, str) else False,
+                            "region_input": region,
+                        },
+                        "reasons_eval": list(current_eval.get("reasons") or []) if isinstance(current_eval.get("reasons"), list) else [],
+                        "weather_code_after_evaluate": int(current_eval.get("weather_code") or 0),
+                        "weather_label_es_after_evaluate": str(current_eval.get("weather_label") or ""),
+                    }
+                    if isinstance(_adapter_debug, dict):
+                        _eval_debug["adapter_debug"] = _adapter_debug
+                    current_eval["_debug"] = _eval_debug
                 payload["current"] = current_eval
                 payload["forecast_daily"] = build_forecast_daily(daily_raw, region_name=region)
                 payload["timezone"] = tz_raw
@@ -1628,3 +1700,172 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         "provider_priority": ",".join(_get_provider_priority()),
         "provider_used": provider_used,
     }
+
+
+def diag_pipeline_for_center(center_name, provider="auto", forecast_days=4):
+    """Helper PUBLICO diagnostico para endpoint admin /api/weather/diag.
+    NO usa cache. Ejecuta TODO el pipeline en orden y devuelve cada step crudo.
+
+    Retorna dict con:
+      - center_normalized, coords, provider_requested, provider_used.
+      - step_adapter_fetch: status ok/exception, raw_current_before_eval, raw_daily_before_eval
+      - step_evaluate_risk: return crudo de _evaluate_risk (reasons, blocks_installation, risk_level, temps, precip, etc.)
+      - step_forecast: return crudo build_forecast_daily (primer dia)
+      - interpretacion_final: texto en español del porque critico/precaucion/operativo
+      - umbrales_config: WEATHER_PRECIP_BLOCK_MM etc para comparar contra valores crudos.
+    """
+    import time as _tdiag
+    norm = " ".join((str(center_name or "")).strip().split())
+    out = {
+        "center_name_input": str(center_name),
+        "center_name_normalized": norm,
+        "provider_requested": str(provider or "auto").strip().lower(),
+        "forecast_days": int(forecast_days or 4),
+        "started_at_epoch": int(_tdiag.time()),
+    }
+    coords = get_center_coordinates(norm)
+    if not coords:
+        return {**out, "exception": "coords_not_found: agrega a WEATHER_CENTER_COORDINATES override o entry catalogo."}
+    out["coords_resolved"] = coords
+    pr = (str(provider) or "auto").strip().lower()
+    if pr in {"wa", "weatherapi", "weather_api", "weatherapi_com", "weatherapi.com"}:
+        order = ["wa"]
+    elif pr in {"om", "open-meteo", "open_meteo", "openmeteo"}:
+        order = ["om"]
+    else:
+        order = list(_get_provider_priority())
+    out["provider_order"] = order
+    t_total_start = _tdiag.time()
+    provider_used_label = None
+    adapter_exception = None
+    raw_adapter = None
+    for p in order:
+        try:
+            if p == "wa":
+                provider_used_label = "weatherapi.com"
+                raws = _fetch_weatherapi_single_or_batch(
+                    [(coords["lat"], coords["lng"])], forecast_days=int(forecast_days or 4),
+                )
+            else:
+                try:
+                    from flask import current_app as _capp_d
+                    k = _capp_d.config.get("WEATHER_OPEN_METEO_API_KEY") if _capp_d else None
+                except Exception:
+                    k = None
+                try:
+                    if not k:
+                        import os as _os_d
+                        k = _os_d.getenv("WEATHER_OPEN_METEO_API_KEY") or None
+                except Exception:
+                    pass
+                provider_used_label = "open-meteo-customer (apikey)" if k else "open-meteo-anonymous (ban risk Render IP)"
+                raws = _fetch_open_meteo_batch(
+                    [(coords["lat"], coords["lng"])], forecast_days=int(forecast_days or 4),
+                )
+            if isinstance(raws, list) and len(raws) >= 1:
+                raw_adapter = raws[0]
+                break
+        except Exception as exc:
+            adapter_exception = {
+                "provider": p,
+                "exception_type": type(exc).__name__,
+                "error": str(exc),
+            }
+            continue
+    out["provider_used_label"] = provider_used_label
+    out["http_roundtrip_ms"] = int(round((_tdiag.time() - t_total_start) * 1000))
+    if adapter_exception and raw_adapter is None:
+        out["step_adapter_fetch"] = {"ok": False, "exception": adapter_exception}
+        return out
+    try:
+        current_raw = raw_adapter.get("current") if isinstance(raw_adapter, dict) and isinstance(raw_adapter.get("current"), dict) else {}
+        daily_raw = raw_adapter.get("daily") if isinstance(raw_adapter, dict) and isinstance(raw_adapter.get("daily"), dict) else {}
+        tz_raw = raw_adapter.get("timezone") if isinstance(raw_adapter, dict) else None
+        out["step_adapter_fetch"] = {
+            "ok": True,
+            "raw_current_before_evaluate": dict(current_raw) if isinstance(current_raw, dict) else None,
+            "raw_daily_keys": (list(daily_raw.keys()) if isinstance(daily_raw, dict) else None),
+            "timezone_response": tz_raw,
+            "_wa_weather_label_embedded": raw_adapter.get("_wa_weather_label") if isinstance(raw_adapter, dict) else None,
+        }
+    except Exception as exc:
+        out["step_adapter_fetch"] = {"ok": False, "parse_exception": f"{type(exc).__name__}: {exc}"}
+        return out
+    try:
+        eval_crudo = _evaluate_risk(current_raw, region_name=coords.get("region"))
+        if isinstance(eval_crudo, dict) and isinstance(current_raw.get("_debug"), dict):
+            eval_crudo["_debug_from_adapter"] = dict(current_raw["_debug"])
+        out["step_evaluate_risk"] = {
+            "ok": True,
+            "return_crudo": eval_crudo,
+            "reasons_human_line_by_line": (
+                [str(r) for r in (eval_crudo.get("reasons") or [])] if isinstance(eval_crudo.get("reasons"), list) else []
+            ),
+        }
+    except Exception as exc_eval:
+        out["step_evaluate_risk"] = {"ok": False, "exception_type": type(exc_eval).__name__, "error": str(exc_eval)}
+        return out
+    try:
+        forecast_crudo = build_forecast_daily(daily_raw, region_name=coords.get("region"))
+        first3 = []
+        if isinstance(forecast_crudo, list):
+            for d in forecast_crudo[:3]:
+                if isinstance(d, dict):
+                    first3.append({
+                        "date": d.get("date"),
+                        "label": d.get("weather_label"),
+                        "wmo_code": d.get("weather_code"),
+                        "temp_max_c": d.get("temp_max_c"),
+                        "temp_min_c": d.get("temp_min_c"),
+                        "wind_kmh": d.get("wind_kmh"),
+                        "precip_mm": d.get("precip_mm"),
+                        "snow_cm": d.get("snow_cm"),
+                        "precip_prob_pct": d.get("precip_probability_pct"),
+                        "risk_level": d.get("risk_level"),
+                        "blocks_installation": d.get("blocks_installation"),
+                    })
+        out["step_forecast_daily_first3"] = first3
+    except Exception as exc_f:
+        out["step_forecast_daily_first3"] = {"exception_type": type(exc_f).__name__, "error": str(exc_f)}
+
+    umbrales_cfg = {
+        "WEATHER_PRECIP_MODERATE_MM": _get_config("WEATHER_PRECIP_MODERATE_MM"),
+        "WEATHER_PRECIP_BLOCK_MM": _get_config("WEATHER_PRECIP_BLOCK_MM"),
+        "WEATHER_SNOW_BLOCK_CM": _get_config("WEATHER_SNOW_BLOCK_CM"),
+        "WEATHER_WIND_BLOCK_KMH": _get_config("WEATHER_WIND_BLOCK_KMH"),
+        "WEATHER_ZONDA_WIND_BLOCK_KMH": _get_config("WEATHER_ZONDA_WIND_BLOCK_KMH"),
+        "is_zonda_region": (str(coords.get("region") or "").upper() in _ZONDA_REGIONES),
+        "ttl_cache_ok_seconds": _get_ttl_seconds(),
+        "ttl_cache_error_seconds": (
+            int(_get_config("WEATHER_ERROR_TTL_SECONDS") or
+                _env_int("WEATHER_ERROR_TTL_SECONDS", _WEATHER_ERROR_TTL_SECONDS_DEFAULT))
+        ),
+    }
+    out["umbrales_config_aplicados"] = umbrales_cfg
+    # Clasificacion final simple
+    eval_res = out["step_evaluate_risk"]["return_crudo"]
+    if isinstance(eval_res, dict):
+        if eval_res.get("blocks_installation"):
+            clasificacion = "CRITICO / BLOQUEADO (por umbrales evaluate_risk)"
+        elif eval_res.get("risk_level") == "medio":
+            clasificacion = "PRECAUCION / RIESGO MEDIO"
+        elif eval_res.get("risk_level") == "bajo":
+            clasificacion = "OPERATIVO / SIN RIESGOS"
+        else:
+            clasificacion = "SIN CLASIFICAR"
+    else:
+        clasificacion = "evaluate_risk no retorno dict"
+    out["clasificacion_final_semaforo"] = clasificacion
+    out["interpretacion_comparativa"] = (
+        "Si Google muestra distinto, la discrepancia se debe a: 1) diferencias modelos meteorológicos (WA/OM vs GFS/IBM/GFS-MOS de Google), "
+        "2) resolución grilla: WA=2km OM=2.2km Google usa varios modelos mixtos, "
+        "3) momento del fetch: nuestros datos son de weather_date=%s, horario fetch epoch=%d, "
+        "4) umbrales de bloqueo SoftBerardi son CONSERVADORES: precip>=%s bloquea, viento>=%s kmh bloquea, Zona San Juan/Mendoza es region ZONDA => bloquea >=%s kmh (mas sensible)." % (
+            _today_arg_iso(),
+            int(_tdiag.time()),
+            str(umbrales_cfg["WEATHER_PRECIP_BLOCK_MM"]),
+            str(umbrales_cfg["WEATHER_WIND_BLOCK_KMH"]),
+            str(umbrales_cfg["WEATHER_ZONDA_WIND_BLOCK_KMH"]),
+        )
+    )
+    return out

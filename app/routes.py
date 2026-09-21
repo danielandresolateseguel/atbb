@@ -7584,6 +7584,85 @@ def weather_test_provider():
     return jsonify(out)
 
 
+@main.route("/api/weather/diag", methods=["GET"])
+def weather_diag_center():
+    """
+    Admin-only DIAGNOSTICO COMPLETO por centro. Útil para depurar discrepancias
+    San Juan / Salta vs Google clima.
+
+    Query params:
+      center=San Juan (obligatorio, nombre centro del sistema)
+      provider=wa|om|auto  (opcional, default=wa para ver el que estamos usando hoy)
+      forecast_days=4 (opcional)
+
+    NO usa cache: HACE HTTP request al proveedor en el instante,
+    retorna step by step el pipeline:
+     - coords_resolved (verificamos que no sea un pueblo homónimo equivocado)
+     - step_adapter_fetch: current_raw condition.code / text WA crudos, codes WMO OM
+     - step_evaluate_risk return CRUDO: reasons[] x cada umbral, blocks_installation
+     - step_forecast_daily_first3: pronostico 3 días crudo
+     - umbrales_config_aplicados (precip block mm, snow block cm, wind kmh, zonda 50kmh)
+     - clasificacion_final_semaforo y porqué
+    Con este JSON comparamos linea por linea contra Google Maps clima / google.com/search?q=clima+san+juan+argentina
+    y ajustamos los umbrales (subir precip_block_mm de 8->12, etc) si estamos siendo demasiado sensibles.
+    """
+    user = current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": "unauthorized (admin only)"}), 403
+    center = str(request.args.get("center", "") or "").strip()
+    if not center:
+        return jsonify({
+            "error": "falta ?center=<nombre>. Ejemplos: ?center=San+Juan, ?center=Salta, ?center=Mendoza",
+            "hint_centros_disponibles": ["Alta Gracia", "Carlos Paz", "Cordoba", "Dean Funes", "Rio Cuarto", "Rio Segundo", "Villa Dolores", "Jujuy", "Mendoza", "Salta", "San Juan", "San Luis", "San Martin - MZA", "San Miguel De Tucuman", "Santiago del Estéro"],
+        }), 400
+    provider = str(request.args.get("provider", "wa") or "wa").strip().lower()
+    try:
+        fd = int(request.args.get("forecast_days", "4") or "4")
+        fd = max(1, min(7, fd))
+    except Exception:
+        fd = 4
+    t0_global = 0
+    try:
+        import time as _td
+        t0_global = _td.time()
+        from app.weather import diag_pipeline_for_center
+    except Exception as exc_imp:
+        return jsonify({
+            "error": "import_diag_helper_failed",
+            "exception_type": type(exc_imp).__name__,
+            "detail": str(exc_imp),
+        }), 500
+    try:
+        result = diag_pipeline_for_center(center, provider=provider, forecast_days=fd)
+    except Exception as exc_run:
+        import traceback as _tb
+        return jsonify({
+            "error": "diag_pipeline_exception",
+            "exception_type": type(exc_run).__name__,
+            "detail": str(exc_run),
+            "stacktrace_first_10_lines": [str(x) for x in _tb.format_exc().splitlines()[:10]],
+        }), 502
+    try:
+        import time as _td2
+        result["total_diag_endpoint_roundtrip_ms"] = int(round((_td2.time() - t0_global) * 1000))
+    except Exception:
+        pass
+    # Si provider=auto y el primer provider dio 429, el diag tiene la exception pero
+    # el usuario necesita verlo claramente: agregamos hint en el root
+    try:
+        saf = result.get("step_adapter_fetch") or {}
+        if isinstance(saf, dict) and saf.get("ok") is False and isinstance(saf.get("exception"), dict):
+            exc = saf["exception"]
+            if isinstance(exc, dict) and "429" in str(exc.get("error", "")):
+                result["HUMANO_429_OM_BAN"] = (
+                    "Open-Meteo ANONIMO sigue baneado. "
+                    "Diagnóstico: usa ?provider=wa para ver los datos de WeatherAPI (el que usamos hoy, sin ban) "
+                    "O agregá WEATHER_OPEN_METEO_API_KEY en Render (customer API) para eliminar ban IP compartido."
+                )
+    except Exception:
+        pass
+    return jsonify(result)
+
 
 
 @main.route("/findings/<int:finding_id>")
