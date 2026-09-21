@@ -7457,6 +7457,134 @@ def weather_reset_cache_today():
     return jsonify(resp)
 
 
+@main.route("/api/weather/test-provider", methods=["GET"])
+def weather_test_provider():
+    """Endpoint admin-only: prueba 1 sola request real a un proveedor clima específico
+    (wa / om) sin cache ni fallbacks, para diagnosticar estado de baneo IP Render.
+
+    Query params:
+      ?provider=wa   -> WeatherAPI.com (key: WEATHERAPI_COM_KEY)
+      ?provider=om   -> Open-Meteo (anónimo o customer según WEATHER_OPEN_METEO_API_KEY)
+      ?center=Córdoba -> Nombre centro a testear (opcional; default: Alta Gracia)
+      ?forecast_days=4 -> días forecast (opcional)
+
+    Retorna JSON detallado: HTTP status, lat/lng usados, tiempo de respuesta,
+    tipo (anónimo/customer/key), error o sample temperatura/condición.
+    """
+    import time as _t
+    user = current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": "unauthorized (admin only)"}), 403
+    provider = str(request.args.get("provider", "om") or "").strip().lower()
+    center_name = str(request.args.get("center", "Alta Gracia") or "Alta Gracia").strip()
+    try:
+        fd = int(request.args.get("forecast_days", "4") or "4")
+        fd = max(1, min(7, fd))
+    except Exception:
+        fd = 4
+    if provider in {"wa", "weatherapi", "weather_api", "weatherapi.com"}:
+        provider = "wa"
+    elif provider in {"om", "open-meteo", "open_meteo", "openmeteo"}:
+        provider = "om"
+    else:
+        return jsonify({"error": "bad_provider. usa ?provider=wa o ?provider=om", "provider": provider}), 400
+
+    out = {
+        "provider_alias": provider,
+        "center": center_name,
+        "forecast_days": fd,
+        "started_at_epoch": int(_t.time()),
+    }
+    try:
+        from app.weather import (
+            get_center_coordinates,
+            _fetch_weatherapi_single_or_batch,
+            _fetch_open_meteo_batch,
+        )
+    except Exception as exc_imp:
+        return jsonify({**out, "error": f"import_weather_module: {exc_imp!r}"}), 500
+    coords = get_center_coordinates(center_name)
+    if not coords:
+        return jsonify({**out, "error": "center_not_found: agrega coordenadas al catalogo/env WEATHER_CENTER_COORDINATES override."}), 400
+    out["coords"] = coords
+    locations = [(coords["lat"], coords["lng"])]
+    t0 = _t.time()
+    res = None
+    try:
+        if provider == "wa":
+            try:
+                import os as _os_test
+                wa_key_ok = bool(_os_test.getenv("WEATHERAPI_COM_KEY"))
+            except Exception:
+                wa_key_ok = False
+            out["env_WEATHERAPI_COM_KEY_configured"] = wa_key_ok
+            res = _fetch_weatherapi_single_or_batch(locations, forecast_days=fd)
+            out["provider_label"] = "weatherapi.com (key-auth)"
+        else:
+            try:
+                from flask import current_app as _capp_test
+                om_key = _capp_test.config.get("WEATHER_OPEN_METEO_API_KEY") if _capp_test else None
+            except Exception:
+                om_key = None
+            try:
+                import os as _os_test2
+                if not om_key:
+                    om_key = _os_test2.getenv("WEATHER_OPEN_METEO_API_KEY") or None
+            except Exception:
+                pass
+            out["env_WEATHER_OPEN_METEO_API_KEY_configured"] = bool(om_key)
+            out["provider_label"] = "open-meteo-customer (apikey)" if om_key else "open-meteo-anonymous (ban risk Render IP)"
+            res = _fetch_open_meteo_batch(locations, forecast_days=fd)
+    except Exception as exc_fetch:
+        dur_ms = int(round((_t.time() - t0) * 1000))
+        return jsonify({
+            **out,
+            "http_status_ok": False,
+            "http_roundtrip_ms": dur_ms,
+            "exception_type": type(exc_fetch).__name__,
+            "error": str(exc_fetch),
+            "interpretacion": (
+                "OM sigue baneado (429): IP Render aun bloqueada. Volver a intentar en unas horas o mantener WA."
+                if provider == "om" and "429" in str(exc_fetch) else
+                "WA key invalida / no configurada: setear WEATHERAPI_COM_KEY env Render."
+                if provider == "wa" and type(exc_fetch).__name__ == "RuntimeError" else
+                "Error red/timeout/tls: retry."
+            ),
+        }), 502
+    dur_ms = int(round((_t.time() - t0) * 1000))
+    n_centers = len(res or [])
+    sample_current = None
+    if res and n_centers >= 1:
+        r0 = res[0] or {}
+        cur = r0.get("current") or {}
+        if isinstance(cur, dict) and cur:
+            sample_current = {
+                "temp_c": cur.get("temp_c"),
+                "feels_like_c": cur.get("apparent_temp_c"),
+                "weather_code": cur.get("weather_code"),
+                "weather_label_inline": (
+                    (cur.get("weather_text") or "" if provider == "wa" else "")
+                ),
+                "wind_kmh": cur.get("wind_kmh"),
+                "precip_mm": cur.get("precip_mm"),
+                "humidity_rh": cur.get("humidity_rh"),
+            }
+    out = {
+        **out,
+        "http_status_ok": True,
+        "http_roundtrip_ms": dur_ms,
+        "batch_results_n": n_centers,
+        "sample_current_first_center": sample_current,
+        "interpretacion": (
+            "OM LISTS UNBAN: IP Render ya no esta baneada. Podrias invertir el provider chain con ENV WEATHER_PROVIDER_PRIORITY=om,wa."
+            if provider == "om" else
+            "WA OK: key valida y quota libre. Mantener orden normal wa,om default."
+        ),
+    }
+    return jsonify(out)
+
+
+
 
 @main.route("/findings/<int:finding_id>")
 def finding_detail(finding_id):

@@ -246,6 +246,40 @@ def _get_ttl_seconds():
                _env_int("WEATHER_CACHE_TTL_SECONDS", _WEATHER_CACHE_TTL_SECONDS_DEFAULT))
 
 
+def _get_provider_priority():
+    raw = (str(_get_config("WEATHER_PROVIDER_PRIORITY", "") or "") or
+           str(os.environ.get("WEATHER_PROVIDER_PRIORITY", "") or ""))
+    default_providers = ["wa", "om"]
+    if not raw:
+        return default_providers
+    cleaned = []
+    for tok in str(raw).split(","):
+        t = str(tok).strip().lower()
+        if t in {"wa", "weatherapi", "weather_api", "weatherapi_com", "weatherapi.com"}:
+            t = "wa"
+        elif t in {"om", "open_meteo", "open-meteo", "openmeteo", "meteomatics"}:
+            t = "om"
+        else:
+            continue
+        if t and t not in cleaned:
+            cleaned.append(t)
+    if not cleaned:
+        return default_providers
+    # Siempre exista al menos uno: si es uno solo, agregar el otro de fallback.
+    for p in default_providers:
+        if p not in cleaned:
+            cleaned.append(p)
+    return cleaned[:2]
+
+
+def _batch_provider_wa(locations, forecast_days=4):
+    return _fetch_weatherapi_single_or_batch(locations, forecast_days=forecast_days)
+
+
+def _batch_provider_om(locations, forecast_days=4):
+    return _fetch_open_meteo_batch(locations, forecast_days=forecast_days)
+
+
 def get_center_coordinates(center_name):
     """Retorna {lat, lng, region} para un centro. Busca primero override por ENV/Config,
     luego catálogo hardcodeado normalizado, y finalmente None si no encuentra."""
@@ -1343,49 +1377,108 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             batch_allowed = False
 
     batch_exception_logged = False
+    provider_errors = {}
+    provider_used = None
     if todo_fetch and batch_allowed:
         locations = [(lat, lng) for (_, _, _, lat, lng) in todo_fetch]
         batch_raws = []
         batch_err = None
+        providers = _get_provider_priority()
         try:
-            try:
-                batch_raws = _fetch_weatherapi_single_or_batch(locations, forecast_days=4)
+            from flask import current_app as _capp2
+            om_key_local = _capp2.config.get("WEATHER_OPEN_METEO_API_KEY") if _capp2 else None
+        except Exception:
+            om_key_local = None
+        try:
+            import os as _os2
+            if not om_key_local:
+                om_key_local = _os2.getenv("WEATHER_OPEN_METEO_API_KEY") or None
+        except Exception:
+            pass
+        for prov_idx, provider in enumerate(providers):
+            if provider == "wa":
                 try:
-                    current_app.logger.info(f"weather: provider=weatherapi.com OK {len(batch_raws)} centers fetch success.")
-                except Exception:
-                    pass
-            except RuntimeError:
-                # WEATHERAPI_COM_KEY no configurado: fallback al pipeline Open-Meteo.
-                try:
-                    from flask import current_app as _capp
-                    om_key = _capp.config.get("WEATHER_OPEN_METEO_API_KEY") if _capp else None
-                except Exception:
-                    om_key = None
-                try:
-                    import os as _os
-                    if not om_key:
-                        om_key = _os.getenv("WEATHER_OPEN_METEO_API_KEY") or None
-                except Exception:
-                    pass
-                if om_key:
+                    _msg = f"weather: try provider[order={prov_idx}/{len(providers)-1}]=weatherapi.com batch locations={len(locations)}."
+                    try: current_app.logger.info(_msg)
+                    except Exception: pass
+                    batch_raws = _batch_provider_wa(locations, forecast_days=4)
+                    provider_used = "weatherapi.com"
                     try:
-                        current_app.logger.info("weather: provider=open-meteo-customer via apikey")
+                        current_app.logger.info(
+                            "weather: provider=weatherapi.com OK %d centers fetch success (priority order %s).",
+                            len(batch_raws), ",".join(providers),
+                        )
                     except Exception:
                         pass
-                else:
+                    break
+                except RuntimeError:
+                    # WEATHERAPI_COM_KEY no configurado => no es un error real, skip a OM.
+                    provider_errors["weatherapi.com"] = "no WEATHERAPI_COM_KEY configured (RuntimeError raised por adapter)."
                     try:
-                        current_app.logger.info("weather: provider=open-meteo-anonymous (sujeto a ban Render IP)")
+                        current_app.logger.info(
+                            "weather: provider=weatherapi.com no key; skip to next provider in priority=%s.",
+                            ",".join(providers),
+                        )
                     except Exception:
                         pass
-                batch_raws = _fetch_open_meteo_batch(locations, forecast_days=4)
-        except Exception as exc:
-            try:
-                if not batch_exception_logged:
-                    current_app.logger.warning(f"weather: batch fetch fail for {len(locations)} centers: {exc}")
-                    batch_exception_logged = True
-            except Exception:
-                pass
-            batch_err = f"API indisponible: {exc}"
+                    continue
+                except Exception as exc:
+                    provider_errors["weatherapi.com"] = str(exc)
+                    try:
+                        if not batch_exception_logged:
+                            current_app.logger.warning(
+                                "weather: batch fetch weatherapi fail for %d centers: %s; fallback=%s order=%s.",
+                                len(locations), str(exc), providers[prov_idx+1] if prov_idx+1 < len(providers) else "none",
+                                ",".join(providers),
+                            )
+                            batch_exception_logged = True
+                    except Exception:
+                        pass
+                    if prov_idx + 1 >= len(providers):
+                        batch_err = f"API indisponible (todos providers fallaron): weatherapi={provider_errors.get('weatherapi.com','n/a')} open-meteo={provider_errors.get('open-meteo','n/a')}"
+                    continue
+            elif provider == "om":
+                try:
+                    if om_key_local:
+                        _label = "open-meteo-customer (apikey)"
+                    else:
+                        _label = "open-meteo-anonymous (sujeto a ban Render IP)"
+                    _msg2 = f"weather: try provider[order={prov_idx}/{len(providers)-1}]={_label} batch locations={len(locations)}."
+                    try: current_app.logger.info(_msg2)
+                    except Exception: pass
+                    batch_raws = _batch_provider_om(locations, forecast_days=4)
+                    provider_used = _label
+                    try:
+                        current_app.logger.info(
+                            "weather: provider=%s OK %d centers fetch success (priority order %s).",
+                            _label, len(batch_raws), ",".join(providers),
+                        )
+                    except Exception:
+                        pass
+                    break
+                except Exception as exc:
+                    provider_errors["open-meteo"] = str(exc)
+                    try:
+                        if not batch_exception_logged:
+                            current_app.logger.warning(
+                                "weather: batch fetch %s fail for %d centers: %s; fallback=%s order=%s.",
+                                _label if '_label' in dir() else 'open-meteo',
+                                len(locations), str(exc), providers[prov_idx+1] if prov_idx+1 < len(providers) else "none",
+                                ",".join(providers),
+                            )
+                            batch_exception_logged = True
+                    except Exception:
+                        pass
+                    if prov_idx + 1 >= len(providers):
+                        batch_err = f"API indisponible (todos providers fallaron): weatherapi={provider_errors.get('weatherapi.com','n/a')} open-meteo={provider_errors.get('open-meteo','n/a')}"
+                    continue
+        else:
+            if not batch_raws and batch_err is None:
+                batch_err = (
+                    "Ningún provider clima disponible. "
+                    f"WEATHER_PROVIDER_PRIORITY={','.join(providers)} "
+                    f"errores: {provider_errors}"
+                )
     else:
         batch_err = "Skipped por cache TTL / doppelganger guard; reintento en proximo request."
         batch_raws = None
@@ -1532,4 +1625,6 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
         "generated_at": _now_arg().strftime("%H:%M hs."),
         "last_data_update_arg": last_data_update_arg,
         "next_refresh_arg": next_refresh_arg,
+        "provider_priority": ",".join(_get_provider_priority()),
+        "provider_used": provider_used,
     }
