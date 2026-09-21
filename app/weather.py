@@ -1122,23 +1122,85 @@ def build_forecast_daily(raw_daily, region_name=None):
             "wind_speed_10m": wind_max[idx] if idx < len(wind_max) else 0,
         }
         risk = _evaluate_risk(synthetic_current, region_name=region_name)
-        day_label = risk["weather_label"]
-        out.append({
+        raw_wa_day_text = str(texts[idx] if idx < len(texts) and texts[idx] is not None else "")
+        precip_sum_day = float(precip[idx] if idx < len(precip) and precip[idx] is not None else 0.0)
+        day_code_final = int(risk["weather_code"] or 0)
+        day_label_final = str(risk["weather_label"] or "")
+        blocks_final = bool(risk.get("blocks_installation") is True)
+        risk_level_final = str(risk.get("risk_level") or "bajo")
+        risk_label_final = str(risk.get("risk_label") or "Operativo")
+        reasons_final = list(risk.get("reasons") or []) if isinstance(risk.get("reasons"), list) else []
+        _debug_forecast_applied = []
+        # Heuristica anti falso-positivo TORMENTA (WMO 95/96/99):
+        # Si la previsión es "Tormenta" pero la precipitación total del día < 3mm, o
+        # el texto crudo WA NO contiene la palabra "tormenta" (case insensitive),
+        # entonces es una "probabilidad de tormenta nocturna / chubascos dispersos" y
+        # NO bloqueamos instalaciones durante el día de trabajo. Downgradeamos a
+        # PRECAUCIÓN / Chubascos.
+        _tormenta_codes = {95, 96, 99}
+        _code_raw = int(codes[idx] if idx < len(codes) and codes[idx] is not None else 0)
+        _is_tormenta_code = (_code_raw in _tormenta_codes or int(risk.get("weather_code") or 0) in _tormenta_codes)
+        if _is_tormenta_code:
+            txt = (raw_wa_day_text or "").strip().lower()
+            contiene_tormenta = bool(txt) and (
+                "tormenta" in txt or "thunder" in txt or "storm" in txt or "eléctrica" in txt or "electrica" in txt or "rayo" in txt or "trueno" in txt
+            )
+            hay_lluvia_real = float(precip_sum_day or 0.0) >= 3.0
+            if not contiene_tormenta or not hay_lluvia_real:
+                _debug_forecast_applied.append(
+                    "ANTI_FALSE_STORM: wmo_code=%d contiene_tormenta=%s precip_sum=%.2fmm < 3mm => downgrade a chubascos precaucion (no bloquea)" % (
+                        _code_raw, str(contiene_tormenta), float(precip_sum_day or 0.0)
+                    )
+                )
+                # Reemplazamos códigos tormenta => lluvia moderada / chubascos
+                if float(precip_sum_day or 0.0) >= 1.0:
+                    day_code_final = 63  # lluvia moderada (chubascos)
+                    day_label_final = "Chubascos"
+                else:
+                    day_code_final = 2  # parcialmente nublado sin lluvia
+                    day_label_final = "Parcialmente nublado"
+                risk_level_final = "medio"
+                risk_label_final = "Precaución"
+                blocks_final = False
+                # Limpiamos los reasons que eran por tormenta
+                reasons_final = [
+                    r for r in reasons_final
+                    if isinstance(r, str) and "tormenta" not in r.lower() and "wmo code" not in r.lower() and "storm" not in r.lower()
+                ]
+                reasons_final.append("Precaución: posible chubascos dispersos / probabilidad tormenta nocturna (no bloquea)")
+        # Sobrescribir label final por texto crudo WA real (en español) si existe,
+        # a menos que hayamos aplicado downgrade anti-falso-storm (respetamos nuestra etiqueta)
+        if raw_wa_day_text and (not _debug_forecast_applied):
+            txt_limpio = " ".join((raw_wa_day_text or "").strip().split())
+            if txt_limpio:
+                day_label_final = str(txt_limpio)
+                _debug_forecast_applied.append("forecast_label=weather_texts[%d]" % idx)
+        day_data = {
             "date": times[idx] if idx < len(times) else None,
-            "risk_level": risk["risk_level"],
-            "risk_label": risk["risk_label"],
-            "blocks_installation": risk["blocks_installation"],
-            "weather_code": risk["weather_code"],
-            "weather_label": day_label,
-            "weather_icon": risk["weather_icon"],
+            "risk_level": risk_level_final,
+            "risk_label": risk_label_final,
+            "blocks_installation": blocks_final,
+            "weather_code": day_code_final,
+            "weather_label": day_label_final,
+            "weather_icon": weather_icon(day_code_final),
+            "weather_svg_icon": weather_svg_icon(day_code_final, size_px=32),
             "temp_max_c": round(tmax[idx], 1) if idx < len(tmax) and tmax[idx] is not None else None,
             "temp_min_c": round(tmin[idx], 1) if idx < len(tmin) and tmin[idx] is not None else None,
             "precip_sum_mm": round(precip[idx], 1) if idx < len(precip) and precip[idx] is not None else 0,
             "snow_sum_cm": round(snow[idx], 1) if idx < len(snow) and snow[idx] is not None else 0,
             "wind_max_kmh": int(round(wind_max[idx])) if idx < len(wind_max) and wind_max[idx] is not None else 0,
             "precip_prob_pct": int(round(prob[idx])) if idx < len(prob) and prob[idx] is not None else None,
-            "reasons": risk["reasons"],
-        })
+            "reasons": reasons_final,
+            "_debug": {
+                "wa_weather_text_crudo_es": raw_wa_day_text if raw_wa_day_text else None,
+                "precipitation_sum_raw_mm": precip_sum_day,
+                "wind_speed_10m_max_raw_kmh": float(wind_max[idx] if idx < len(wind_max) and wind_max[idx] is not None else 0.0),
+                "downgrade_aplicado_antifalsostorm": bool(_debug_forecast_applied),
+                "debug_lineas": list(_debug_forecast_applied),
+                "wmo_code_raw_input": _code_raw,
+            },
+        }
+        out.append(day_data)
     return out
 
 
@@ -1652,8 +1714,59 @@ def summarize_centers_weather(center_names, supervisor_scope_names=None):
             if isinstance(day, dict):
                 try:
                     day_code = day.get("weather_code")
-                    day["weather_svg_icon"] = weather_svg_icon(day_code, size_px=32)
-                    day["weather_label"] = weather_label(day_code)
+                    d_debug = day.get("_debug") if isinstance(day.get("_debug"), dict) else {}
+                    downgrade_aplicado = bool(
+                        (isinstance(d_debug, dict) and d_debug.get("downgrade_aplicado_antifalsostorm") is True)
+                    )
+                    # Para datos cacheados ANTERIORES a este commit (no tienen _debug),
+                    # aplicamos tambien la heuristica anti tormenta falsa al vuelo
+                    # sin necesidad de esperar el TTL.
+                    _storm_codes = {95, 96, 99}
+                    try:
+                        _dc = int(day_code or 0)
+                    except Exception:
+                        _dc = 0
+                    precip_day = 0.0
+                    try:
+                        precip_day = float(day.get("precip_sum_mm") or 0.0)
+                    except Exception:
+                        precip_day = 0.0
+                    if (not downgrade_aplicado) and _dc in _storm_codes and precip_day < 3.0:
+                        # Dato cacheado viejo con codigo tormenta y poca lluvia
+                        # => downgrade ahora mismo en el pipeline
+                        if precip_day >= 1.0:
+                            day["weather_code"] = 63
+                            day["weather_label"] = "Chubascos"
+                        else:
+                            day["weather_code"] = 2
+                            day["weather_label"] = "Parcialmente nublado"
+                        day["risk_level"] = "medio"
+                        day["risk_label"] = "Precaución"
+                        day["blocks_installation"] = False
+                        day_reasons = list(day.get("reasons") or []) if isinstance(day.get("reasons"), list) else []
+                        day_reasons = [r for r in day_reasons if isinstance(r, str) and "tormenta" not in r.lower() and "storm" not in r.lower()]
+                        day_reasons.append("Precaución: posible chubascos dispersos / probabilidad tormenta nocturna (no bloquea)")
+                        day["reasons"] = day_reasons
+                        downgrade_aplicado = True
+                        # Guardamos downgrade retro en _debug por consistencia
+                        if not isinstance(d_debug, dict):
+                            d_debug = {}
+                        d_debug["downgrade_aplicado_antifalsostorm"] = True
+                        d_debug.setdefault("debug_lineas", [])
+                        if isinstance(d_debug["debug_lineas"], list):
+                            d_debug["debug_lineas"].append(
+                                "DOWNGRADE_POSTCACHE_LEGACY: wmo_code=%d precip_sum=%.2fmm < 3mm => no bloquea" % (
+                                    _dc, precip_day
+                                )
+                            )
+                        day["_debug"] = d_debug
+                    # SOLO sobreescribimos la label si NO se aplicó downgrade.
+                    # Si la heurística anti-falso-storm ya la cambió a "Chubascos", la respetamos.
+                    if not downgrade_aplicado:
+                        day["weather_svg_icon"] = weather_svg_icon(day.get("weather_code"), size_px=32)
+                        day["weather_label"] = weather_label(day.get("weather_code"))
+                    else:
+                        day["weather_svg_icon"] = weather_svg_icon(day.get("weather_code"), size_px=32)
                 except Exception:
                     day["weather_svg_icon"] = weather_svg_icon(0, size_px=32)
                     day["weather_label"] = weather_label(0)
@@ -1817,12 +1930,18 @@ def diag_pipeline_for_center(center_name, provider="auto", forecast_days=4):
                         "wmo_code": d.get("weather_code"),
                         "temp_max_c": d.get("temp_max_c"),
                         "temp_min_c": d.get("temp_min_c"),
-                        "wind_kmh": d.get("wind_kmh"),
-                        "precip_mm": d.get("precip_mm"),
-                        "snow_cm": d.get("snow_cm"),
-                        "precip_prob_pct": d.get("precip_probability_pct"),
+                        "wind_max_kmh": d.get("wind_max_kmh"),
+                        "precip_sum_mm": d.get("precip_sum_mm"),
+                        "snow_sum_cm": d.get("snow_sum_cm"),
+                        "precip_prob_pct": d.get("precip_prob_pct"),
                         "risk_level": d.get("risk_level"),
+                        "risk_label": d.get("risk_label"),
                         "blocks_installation": d.get("blocks_installation"),
+                        "reasons_humano": (
+                            [str(r) for r in (d.get("reasons") or [])]
+                            if isinstance(d.get("reasons"), list) else []
+                        ),
+                        "debug_raw": d.get("_debug") if isinstance(d.get("_debug"), dict) else None,
                     })
         out["step_forecast_daily_first3"] = first3
     except Exception as exc_f:
