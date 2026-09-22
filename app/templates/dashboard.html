@@ -319,7 +319,7 @@
                             {% else %}<span style="color:#1d4ed8;">🔵 AUDITORÍA</span>{% endif %}
                             {% if item.severity and item.severity|lower == 'alta' %}<span class="news-card-sev-high"> · CRÍTICO</span>{% endif %}
                         </div>
-                        <div class="news-card-date">{{ item.event_ts }}</div>
+                        <div class="news-card-date">{{ item.event_ts | to_app_tz }}</div>
                     </div>
                 </div>
                 <div class="news-card-chips">

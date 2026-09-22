@@ -5187,6 +5187,69 @@ def count_news_feed(auditor_user_id=None, supervisor_scope_names=None):
     return total
 
 
+def to_app_tz_string(value, date_fmt="%Y-%m-%d %H:%M:%S", date_only_fmt="%Y-%m-%d"):
+    """Convierte un timestamp/datetime ISO (string o datetime) al timezone de la app.
+
+    Origen esperado: strings ISO sin TZ info se interpretan como UTC.
+    Filtra casos:
+      - 'YYYY-MM-DD' (solo fecha, sin hora) -> se devuelve tal cual en date_only_fmt.
+      - 'YYYY-MM-DD HH:MM:SS' (TZ-naive, text ISO UTC o ISO timestamptz tras TO_CHAR sin TZ) -> asumir UTC.
+      - Strings con TZ offset (ISO 8601: +00:00 / Z etc) -> respetar TZ.
+      - Objetos datetime timezone-aware -> astimezone a la app tz.
+      - Cualquier otro fallo -> fallback al string original.
+    """
+    if value is None:
+        return ""
+    # Date-only strings: return as-is (ej: audits.audit_date tipo '2026-09-14').
+    if isinstance(value, str):
+        v = value.strip()
+        if not v:
+            return ""
+        if len(v) == 10 and v[4] == "-" and v[7] == "-":
+            try:
+                datetime.strptime(v, "%Y-%m-%d")
+                return datetime.strptime(v, "%Y-%m-%d").strftime(date_only_fmt)
+            except Exception:
+                pass
+    # Intentar parsear datetime
+    parsed = None
+    src_tz = None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            # Fallbacks comunes: formato SQLite 'YYYY-MM-DD HH:MM:SS'
+            try:
+                parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                return value
+    if parsed is None:
+        return str(value)
+    # Determinar timezone origen
+    if getattr(parsed, "tzinfo", None) is None:
+        # TZ-naive => asumir UTC (consistente con created_at en PG/SQLite en UTC)
+        src_tz = timezone.utc
+        parsed_aware = parsed.replace(tzinfo=src_tz)
+    else:
+        parsed_aware = parsed
+    try:
+        app_tz = _app_timezone()
+    except Exception:
+        app_tz = timezone(timedelta(hours=-3))
+    try:
+        converted = parsed_aware.astimezone(app_tz)
+    except Exception:
+        return str(value)
+    # Si hora es 00:00:00 y el original era solo fecha? -> mostrar solo fecha, sino con hora.
+    # (No sabemos el original, pero mostramos el formato completo.
+    try:
+        return converted.strftime(date_fmt)
+    except Exception:
+        return str(value)
+
+
 def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=None):
     where_sql, params = build_audits_where_sql(
         filters,

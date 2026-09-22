@@ -243,6 +243,7 @@ from app.models import (
     get_db,
     fetch_news_feed,
     count_news_feed,
+    to_app_tz_string,
 )
 
 
@@ -480,6 +481,11 @@ def technician_photo_url(value, expires_in_seconds=86400):
     if raw.startswith("uploads/"):
         return url_for("static", filename=raw)
     return raw
+
+
+@main.app_template_filter("to_app_tz")
+def to_app_tz_filter(value, date_fmt="%Y-%m-%d %H:%M:%S", date_only_fmt="%Y-%m-%d"):
+    return to_app_tz_string(value, date_fmt=date_fmt, date_only_fmt=date_only_fmt)
 
 
 @main.route("/technicians/<int:technician_id>/profile-photo")
