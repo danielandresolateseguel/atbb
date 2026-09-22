@@ -4947,6 +4947,7 @@ def fetch_recent_audits(limit=5, auditor_user_id=None, supervisor_scope_names=No
 
 def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     subqueries = []
+    sep_dash = " - "
 
     # --- Subquery A: Hallazgos con foto ---
     a_where = []
@@ -4960,16 +4961,16 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     a_where_sql = ("WHERE " + " AND ".join(a_where)) if a_where else ""
     a_sql = f"""
         SELECT
-            CAST('finding' AS TEXT) AS feed_type,
+            'finding' AS feed_type,
             audit_findings.id AS feed_entity_id,
-            COALESCE(audit_findings.evidence_path, audit_items.photo_path) AS photo_path,
-            technicians.employee_code AS technician_code,
-            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
-            COALESCE(auditor_users.username, audits.auditor_name) AS auditor_name,
-            COALESCE(audit_items.non_compliance_reason, audit_items.item_label) AS motivo,
-            COALESCE(audit_findings.treatment_note, audit_items.item_label) AS observacion,
+            COALESCE(audit_findings.evidence_path, audit_items.photo_path, '') AS photo_path,
+            COALESCE(technicians.employee_code, '') AS technician_code,
+            COALESCE(technicians.name, audits.technician_display_name, '') AS technician_name,
+            COALESCE(auditor_users.username, audits.auditor_name, '') AS auditor_name,
+            COALESCE(audit_items.non_compliance_reason, audit_items.item_label, '') AS motivo,
+            COALESCE(audit_findings.treatment_note, audit_items.item_label, '') AS observacion,
             COALESCE(audit_findings.priority, 'media') AS severity,
-            audit_findings.created_at AS event_ts
+            COALESCE(audit_findings.created_at, audits.audit_date) AS event_ts
         FROM audit_findings
         INNER JOIN audits ON audits.id = audit_findings.audit_id
         INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
@@ -4987,19 +4988,19 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     if auditor_user_id is not None:
         b_where.append("audits.auditor_user_id = ?")
         b_params.append(auditor_user_id)
-    b_where.append("audit_items.status IN ('no_cumple', 'nc_menor', 'nc_mayor')")
+    b_where.append("LOWER(COALESCE(audit_items.status, '')) IN ('no_cumple', 'nc_menor', 'nc_mayor')")
     b_where.append("COALESCE(audit_items.photo_path, '') <> ''")
     b_where_sql = ("WHERE " + " AND ".join(b_where)) if b_where else ""
-    concat_expr_obs = """COALESCE(audit_items.section_title, '') || ' - ' || COALESCE(audit_items.item_label, '')"""
+    concat_expr_obs = f"COALESCE(audit_items.section_title, '') || '{sep_dash}' || COALESCE(audit_items.item_label, '')"
     b_sql = f"""
         SELECT
-            CAST('audit_item' AS TEXT) AS feed_type,
+            'audit_item' AS feed_type,
             audits.id AS feed_entity_id,
-            audit_items.photo_path AS photo_path,
-            technicians.employee_code AS technician_code,
-            COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
-            COALESCE(auditor_users.username, audits.auditor_name) AS auditor_name,
-            COALESCE(audit_items.non_compliance_reason, audit_items.item_label) AS motivo,
+            COALESCE(audit_items.photo_path, '') AS photo_path,
+            COALESCE(technicians.employee_code, '') AS technician_code,
+            COALESCE(technicians.name, audits.technician_display_name, '') AS technician_name,
+            COALESCE(auditor_users.username, audits.auditor_name, '') AS auditor_name,
+            COALESCE(audit_items.non_compliance_reason, audit_items.item_label, '') AS motivo,
             {concat_expr_obs} AS observacion,
             COALESCE(audit_findings.priority, 'media') AS severity,
             COALESCE(audits.created_at, audits.audit_date) AS event_ts
@@ -5019,26 +5020,26 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     c_params.extend([AUDIT_SCOPE_OFFICIAL, AUDIT_SCOPE_OFFICIAL])
     qc_official_from = get_audit_official_from_date()
     if qc_official_from:
-        c_where.append("qc_sessions.qc_date >= ?")
+        c_where.append("COALESCE(qc_sessions.qc_date, qc_sessions.created_at) >= ?")
         c_params.append(qc_official_from)
     append_supervisor_scope_filters(c_where, c_params, supervisor_scope_names=supervisor_scope_names, audit_table_alias="qc_sessions")
     if auditor_user_id is not None:
         c_where.append("qc_sessions.auditor_user_id = ?")
         c_params.append(auditor_user_id)
-    c_where.append("qc_items.status IN ('nc_menor', 'nc_mayor')")
+    c_where.append("LOWER(COALESCE(qc_items.status, '')) IN ('nc_menor', 'nc_mayor')")
     c_where.append("COALESCE(qc_items.photo_path, '') <> ''")
     c_where_sql = ("WHERE " + " AND ".join(c_where)) if c_where else ""
-    concat_expr_obs_c = """COALESCE(qc_items.section_title, '') || ' - ' || COALESCE(COALESCE(qc_items.notes, qc_items.item_label), '')"""
-    c_severity = """CASE qc_items.status WHEN 'nc_mayor' THEN 'alta' ELSE 'media' END"""
+    concat_expr_obs_c = f"COALESCE(qc_items.section_title, '') || '{sep_dash}' || COALESCE(qc_items.notes, qc_items.item_label, '')"
+    c_severity = "CASE WHEN LOWER(COALESCE(qc_items.status, '')) = 'nc_mayor' THEN 'alta' ELSE 'media' END"
     c_sql = f"""
         SELECT
-            CAST('qc_item' AS TEXT) AS feed_type,
+            'qc_item' AS feed_type,
             qc_sessions.id AS feed_entity_id,
-            qc_items.photo_path AS photo_path,
-            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code) AS technician_code,
-            COALESCE(technicians.name, qc_sessions.technician_display_name) AS technician_name,
+            COALESCE(qc_items.photo_path, '') AS photo_path,
+            COALESCE(technicians.employee_code, qc_sessions.technician_employee_code, '') AS technician_code,
+            COALESCE(technicians.name, qc_sessions.technician_display_name, '') AS technician_name,
             COALESCE(qc_sessions.auditor_name, '') AS auditor_name,
-            COALESCE(qc_items.non_compliance_reason, qc_items.item_label) AS motivo,
+            COALESCE(qc_items.non_compliance_reason, qc_items.item_label, '') AS motivo,
             {concat_expr_obs_c} AS observacion,
             {c_severity} AS severity,
             COALESCE(qc_sessions.created_at, qc_sessions.qc_date) AS event_ts
@@ -5053,7 +5054,14 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
 
 
 def fetch_news_feed(limit=8, offset=0, auditor_user_id=None, supervisor_scope_names=None):
-    subqueries = _news_feed_subqueries(auditor_user_id=auditor_user_id, supervisor_scope_names=supervisor_scope_names)
+    try:
+        subqueries = _news_feed_subqueries(auditor_user_id=auditor_user_id, supervisor_scope_names=supervisor_scope_names)
+    except Exception:
+        try:
+            current_app.logger.exception("Error al armar subqueries del news feed")
+        except Exception:
+            pass
+        return []
     union_parts = []
     all_params = []
     for sql, params in subqueries:
@@ -5069,44 +5077,71 @@ def fetch_news_feed(limit=8, offset=0, auditor_user_id=None, supervisor_scope_na
     except (TypeError, ValueError):
         offset_int = 0
     all_params.extend([limit_int, offset_int])
-    rows = get_db().execute(
-        f"""
-        SELECT
-            feed_type,
-            feed_entity_id,
-            photo_path,
-            technician_code,
-            technician_name,
-            auditor_name,
-            motivo,
-            observacion,
-            severity,
-            event_ts
-        FROM (
-            {union_sql}
-        ) AS news_union
-        ORDER BY event_ts DESC
-        LIMIT ? OFFSET ?
-        """,
-        tuple(all_params),
-    ).fetchall()
+    try:
+        rows = get_db().execute(
+            f"""
+            SELECT
+                feed_type,
+                feed_entity_id,
+                photo_path,
+                technician_code,
+                technician_name,
+                auditor_name,
+                motivo,
+                observacion,
+                severity,
+                event_ts
+            FROM (
+                {union_sql}
+            ) AS news_union
+            ORDER BY event_ts DESC
+            LIMIT ? OFFSET ?
+            """,
+            tuple(all_params),
+        ).fetchall()
+    except Exception:
+        try:
+            current_app.logger.exception("Error al ejecutar fetch_news_feed")
+        except Exception:
+            pass
+        return []
     return [dict(row) for row in rows]
 
 
 def count_news_feed(auditor_user_id=None, supervisor_scope_names=None):
-    subqueries = _news_feed_subqueries(auditor_user_id=auditor_user_id, supervisor_scope_names=supervisor_scope_names)
+    try:
+        subqueries = _news_feed_subqueries(auditor_user_id=auditor_user_id, supervisor_scope_names=supervisor_scope_names)
+    except Exception:
+        try:
+            current_app.logger.exception("Error al armar subqueries de count_news_feed")
+        except Exception:
+            pass
+        return 0
     union_parts = []
     all_params = []
     for sql, params in subqueries:
         union_parts.append(sql)
         all_params.extend(params)
     union_sql = " UNION ALL ".join(union_parts)
-    row = get_db().execute(
-        f"SELECT COUNT(*) AS total FROM ({union_sql}) AS news_union",
-        tuple(all_params),
-    ).fetchone()
     try:
-        total = int((row["total"] if isinstance(row, dict) else (row[0] if row else 0)) or 0)
+        row = get_db().execute(
+            f"SELECT COUNT(*) AS total FROM ({union_sql}) AS news_union",
+            tuple(all_params),
+        ).fetchone()
+    except Exception:
+        try:
+            current_app.logger.exception("Error al ejecutar count_news_feed")
+        except Exception:
+            pass
+        return 0
+    try:
+        total_raw = None
+        if row is not None:
+            if isinstance(row, dict):
+                total_raw = row.get("total") or row.get(0)
+            else:
+                total_raw = row[0] if hasattr(row, "__getitem__") and len(row) > 0 else None
+        total = int(total_raw or 0)
     except (TypeError, ValueError):
         total = 0
     return total
