@@ -4949,6 +4949,19 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     subqueries = []
     sep_dash = " - "
 
+    # Helper para date(timestamptz) → ISO TEXT sin timezone: orden correcto y PG/SQLite compat
+    def _iso_txt(expr):
+        if is_postgres():
+            return f"TO_CHAR(({expr})::timestamptz, 'YYYY-MM-DD HH24:MI:SS')"
+        return expr
+    # Helper para coalesce de 2 valores que pueden ser timestamptz vs text: primero casteamos ambos a TEXT ISO
+    def _ts_coalesce_iso(a_ts, b_text):
+        if is_postgres():
+            a_iso = f"TO_CHAR(({a_ts})::timestamptz, 'YYYY-MM-DD HH24:MI:SS')"
+            b_iso = f"CAST({b_text} AS TEXT)"
+            return f"CASE WHEN {a_ts} IS NOT NULL THEN {a_iso} ELSE COALESCE({b_iso}, '') END"
+        return f"COALESCE({a_ts}, {b_text}, '')"
+
     # --- Subquery A: Hallazgos con foto ---
     a_where = []
     a_params = []
@@ -4959,6 +4972,7 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
         a_params.append(auditor_user_id)
     a_where.append("COALESCE(audit_findings.evidence_path, audit_items.photo_path, '') <> ''")
     a_where_sql = ("WHERE " + " AND ".join(a_where)) if a_where else ""
+    a_event_ts = _ts_coalesce_iso("audit_findings.created_at", "audits.audit_date")
     a_sql = f"""
         SELECT
             'finding' AS feed_type,
@@ -4970,7 +4984,7 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
             COALESCE(audit_items.non_compliance_reason, audit_items.item_label, '') AS motivo,
             COALESCE(audit_findings.treatment_note, audit_items.item_label, '') AS observacion,
             COALESCE(audit_findings.priority, 'media') AS severity,
-            COALESCE(audit_findings.created_at, audits.audit_date) AS event_ts
+            {a_event_ts} AS event_ts
         FROM audit_findings
         INNER JOIN audits ON audits.id = audit_findings.audit_id
         INNER JOIN audit_items ON audit_items.id = audit_findings.audit_item_id
@@ -4992,6 +5006,7 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     b_where.append("COALESCE(audit_items.photo_path, '') <> ''")
     b_where_sql = ("WHERE " + " AND ".join(b_where)) if b_where else ""
     concat_expr_obs = f"COALESCE(audit_items.section_title, '') || '{sep_dash}' || COALESCE(audit_items.item_label, '')"
+    b_event_ts = _ts_coalesce_iso("audits.created_at", "audits.audit_date")
     b_sql = f"""
         SELECT
             'audit_item' AS feed_type,
@@ -5003,7 +5018,7 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
             COALESCE(audit_items.non_compliance_reason, audit_items.item_label, '') AS motivo,
             {concat_expr_obs} AS observacion,
             COALESCE(audit_findings.priority, 'media') AS severity,
-            COALESCE(audits.created_at, audits.audit_date) AS event_ts
+            {b_event_ts} AS event_ts
         FROM audit_items
         INNER JOIN audits ON audits.id = audit_items.audit_id
         LEFT JOIN technicians ON technicians.id = audits.technician_id
@@ -5020,7 +5035,13 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     c_params.extend([AUDIT_SCOPE_OFFICIAL, AUDIT_SCOPE_OFFICIAL])
     qc_official_from = get_audit_official_from_date()
     if qc_official_from:
-        c_where.append("COALESCE(qc_sessions.qc_date, qc_sessions.created_at) >= ?")
+        # Ambas fechas casteadas a TEXT ISO para comparar mix de created_at timestamptz y qc_date text
+        if is_postgres():
+            c_where.append(
+                f"CASE WHEN qc_sessions.qc_date IS NOT NULL THEN CAST(qc_sessions.qc_date AS TEXT) ELSE TO_CHAR(qc_sessions.created_at::timestamptz, 'YYYY-MM-DD') END >= ?"
+            )
+        else:
+            c_where.append("COALESCE(qc_sessions.qc_date, DATE(qc_sessions.created_at)) >= ?")
         c_params.append(qc_official_from)
     append_supervisor_scope_filters(c_where, c_params, supervisor_scope_names=supervisor_scope_names, audit_table_alias="qc_sessions")
     if auditor_user_id is not None:
@@ -5031,6 +5052,7 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     c_where_sql = ("WHERE " + " AND ".join(c_where)) if c_where else ""
     concat_expr_obs_c = f"COALESCE(qc_items.section_title, '') || '{sep_dash}' || COALESCE(qc_items.notes, qc_items.item_label, '')"
     c_severity = "CASE WHEN LOWER(COALESCE(qc_items.status, '')) = 'nc_mayor' THEN 'alta' ELSE 'media' END"
+    c_event_ts = _ts_coalesce_iso("qc_sessions.created_at", "qc_sessions.qc_date")
     c_sql = f"""
         SELECT
             'qc_item' AS feed_type,
@@ -5042,7 +5064,7 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
             COALESCE(qc_items.non_compliance_reason, qc_items.item_label, '') AS motivo,
             {concat_expr_obs_c} AS observacion,
             {c_severity} AS severity,
-            COALESCE(qc_sessions.created_at, qc_sessions.qc_date) AS event_ts
+            {c_event_ts} AS event_ts
         FROM qc_items
         INNER JOIN qc_sessions ON qc_sessions.id = qc_items.qc_session_id
         LEFT JOIN technicians ON technicians.id = qc_sessions.technician_id
@@ -5053,6 +5075,20 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
     return subqueries
 
 
+def _db_rollback_safe():
+    """Best-effort ROLLBACK para curar InFailedSqlTransaction en PG. SQLite no-op."""
+    try:
+        conn = get_db()
+        raw = getattr(conn, "_connection", None)
+        if raw is not None and is_postgres():
+            try:
+                raw.rollback()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def fetch_news_feed(limit=8, offset=0, auditor_user_id=None, supervisor_scope_names=None):
     try:
         subqueries = _news_feed_subqueries(auditor_user_id=auditor_user_id, supervisor_scope_names=supervisor_scope_names)
@@ -5061,6 +5097,7 @@ def fetch_news_feed(limit=8, offset=0, auditor_user_id=None, supervisor_scope_na
             current_app.logger.exception("Error al armar subqueries del news feed")
         except Exception:
             pass
+        _db_rollback_safe()
         return []
     union_parts = []
     all_params = []
@@ -5104,6 +5141,7 @@ def fetch_news_feed(limit=8, offset=0, auditor_user_id=None, supervisor_scope_na
             current_app.logger.exception("Error al ejecutar fetch_news_feed")
         except Exception:
             pass
+        _db_rollback_safe()
         return []
     return [dict(row) for row in rows]
 
@@ -5116,6 +5154,7 @@ def count_news_feed(auditor_user_id=None, supervisor_scope_names=None):
             current_app.logger.exception("Error al armar subqueries de count_news_feed")
         except Exception:
             pass
+        _db_rollback_safe()
         return 0
     union_parts = []
     all_params = []
@@ -5133,6 +5172,7 @@ def count_news_feed(auditor_user_id=None, supervisor_scope_names=None):
             current_app.logger.exception("Error al ejecutar count_news_feed")
         except Exception:
             pass
+        _db_rollback_safe()
         return 0
     try:
         total_raw = None
