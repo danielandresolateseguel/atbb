@@ -5187,7 +5187,7 @@ def count_news_feed(auditor_user_id=None, supervisor_scope_names=None):
     return total
 
 
-def to_app_tz_string(value, date_fmt="%Y-%m-%d %H:%M:%S", date_only_fmt="%Y-%m-%d"):
+def to_app_tz_string(value, date_fmt="%d-%m-%Y %H:%M hs", date_only_fmt="%d-%m-%Y"):
     """Convierte un timestamp/datetime ISO (string o datetime) al timezone de la app.
 
     Origen esperado: strings ISO sin TZ info se interpretan como UTC.

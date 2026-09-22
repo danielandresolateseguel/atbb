@@ -484,7 +484,7 @@ def technician_photo_url(value, expires_in_seconds=86400):
 
 
 @main.app_template_filter("to_app_tz")
-def to_app_tz_filter(value, date_fmt="%Y-%m-%d %H:%M:%S", date_only_fmt="%Y-%m-%d"):
+def to_app_tz_filter(value, date_fmt="%d-%m-%Y %H:%M hs", date_only_fmt="%d-%m-%Y"):
     return to_app_tz_string(value, date_fmt=date_fmt, date_only_fmt=date_only_fmt)
 
 
