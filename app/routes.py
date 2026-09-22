@@ -241,6 +241,8 @@ from app.models import (
     auto_link_client_confirmation_to_order,
     is_postgres,
     get_db,
+    fetch_news_feed,
+    count_news_feed,
 )
 
 
@@ -446,6 +448,23 @@ def audit_photo_paths(value, expires_in_seconds=900):
             continue
         resolved.append(candidate)
     return resolved
+
+
+@main.app_template_filter("first_audit_photo_url")
+def first_audit_photo_url(value, expires_in_seconds=3600):
+    if value is None:
+        return None
+    all_photos = audit_photo_paths(value, expires_in_seconds=expires_in_seconds)
+    if not all_photos:
+        return None
+    first = (all_photos[0] or "").strip()
+    if not first:
+        return None
+    if first.startswith("http"):
+        return first
+    if first.startswith("uploads/") or "/" in first:
+        return url_for("static", filename=first)
+    return first
 
 
 @main.app_template_filter("technician_photo_url")
@@ -3946,6 +3965,31 @@ def dashboard():
             current_app.logger.exception("Error al calcular donut de riesgo (hallazgos alta prioridad)")
             safety_risk_donut = None
 
+    news_feed_limit = 10
+    try:
+        news_feed_page = max(1, int(request.args.get("feed_page", 1) or 1))
+    except (TypeError, ValueError):
+        news_feed_page = 1
+    news_feed_offset = (news_feed_page - 1) * news_feed_limit
+    try:
+        news_feed_items = fetch_news_feed(
+            limit=news_feed_limit,
+            offset=news_feed_offset,
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+        )
+    except Exception:
+        current_app.logger.exception("Error al obtener el feed de novedades para el dashboard")
+        news_feed_items = []
+    try:
+        news_feed_total = count_news_feed(
+            auditor_user_id=auditor_user_id,
+            supervisor_scope_names=supervisor_scope_names,
+        )
+    except Exception:
+        current_app.logger.exception("Error al contar novedades del dashboard")
+        news_feed_total = 0
+
     return render_template(
         "dashboard.html",
         page_class="page-dashboard",
@@ -3957,6 +4001,10 @@ def dashboard():
         finding_donut=finding_donut,
         safety_risk_donut=safety_risk_donut,
         effectiveness_alerts=effectiveness_alerts,
+        news_feed_items=news_feed_items,
+        news_feed_total=news_feed_total,
+        news_feed_page=news_feed_page,
+        news_feed_limit=news_feed_limit,
     )
 
 

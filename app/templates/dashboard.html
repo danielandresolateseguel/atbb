@@ -250,34 +250,278 @@
     {% endif %}
 {% endif %}
 
-<section class="card dashboard-recent">
-    <div class="section-heading">
-        <div>
-            <p class="eyebrow">Actividad reciente</p>
-            <h3>Últimas auditorías</h3>
+{% if news_feed_items %}
+{% set _news_shown = news_feed_page * news_feed_limit %}
+{% if news_feed_total > _news_shown %}
+    {% set _news_rest_raw = news_feed_total - _news_shown %}
+{% else %}
+    {% set _news_rest_raw = 0 %}
+{% endif %}
+{% if _news_rest_raw < news_feed_limit %}
+    {% set _news_next_count = _news_rest_raw %}
+{% else %}
+    {% set _news_next_count = news_feed_limit %}
+{% endif %}
+{% if _news_next_count == 1 %}
+    {% set _news_next_plural = '' %}
+{% else %}
+    {% set _news_next_plural = 'es' %}
+{% endif %}
+<section class="card news-feed-section" id="novedades" style="margin-top:22px;">
+    <header class="card-head" style="background:#f8fafc;border-top-left-radius:14px;border-top-right-radius:14px;border-bottom:1px solid #e2e8f0;padding:16px 20px;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+            <div style="min-width:0;">
+                <p style="margin:0 0 4px;font-size:11.5px;font-weight:700;color:#475569;letter-spacing:.08em;text-transform:uppercase;line-height:1;">📰 Tira de novedades</p>
+                <h2 style="margin:0;font-size:18px;font-weight:800;color:#0f172a;line-height:1.2;">Hallazgos y QC con fotos <span style="color:#64748b;font-weight:600;font-size:14px;">· {{ news_feed_total }} en total</span></h2>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a class="button button-secondary" style="font-weight:700;" href="{{ url_for('main.audit_list') }}">📄 Ver historial de auditorías</a>
+                <a class="button button-secondary" style="font-weight:700;" href="{{ url_for('main.findings_list') }}">🔍 Hallazgos</a>
+                <a class="button button-secondary" style="font-weight:700;" href="{{ url_for('main.qc_sessions') }}">📋 QC Instalaciones</a>
+            </div>
         </div>
-        <a class="button button-secondary" href="{{ url_for('main.audit_list') }}">Ver historial</a>
+    </header>
+    <ul class="news-feed-grid">
+    {% for item in news_feed_items %}
+        {% if item.feed_type == 'finding' %}
+            {% set _news_link = url_for('main.finding_detail', finding_id=item.feed_entity_id) %}
+            {% set _news_label = 'Hallazgo' %}
+        {% elif item.feed_type == 'qc_item' %}
+            {% set _news_link = url_for('main.qc_detail', qc_session_id=item.feed_entity_id) %}
+            {% set _news_label = 'QC' %}
+        {% else %}
+            {% set _news_link = url_for('main.audit_detail', audit_id=item.feed_entity_id) %}
+            {% set _news_label = 'Auditoría' %}
+        {% endif %}
+        {% set _raw_name = (item.technician_name or 'TB')|string|trim %}
+        {% set _names = _raw_name.split() %}
+        {% if _names|length >= 2 %}
+            {% set _initials = (_names[0][:1] ~ _names[-1][:1])|upper %}
+        {% elif _names|length == 1 and _names[0]|length >= 1 %}
+            {% set _initials = (_names[0][:2])|upper %}
+        {% else %}
+            {% set _initials = 'TB' %}
+        {% endif %}
+        <li class="news-card">
+            {% set _news_photo_resolved = item.photo_path | first_audit_photo_url %}
+            {% if _news_photo_resolved %}
+            <a class="news-card-photo-wrap" href="{{ _news_link }}" target="_blank" rel="noopener" aria-label="Ver evidencia del {{ _news_label }}">
+                <img class="news-card-photo" src="{{ _news_photo_resolved }}" alt="Evidencia {{ _news_label }} {{ item.feed_entity_id }}" loading="lazy">
+            </a>
+            {% endif %}
+            <div class="news-card-body">
+                <div class="news-card-head">
+                    <div class="news-card-avatar" aria-hidden="true">{{ _initials }}</div>
+                    <div class="news-card-head-main">
+                        <div class="news-card-type-chip">
+                            {% if item.feed_type == 'finding' %}<span style="color:#dc2626;">🔴 HALLAZGO</span>
+                            {% elif item.feed_type == 'qc_item' %}<span style="color:#ea580c;">🟠 QC</span>
+                            {% else %}<span style="color:#1d4ed8;">🔵 AUDITORÍA</span>{% endif %}
+                            {% if item.severity and item.severity|lower == 'alta' %}<span class="news-card-sev-high"> · CRÍTICO</span>{% endif %}
+                        </div>
+                        <div class="news-card-date">{{ item.event_ts }}</div>
+                    </div>
+                </div>
+                <div class="news-card-chips">
+                    {% if item.technician_code %}<span class="nf-chip nf-chip-leg">Leg. {{ item.technician_code }}</span>{% endif %}
+                    {% if item.technician_name %}<span class="nf-chip nf-chip-tech">{{ item.technician_name }}</span>{% endif %}
+                    {% if item.auditor_name %}<span class="nf-chip nf-chip-aud">Aud. {{ item.auditor_name }}</span>{% endif %}
+                </div>
+                {% if item.motivo %}<div class="news-card-motivo"><strong>Motivo:</strong> {{ item.motivo }}</div>{% endif %}
+                {% if item.observacion %}<div class="news-card-obs"><strong>Observación:</strong> {{ item.observacion }}</div>{% endif %}
+                <div class="news-card-cta-row">
+                    <a class="button button-primary news-card-cta" href="{{ _news_link }}" target="_blank" rel="noopener" style="font-weight:800;">🔗 Ir al {{ _news_label }} →</a>
+                </div>
+            </div>
+        </li>
+    {% endfor %}
+    </ul>
+    {% if _news_rest_raw > 0 %}
+    <div class="today-expand-row" style="padding:0 20px 20px;">
+        <a class="today-expand-btn"
+           style="text-align:center;text-decoration:none;display:block;"
+           href="{{ url_for('main.dashboard', feed_page=news_feed_page + 1) }}#novedades">
+            Cargar {{ _news_next_count }} novedad{{ _news_next_plural }} más ▾
+        </a>
     </div>
-
-    {% if recent_audits %}
-        <div class="audit-list">
-            {% for audit in recent_audits %}
-                <article class="audit-item">
-                    <div>
-                        <strong>
-                            {% if audit.mobile_code %}Móvil {{ audit.mobile_code }} | {% endif %}{{ audit.technician_name }}
-                        </strong>
-                        <p>{{ audit.location }} | {{ audit.installation_type }}</p>
-                    </div>
-                    <div class="audit-meta">
-                        <span class="badge badge-{{ audit.result_status|lower|replace(' ', '-') }}">{{ audit.result_status }}</span>
-                        <small>{{ audit.total_score }} pts</small>
-                    </div>
-                </article>
-            {% endfor %}
-        </div>
-    {% else %}
-        <p class="empty-state">Aún no existen auditorías registradas.</p>
     {% endif %}
 </section>
+{% endif %}
+
+<style>
+.news-feed-grid {
+    list-style: none;
+    padding: 18px 20px 8px;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+.news-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    display: flex;
+    flex-direction: column;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.news-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.09);
+    border-color: #cbd5e1;
+}
+.news-card-photo-wrap {
+    display: block;
+    width: 100%;
+    background: #0f172a;
+    text-decoration: none;
+}
+.news-card-photo {
+    width: 100%;
+    display: block;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: #0f172a;
+}
+.news-card-body {
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+}
+.news-card-head {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.news-card-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #1e293b, #334155);
+    color: #f8fafc;
+    font-weight: 900;
+    font-size: 16px;
+    letter-spacing: .02em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+.news-card-head-main {
+    flex: 1;
+    min-width: 0;
+}
+.news-card-type-chip {
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    line-height: 1.2;
+}
+.news-card-sev-high {
+    color: #b91c1c !important;
+    font-weight: 900;
+}
+.news-card-date {
+    margin-top: 3px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: .01em;
+}
+.news-card-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 2px 0 4px;
+}
+.nf-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid;
+    line-height: 1;
+}
+.nf-chip-leg {
+    background: #0f172a;
+    color: #f8fafc;
+    border-color: #0f172a;
+}
+.nf-chip-tech {
+    background: #eff6ff;
+    color: #1e3a8a;
+    border-color: #bfdbfe;
+}
+.nf-chip-aud {
+    background: linear-gradient(180deg, #fefce8, #fef9c3);
+    color: #854d0e;
+    border-color: #fde68a;
+}
+.news-card-motivo,
+.news-card-obs {
+    color: #0f172a;
+    font-size: 14px;
+    line-height: 1.45;
+    padding: 3px 0;
+}
+.news-card-motivo { font-weight: 600; }
+.news-card-obs { color: #334155; }
+.news-card-motivo strong,
+.news-card-obs strong { color: #1e293b; font-weight: 800; margin-right: 3px; }
+.news-card-cta-row {
+    margin-top: auto;
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 6px;
+}
+.news-card-cta {
+    font-size: 13px;
+    padding: 9px 14px;
+    border-radius: 12px;
+    text-decoration: none;
+    background: linear-gradient(135deg, #1d4ed8, #4f46e5);
+    color: #ffffff !important;
+    border: 1px solid #1d4ed8;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, .18);
+}
+.news-card-cta:hover {
+    background: linear-gradient(135deg, #1e40af, #4338ca);
+    border-color: #1e3a8a;
+}
+@media (max-width: 640px) {
+    .news-feed-grid {
+        grid-template-columns: 1fr;
+        padding: 14px 12px 6px;
+        gap: 14px;
+    }
+    .news-card-body {
+        padding: 12px 14px 14px;
+        gap: 9px;
+    }
+    .news-card-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        font-size: 15px;
+    }
+    .news-card-cta-row {
+        justify-content: stretch;
+    }
+    .news-card-cta {
+        width: 100%;
+        text-align: center;
+        padding: 11px 14px;
+        font-size: 14px;
+    }
+}
+</style>
 {% endblock %}
