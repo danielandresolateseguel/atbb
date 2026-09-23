@@ -807,17 +807,6 @@ form.form-grid {
         grid-template-columns: 1fr;
     }
 
-    .findings-table-wrap {
-        max-height: 60vh;
-    }
-
-    .findings-sticky-col {
-        position: static;
-        box-shadow: none;
-    }
-
-
-
     .topbar-row {
         display: flex;
         flex-wrap: wrap;
@@ -1331,6 +1320,37 @@ input[type="file"]:focus-visible {
 
 .findings-table tbody tr.finding-row-critical td.findings-sticky-col {
     background: #f8e8e8;
+}
+
+@media (max-width: 1024px) {
+    .findings-table-wrap {
+        max-height: 60vh;
+    }
+
+    .findings-col-date,
+    .findings-col-mobile {
+        width: auto;
+        min-width: 0;
+    }
+
+    .findings-sticky-col {
+        position: static;
+        left: auto;
+        z-index: auto;
+        box-shadow: none;
+    }
+
+    .findings-table thead .findings-sticky-col {
+        z-index: 2;
+    }
+
+    .findings-table tbody tr.finding-row-warning td.findings-sticky-col {
+        background: transparent;
+    }
+
+    .findings-table tbody tr.finding-row-critical td.findings-sticky-col {
+        background: transparent;
+    }
 }
 
 .finding-row-warning td {
