@@ -5250,7 +5250,29 @@ def to_app_tz_string(value, date_fmt="%d-%m-%Y %H:%M hs", date_only_fmt="%d-%m-%
         return str(value)
 
 
-def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+def count_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=None):
+    where_sql, params = build_audits_where_sql(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+    )
+    row = get_db().execute(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM audits
+        LEFT JOIN mobile_units ON mobile_units.id = audits.mobile_unit_id
+        LEFT JOIN technicians ON technicians.id = audits.technician_id
+        INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
+        {where_sql}
+        """,
+        params,
+    ).fetchone()
+    if not row:
+        return 0
+    return int(row["cnt"] if isinstance(row, dict) else row[0] or 0)
+
+
+def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=None, limit=300, offset=0):
     where_sql, params = build_audits_where_sql(
         filters,
         auditor_user_id=auditor_user_id,
@@ -5277,6 +5299,10 @@ def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=
         order_sql = f"ORDER BY {sort_expr} {sort_dir.upper()}, audits.created_at DESC"
     else:
         order_sql = "ORDER BY audits.created_at DESC"
+    try:
+        offset_int = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset_int = 0
     rows = get_db().execute(
         f"""
         SELECT
@@ -5299,8 +5325,9 @@ def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=
         INNER JOIN vehicles ON vehicles.id = audits.vehicle_id
         {where_sql}
         {order_sql}
+        LIMIT ? OFFSET ?
         """,
-        params,
+        tuple(list(params) + [int(limit), offset_int]),
     ).fetchall()
     return [dict(row) for row in rows]
 

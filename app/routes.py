@@ -65,6 +65,7 @@ from app.models import (
     fetch_audit_supply_requests,
     fetch_supply_requests_feed,
     fetch_all_audits,
+    count_all_audits,
     fetch_audit_picker_audits,
     fetch_audit_reports_management_summary,
     fetch_audit_reports_missing_evidence,
@@ -6659,11 +6660,60 @@ def audit_list():
     if auditor_user_id is not None:
         filters["auditor"] = ""
 
-    audits = fetch_all_audits(
+    page_raw = (request.args.get("page") or "").strip()
+    page = 1
+    if page_raw:
+        try:
+            page = max(1, int(page_raw))
+        except ValueError:
+            page = 1
+    page_size_raw = (request.args.get("page_size") or "").strip()
+    page_size = 25
+    if page_size_raw:
+        try:
+            ps = int(page_size_raw)
+            if ps in {10, 25, 50, 100}:
+                page_size = ps
+        except ValueError:
+            pass
+
+    audits_total = count_all_audits(
         filters,
         auditor_user_id=auditor_user_id,
         supervisor_scope_names=supervisor_scope_names,
     )
+
+    page_count = max(1, (audits_total + page_size - 1) // page_size) if audits_total else 1
+    if page > page_count:
+        page = page_count
+    offset = (page - 1) * page_size
+
+    audits = fetch_all_audits(
+        filters,
+        auditor_user_id=auditor_user_id,
+        supervisor_scope_names=supervisor_scope_names,
+        limit=page_size,
+        offset=offset,
+    )
+
+    has_prev_page = page > 1
+    has_next_page = (offset + page_size) < audits_total
+
+    pages_window_findings = []
+    if page_count <= 9:
+        pages_window_findings = list(range(1, page_count + 1))
+    else:
+        pages_window_findings.append(1)
+        if page - 2 > 2:
+            pages_window_findings.append(None)
+        start = max(2, page - 2)
+        end = min(page_count - 1, page + 2)
+        for p in range(start, end + 1):
+            pages_window_findings.append(p)
+        if page + 2 < page_count - 1:
+            pages_window_findings.append(None)
+        pages_window_findings.append(page_count)
+
     filter_active = any(
         [
             filters["from_date"],
@@ -6679,6 +6729,13 @@ def audit_list():
         filters=filters,
         filter_active=filter_active,
         audit_official_from_date=get_audit_official_from_date(),
+        audits_total=audits_total,
+        page=page,
+        page_count=page_count,
+        page_size=page_size,
+        has_prev_page=has_prev_page,
+        has_next_page=has_next_page,
+        pages_window_findings=pages_window_findings,
     )
 
 
