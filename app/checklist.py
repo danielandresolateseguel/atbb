@@ -219,6 +219,41 @@ CHECKLIST_SECTIONS = [
         ],
     },
     {
+        "key": "potencia_optica",
+        "title": "Medición de Potencia Óptica",
+        "weight": 3,
+        "items": [
+            {
+                "key": "potencia_poste_dbm",
+                "label": "Potencia en Poste (dBm)",
+                "critical": False,
+                "evidence_required": False,
+                "numeric": True,
+                "numeric_role": "poste",
+            },
+            {
+                "key": "potencia_ont_dbm",
+                "label": "Potencia en ONT (dBm)",
+                "critical": False,
+                "evidence_required": False,
+                "numeric": True,
+                "numeric_role": "ont",
+            },
+        ],
+    },
+    {
+        "key": "verificacion_evidencias",
+        "title": "Verificación de Evidencias Enviadas por Técnico",
+        "weight": 5,
+        "items": [
+            {"key": "foto_potencia_cdo", "label": "Foto potencia CDO", "critical": False, "evidence_required": False},
+            {"key": "foto_potencia_ont", "label": "Foto potencia ONT", "critical": False, "evidence_required": False},
+            {"key": "foto_autoadhesivo_ont", "label": "Foto autoadhesivo en ONT", "critical": False, "evidence_required": False},
+            {"key": "foto_nomenclado", "label": "Foto Nomenclado", "critical": False, "evidence_required": False},
+            {"key": "foto_retencion_domicilio", "label": "Foto de Retención en el domicilio", "critical": False, "evidence_required": False},
+        ],
+    },
+    {
         "key": "calidad_instalaciones",
         "title": "Control de Calidad de Instalaciones",
         "weight": 15,
@@ -255,9 +290,12 @@ CHECKLIST_SECTIONS = [
 ]
 
 QC_SECTION_KEY = "calidad_instalaciones"
+QC_EVIDENCE_SECTION_KEY = "verificacion_evidencias"
+QC_POWER_SECTION_KEY = "potencia_optica"
+QC_SECTION_KEYS = {QC_SECTION_KEY, QC_EVIDENCE_SECTION_KEY, QC_POWER_SECTION_KEY}
 
 AUDIT_CHECKLIST_SECTIONS = [
-    section for section in CHECKLIST_SECTIONS if section.get("key") != QC_SECTION_KEY
+    section for section in CHECKLIST_SECTIONS if section.get("key") not in QC_SECTION_KEYS
 ]
 
 

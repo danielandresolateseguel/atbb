@@ -5,6 +5,11 @@ venv/
 audit_app.db
 .vscode/
 app/static/uploads/
+uploads/
+_*.py
+_*.log
+_*.db
+_t_*
 .dbg/
 debug-*.md
 _external/

@@ -26,7 +26,7 @@ except ImportError:
     ImageDraw = None
     ImageFont = None
 
-from app.checklist import AUDIT_CHECKLIST_SECTIONS, CHECKLIST_SECTIONS, QC_SECTION_KEY
+from app.checklist import AUDIT_CHECKLIST_SECTIONS, CHECKLIST_SECTIONS, QC_SECTION_KEY, QC_EVIDENCE_SECTION_KEY, QC_POWER_SECTION_KEY, QC_SECTION_KEYS
 from app.spreadsheets import parse_tabular_upload
 
 try:
@@ -4213,6 +4213,28 @@ def qc_section_definition():
     return section
 
 
+def qc_evidence_section_definition():
+    section = next((entry for entry in CHECKLIST_SECTIONS if entry.get("key") == QC_EVIDENCE_SECTION_KEY), None)
+    if not section:
+        raise RuntimeError(f"No existe la sección '{QC_EVIDENCE_SECTION_KEY}' en el checklist.")
+    return section
+
+
+def qc_power_section_definition():
+    section = next((entry for entry in CHECKLIST_SECTIONS if entry.get("key") == QC_POWER_SECTION_KEY), None)
+    if not section:
+        raise RuntimeError(f"No existe la sección '{QC_POWER_SECTION_KEY}' en el checklist.")
+    return section
+
+
+def qc_all_sections():
+    return [
+        qc_power_section_definition(),
+        qc_evidence_section_definition(),
+        qc_section_definition(),
+    ]
+
+
 def service_item_definitions():
     return [
         {
@@ -5141,6 +5163,8 @@ def qc_new():
                 flash("No se encontró la auditoría indicada para vincular el QC.", "error")
 
     section = qc_section_definition()
+    evidence_section = qc_evidence_section_definition()
+    power_section = qc_power_section_definition()
     technicians = fetch_technicians()
     today = datetime.now().date().isoformat()
 
@@ -5237,13 +5261,124 @@ def qc_new():
                     }
                     cable_meters = fixed_meters.get(cable_type)
 
-            section_score, _has_critical, items = calculate_section_score(section, request.form, request.files)
-            ratio = 1 if section.get("weight") in {0, None} else (section_score / float(section["weight"]))
-            ratio = max(0.0, min(1.0, ratio))
+            # --- MEDICIÓN DE POTENCIA ÓPTICA: LEER INPUTS NUMÉRICOS Y SOBREESCRIBIR status/notes en ambos items ---
+            # El template no muestra radios al usuario, pero para preservar dinamismo del sistema los enviamos
+            # con el nombre estandar `status__{key}`. El sistema los calcula automáticamente aquí.
+            power_no_aplica_raw = (request.form.get("potencia_optica_no_aplica") or "").strip().lower()
+            power_no_aplica = power_no_aplica_raw in {"1", "true", "yes", "on", "si", "sí"}
+            power_poste_raw = (request.form.get("potencia_poste_val") or "").strip().replace(",", ".")
+            power_ont_raw = (request.form.get("potencia_ont_val") or "").strip().replace(",", ".")
+            power_att_diff = None
+            power_status = None  # "conforme" / "nc_mayor" / "no_aplica"
+            power_reason = ""
+            if power_no_aplica:
+                power_status = "no_aplica"
+                power_reason = "No aplica"
+            else:
+                if not power_poste_raw:
+                    raise ValueError("Sección Potencia Óptica: debés ingresar el valor medido en el Poste (o marcar No aplica).")
+                if not power_ont_raw:
+                    raise ValueError("Sección Potencia Óptica: debés ingresar el valor medido en la ONT (o marcar No aplica).")
+                try:
+                    p_poste = float(power_poste_raw)
+                    p_ont = float(power_ont_raw)
+                except ValueError as exc:
+                    raise ValueError("Sección Potencia Óptica: los valores de Poste y ONT deben ser números válidos (dBm).") from exc
+                power_att_diff = round(p_poste - p_ont, 2)
+                # Regla: NC mayor si atenuación > 1 dBm O si atenuación <= 0 (ONT >= Poste, invertido / imposible físicamente)
+                if power_att_diff <= 0.0:
+                    power_status = "nc_mayor"
+                    power_reason = (
+                        f"Valores invertidos o imposibles: Poste {p_poste:.2f} dBm, ONT {p_ont:.2f} dBm. "
+                        f"Atenuación = {power_att_diff:+.2f} dBm (<= 0). Tratado como NC Mayor."
+                    )
+                elif power_att_diff > 1.0:
+                    power_status = "nc_mayor"
+                    power_reason = (
+                        f"Atenuación excedida: Poste {p_poste:.2f} dBm, ONT {p_ont:.2f} dBm. "
+                        f"Potencia consumida = {power_att_diff:.2f} dBm (> 1 dBm permitido). NC Mayor."
+                    )
+                else:
+                    power_status = "conforme"
+                    power_reason = (
+                        f"Atenuación OK: Poste {p_poste:.2f} dBm, ONT {p_ont:.2f} dBm. "
+                        f"Diferencia = {power_att_diff:.2f} dBm (≤ 1 dBm)."
+                    )
+
+            # Inyectamos EN request.form, para que calculate_section_score use estos status
+            # en vez de los valores por defecto que envía el template.
+            # Como request.form es ImmutableMultiDict, construimos un ImmutableMultiDict extendido.
+            from werkzeug.datastructures import ImmutableMultiDict
+            _power_overrides = {}
+            for item in power_section.get("items", []):
+                k = item["key"]
+                _power_overrides[f"status__{k}"] = power_status
+                # Siempre sobrescribir las notes y reason con las del motor automático.
+                # El textarea del template "Detalle / Observación" es sólo opcional informativo para el usuario;
+                # calculate_section_score requiere notes != "" cuando status es nc_menor/nc_mayor, y queremos
+                # siempre el reason técnico de la medición, incluso cuando el auditor escribió algo manual.
+                if power_no_aplica:
+                    note_txt = "No aplica"
+                elif power_att_diff is not None:
+                    note_txt = power_reason
+                else:
+                    note_txt = ""
+                _power_overrides[f"notes__{k}"] = note_txt
+                # El campo reason__{k} se usa para non_compliance_reason; lo llenamos con power_reason cuando aplica.
+                if power_status in {"nc_menor", "nc_mayor"} and power_reason:
+                    _power_overrides[f"reason__{k}"] = power_reason
+            if _power_overrides:
+                combined = list(request.form.items(multi=True))
+                # Limpiamos cualquier status/note previo de los power items para que no haya duplicados
+                cleaned = []
+                power_keys_status = {f"status__{i['key']}" for i in power_section.get("items", [])}
+                power_keys_notes = {f"notes__{i['key']}" for i in power_section.get("items", [])}
+                power_keys_reasons = {f"reason__{i['key']}" for i in power_section.get("items", [])}
+                for kk, vv in combined:
+                    if kk in power_keys_status or kk in power_keys_notes or kk in power_keys_reasons:
+                        continue
+                    cleaned.append((kk, vv))
+                for ok, ov in _power_overrides.items():
+                    cleaned.append((ok, ov))
+                _mutable_form = ImmutableMultiDict(cleaned)
+            else:
+                _mutable_form = request.form
+
+            qc_sections_to_process = [power_section, evidence_section, section]
+            all_items = []
+            total_weight = 0.0
+            total_score = 0.0
+            has_major_nc = False
+            has_critical_failure = False
+
+            for sec in qc_sections_to_process:
+                sec_score, sec_has_critical, sec_items = calculate_section_score(
+                    sec, _mutable_form, request.files
+                )
+                # Reforzar non_compliance_reason y notes en los items de potencia para que persista en DB y se vea en detalle/reporte
+                if sec.get("key") == QC_POWER_SECTION_KEY:
+                    for item in sec_items:
+                        if power_reason:
+                            item["non_compliance_reason"] = (item.get("non_compliance_reason") or "") or power_reason
+                        if power_status and (item.get("status") or "") != power_status:
+                            item["status"] = power_status
+                all_items.extend(sec_items)
+                w = sec.get("weight") or 0
+                if w and w > 0:
+                    total_weight += w
+                    total_score += sec_score
+                if sec_has_critical:
+                    has_critical_failure = True
+                if any(str(it.get("status") or "").strip().lower() == "nc_mayor" for it in sec_items):
+                    has_major_nc = True
+
+            if total_weight > 0:
+                ratio = max(0.0, min(1.0, total_score / float(total_weight)))
+            else:
+                ratio = 1.0
             qc_score = round(ratio * 100, 2)
 
-            has_major_nc = any(str(it.get("status") or "").strip().lower() == "nc_mayor" for it in items)
-            if has_major_nc:
+            if has_major_nc or has_critical_failure:
                 result_status = "Rechazada"
             elif qc_score >= 90:
                 result_status = "Aprobada"
@@ -5252,7 +5387,7 @@ def qc_new():
             else:
                 result_status = "Rechazada"
 
-            persist_qc_item_evidence(items, qc_date)
+            persist_qc_item_evidence(all_items, qc_date)
             def parse_qc_photo_paths(raw_value):
                 raw = (raw_value or "").strip()
                 if not raw or raw == "-":
@@ -5291,7 +5426,7 @@ def qc_new():
             qc_evidence_paths = set()
             for entry in session_photo_paths:
                 qc_evidence_paths.add(entry)
-            for item in items:
+            for item in all_items:
                 for entry in parse_qc_photo_paths(item.get("photo_path")):
                     qc_evidence_paths.add(entry)
 
@@ -5364,7 +5499,7 @@ def qc_new():
                 "cable_meters": cable_meters,
             }
 
-            qc_session_id = create_qc_session(qc_data, items)
+            qc_session_id = create_qc_session(qc_data, all_items)
             flash("QC de instalaciones registrado.", "success")
             return redirect(url_for("main.qc_detail", qc_session_id=qc_session_id))
         except (KeyError, ValueError) as exc:
@@ -5372,6 +5507,8 @@ def qc_new():
 
     return render_template(
         "qc_form.html",
+        power_section=power_section,
+        evidence_section=evidence_section,
         section=section,
         technicians=technicians,
         audit_context=audit_context,

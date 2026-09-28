@@ -161,6 +161,169 @@
     <section class="card">
         <div class="section-heading">
             <div>
+                <p class="eyebrow">Medición</p>
+                <h3>{{ power_section["title"] }}</h3>
+                <p class="empty-state">
+                    Ingresá los valores de potencia medidos con el power meter. El sistema calculará
+                    automáticamente la atenuación (Poste − ONT) y marcará Cumple o NC Mayor según el umbral
+                    (<strong>≤ 1 dBm = Cumple</strong>; <strong>&gt; 1 dBm o valores invertidos = NC Mayor</strong>).
+                    No se adjuntan fotografías en esta sección.
+                </p>
+            </div>
+            <div>
+                <label class="inline-checkbox">
+                    <input type="checkbox" id="potencia_optica_no_aplica" name="potencia_optica_no_aplica" value="1"
+                           {% if request.form.get('potencia_optica_no_aplica') %}checked{% endif %}>
+                    No aplica (esta medición no corresponde)
+                </label>
+            </div>
+        </div>
+        <div class="audit-detail-grid" id="potencia_optica_grid">
+            <article
+                class="checklist-item power-item"
+                id="item__potencia_poste_dbm"
+                data-item-key="potencia_poste_dbm"
+                data-item-label="Potencia en Poste (dBm)"
+                data-max-photos="1"
+                data-multi-evidence="0"
+                data-evidence-required="0"
+            >
+                <div class="checklist-header">
+                    <div>
+                        <strong>Potencia en Poste (dBm)</strong>
+                        <span class="chip chip-power chip-poste" id="power_poste_badge">—</span>
+                    </div>
+                </div>
+                <label class="number-input-wrap">
+                    <span>Valor medido (dBm). Podés usar coma o punto decimal.</span>
+                    <input
+                        type="number"
+                        step="0.01"
+                        inputmode="decimal"
+                        name="potencia_poste_val"
+                        id="potencia_poste_val"
+                        placeholder="Ej: -18.50"
+                        value="{{ request.form.get('potencia_poste_val', '') }}"
+                    >
+                </label>
+                <div class="status-group" style="display:none" aria-hidden="true">
+                    {% set it_key = 'potencia_poste_dbm' %}
+                    <label><input type="radio" name="status__{{ it_key }}" value="conforme" checked> Cumple</label>
+                    <label><input type="radio" name="status__{{ it_key }}" value="nc_mayor"> NC mayor</label>
+                    <label><input type="radio" name="status__{{ it_key }}" value="no_aplica"> No aplica</label>
+                </div>
+                <label>
+                    <span>Detalle / Observación (opcional — el sistema escribe la medición)</span>
+                    <textarea name="notes__potencia_poste_dbm" rows="2">{{ request.form.get('notes__potencia_poste_dbm', '')|upper }}</textarea>
+                </label>
+                <input type="hidden" name="uploaded_photo_path__potencia_poste_dbm" value="">
+            </article>
+
+            <article
+                class="checklist-item power-item"
+                id="item__potencia_ont_dbm"
+                data-item-key="potencia_ont_dbm"
+                data-item-label="Potencia en ONT (dBm)"
+                data-max-photos="1"
+                data-multi-evidence="0"
+                data-evidence-required="0"
+            >
+                <div class="checklist-header">
+                    <div>
+                        <strong>Potencia en ONT (dBm)</strong>
+                        <span class="chip chip-power chip-ont" id="power_ont_badge">—</span>
+                    </div>
+                </div>
+                <label class="number-input-wrap">
+                    <span>Valor medido (dBm). Podés usar coma o punto decimal.</span>
+                    <input
+                        type="number"
+                        step="0.01"
+                        inputmode="decimal"
+                        name="potencia_ont_val"
+                        id="potencia_ont_val"
+                        placeholder="Ej: -19.20"
+                        value="{{ request.form.get('potencia_ont_val', '') }}"
+                    >
+                </label>
+                <div class="status-group" style="display:none" aria-hidden="true">
+                    {% set it_key = 'potencia_ont_dbm' %}
+                    <label><input type="radio" name="status__{{ it_key }}" value="conforme" checked> Cumple</label>
+                    <label><input type="radio" name="status__{{ it_key }}" value="nc_mayor"> NC mayor</label>
+                    <label><input type="radio" name="status__{{ it_key }}" value="no_aplica"> No aplica</label>
+                </div>
+                <label>
+                    <span>Detalle / Observación (opcional — el sistema escribe la medición)</span>
+                    <textarea name="notes__potencia_ont_dbm" rows="2">{{ request.form.get('notes__potencia_ont_dbm', '')|upper }}</textarea>
+                </label>
+                <input type="hidden" name="uploaded_photo_path__potencia_ont_dbm" value="">
+            </article>
+
+            <article class="checklist-item" style="grid-column: 1 / -1; background: var(--panel); border: 1px dashed var(--border)">
+                <div class="checklist-header">
+                    <div>
+                        <strong>Resultado automático de la medición</strong>
+                        <span class="chip chip-power chip-final" id="power_final_badge">Completá ambos valores para evaluar</span>
+                    </div>
+                </div>
+                <ul id="power_result_list" style="margin: 0; padding-left: 1.2rem; color: var(--muted)">
+                    <li>Atenuación (Poste − ONT): <strong id="power_diff_value">—</strong></li>
+                    <li>Umbral permitido: ≤ <strong>1 dBm</strong></li>
+                    <li>Acción: <strong id="power_action_desc">Sin evaluar aún</strong></li>
+                </ul>
+            </article>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Verificación</p>
+                <h3>{{ evidence_section["title"] }}</h3>
+                <p class="empty-state">
+                    El auditor verifica si el técnico envió correctamente las evidencias por fuera del sistema. Solo se
+                    registra el estado (Cumple / No cumple / No aplica) y el detalle; no se adjuntan fotografías en esta sección.
+                </p>
+            </div>
+        </div>
+        <div class="audit-detail-grid">
+            {% for item in evidence_section["items"] %}
+                <article
+                    class="checklist-item"
+                    id="item__{{ item['key'] }}"
+                    data-item-key="{{ item['key'] }}"
+                    data-item-label="{{ item['label'] }}"
+                    data-max-photos="1"
+                    data-multi-evidence="0"
+                    data-evidence-required="0"
+                >
+                    <div class="checklist-header">
+                        <div>
+                            <strong>{{ item["label"] }}</strong>
+                            {% if item.get('critical') %}
+                                <span class="critical-chip">Crítico</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="status-group">
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="conforme" {% if request.form.get('status__' + item['key']) == 'conforme' %}checked{% endif %} required> Cumple</label>
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="nc_menor" {% if request.form.get('status__' + item['key']) == 'nc_menor' %}checked{% endif %}> NC menor</label>
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="nc_mayor" {% if request.form.get('status__' + item['key']) == 'nc_mayor' %}checked{% endif %}> NC mayor</label>
+                        <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                    </div>
+                    <label>
+                        <span>Detalle / Observación</span>
+                        <textarea name="notes__{{ item['key'] }}" rows="3">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
+                    </label>
+                    <input type="hidden" name="uploaded_photo_path__{{ item['key'] }}" value="">
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-heading">
+            <div>
                 <p class="eyebrow">Checklist</p>
                 <h3>{{ section["title"] }}</h3>
                 <p class="empty-state">
@@ -437,11 +600,12 @@
             const hasNotes = Boolean(notesValue);
             const photoCounts = getItemPhotoCounts(checklistItem);
             const hasPhoto = photoCounts.total > 0;
+            const evidenceRequired = String(checklistItem.dataset && checklistItem.dataset.evidenceRequired || "1") === "1";
             if (selectedStatus === "nc_menor" || selectedStatus === "nc_mayor") {
                 if (!hasNotes) {
                     errors.push("Detalle obligatorio");
                 }
-                if (!hasPhoto) {
+                if (evidenceRequired && !hasPhoto) {
                     errors.push("Evidencia fotografica obligatoria");
                 }
             }
@@ -550,6 +714,145 @@
             cableTypeSelect.addEventListener("change", toggleInstallationFields);
         }
         toggleInstallationFields();
+
+        // ============================================================
+        // SECCIÓN POTENCIA ÓPTICA: cálculo en vivo y validación visual
+        // ============================================================
+        const powerNoAplicaInput = form.querySelector("#potencia_optica_no_aplica");
+        const powerPosteInput = form.querySelector("#potencia_poste_val");
+        const powerOntInput = form.querySelector("#potencia_ont_val");
+        const powerGrid = form.querySelector("#potencia_optica_grid");
+        const powerPosteBadge = form.querySelector("#power_poste_badge");
+        const powerOntBadge = form.querySelector("#power_ont_badge");
+        const powerFinalBadge = form.querySelector("#power_final_badge");
+        const powerDiffValue = form.querySelector("#power_diff_value");
+        const powerActionDesc = form.querySelector("#power_action_desc");
+
+        function parseFloatSafe(inputEl) {
+            if (!inputEl) {
+                return NaN;
+            }
+            const raw = String(inputEl.value || "").trim().replace(",", ".");
+            if (!raw) {
+                return NaN;
+            }
+            const v = Number(raw);
+            return Number.isFinite(v) ? v : NaN;
+        }
+
+        function setBadge(badgeEl, text, level) {
+            if (!badgeEl) return;
+            badgeEl.textContent = text;
+            badgeEl.classList.remove("chip-ok", "chip-warn", "chip-error", "chip-muted");
+            badgeEl.classList.add(level);
+        }
+
+        function evaluatePowerSection() {
+            if (!powerPosteInput || !powerOntInput) {
+                return;
+            }
+            const noAplica = Boolean(powerNoAplicaInput && powerNoAplicaInput.checked);
+            const gridDisabled = !!noAplica;
+            if (powerGrid) {
+                powerGrid.querySelectorAll("input, textarea").forEach((el) => {
+                    if (el === powerNoAplicaInput) return;
+                    if (gridDisabled) el.setAttribute("disabled", "disabled");
+                    else el.removeAttribute("disabled");
+                });
+            }
+            const posteArticle = form.querySelector("#item__potencia_poste_dbm");
+            const ontArticle = form.querySelector("#item__potencia_ont_dbm");
+            const posteRadioConforme = posteArticle ? posteArticle.querySelector('input[type="radio"][name="status__potencia_poste_dbm"][value="conforme"]') : null;
+            const posteRadioMayor = posteArticle ? posteArticle.querySelector('input[type="radio"][name="status__potencia_poste_dbm"][value="nc_mayor"]') : null;
+            const posteRadioNa = posteArticle ? posteArticle.querySelector('input[type="radio"][name="status__potencia_poste_dbm"][value="no_aplica"]') : null;
+            const ontRadioConforme = ontArticle ? ontArticle.querySelector('input[type="radio"][name="status__potencia_ont_dbm"][value="conforme"]') : null;
+            const ontRadioMayor = ontArticle ? ontArticle.querySelector('input[type="radio"][name="status__potencia_ont_dbm"][value="nc_mayor"]') : null;
+            const ontRadioNa = ontArticle ? ontArticle.querySelector('input[type="radio"][name="status__potencia_ont_dbm"][value="no_aplica"]') : null;
+
+            // 1) Caso No Aplica
+            if (noAplica) {
+                setBadge(powerPosteBadge, "No aplica", "chip-muted");
+                setBadge(powerOntBadge, "No aplica", "chip-muted");
+                setBadge(powerFinalBadge, "Medición no aplica", "chip-muted");
+                if (powerDiffValue) powerDiffValue.textContent = "N/A";
+                if (powerActionDesc) powerActionDesc.textContent = "Marcado sin impacto en el score";
+                if (posteRadioNa) posteRadioNa.checked = true;
+                if (ontRadioNa) ontRadioNa.checked = true;
+                // Limpiar errores visuales
+                [posteArticle, ontArticle].forEach((a) => a && a.classList.remove("qc-item-invalid"));
+                return;
+            }
+
+            const posteVal = parseFloatSafe(powerPosteInput);
+            const ontVal = parseFloatSafe(powerOntInput);
+
+            // 2) Valores incompletos
+            if (!Number.isFinite(posteVal) && !Number.isFinite(ontVal)) {
+                setBadge(powerPosteBadge, "—", "chip-muted");
+                setBadge(powerOntBadge, "—", "chip-muted");
+                setBadge(powerFinalBadge, "Completá ambos valores para evaluar", "chip-muted");
+                if (powerDiffValue) powerDiffValue.textContent = "—";
+                if (powerActionDesc) powerActionDesc.textContent = "Sin evaluar aún";
+                return;
+            }
+            if (Number.isFinite(posteVal)) {
+                setBadge(powerPosteBadge, posteVal.toFixed(2) + " dBm", "chip-ok");
+            } else {
+                setBadge(powerPosteBadge, "Falta valor", "chip-warn");
+            }
+            if (Number.isFinite(ontVal)) {
+                setBadge(powerOntBadge, ontVal.toFixed(2) + " dBm", "chip-ok");
+            } else {
+                setBadge(powerOntBadge, "Falta valor", "chip-warn");
+            }
+            if (!Number.isFinite(posteVal) || !Number.isFinite(ontVal)) {
+                setBadge(powerFinalBadge, "Falta al menos un valor", "chip-warn");
+                if (powerDiffValue) powerDiffValue.textContent = "—";
+                if (powerActionDesc) powerActionDesc.textContent = "Completá ambos campos (o marcá No aplica)";
+                return;
+            }
+
+            // 3) Ambos valores completos: calcular atenuación
+            const att = +(posteVal - ontVal).toFixed(2);
+            if (powerDiffValue) powerDiffValue.textContent = att.toFixed(2) + " dBm";
+
+            // Regla: atenuacion <= 0 (invertido o iguales) o > 1 dBm => NC mayor; else Cumple.
+            let statusName = "conforme";
+            if (att <= 0) {
+                statusName = "nc_mayor";
+                setBadge(powerFinalBadge, "NC Mayor · Valores invertidos", "chip-error");
+                if (powerActionDesc) powerActionDesc.textContent = `Atenuación = ${att.toFixed(2)} dBm (<= 0). Tratado como NC Mayor (impacta score).`;
+            } else if (att > 1) {
+                statusName = "nc_mayor";
+                setBadge(powerFinalBadge, "NC Mayor · > 1 dBm", "chip-error");
+                if (powerActionDesc) powerActionDesc.textContent = `Atenuación = ${att.toFixed(2)} dBm (> 1 dBm permitido). NC Mayor (impacta score).`;
+            } else {
+                statusName = "conforme";
+                setBadge(powerFinalBadge, "Cumple · ≤ 1 dBm", "chip-ok");
+                if (powerActionDesc) powerActionDesc.textContent = `Atenuación = ${att.toFixed(2)} dBm (≤ 1 dBm). OK, sin penalización.`;
+            }
+            if (statusName === "conforme") {
+                if (posteRadioConforme) posteRadioConforme.checked = true;
+                if (ontRadioConforme) ontRadioConforme.checked = true;
+            } else if (statusName === "nc_mayor") {
+                if (posteRadioMayor) posteRadioMayor.checked = true;
+                if (ontRadioMayor) ontRadioMayor.checked = true;
+            }
+            if (posteArticle) validateQcItem(posteArticle);
+            if (ontArticle) validateQcItem(ontArticle);
+        }
+        if (powerPosteInput) {
+            powerPosteInput.addEventListener("input", evaluatePowerSection);
+            powerPosteInput.addEventListener("blur", evaluatePowerSection);
+        }
+        if (powerOntInput) {
+            powerOntInput.addEventListener("input", evaluatePowerSection);
+            powerOntInput.addEventListener("blur", evaluatePowerSection);
+        }
+        if (powerNoAplicaInput) {
+            powerNoAplicaInput.addEventListener("change", evaluatePowerSection);
+        }
+        evaluatePowerSection();
 
         async function deleteEvidencePaths(paths) {
             const response = await fetch("/api/audits/delete-evidence", {

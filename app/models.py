@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from flask import current_app, g
 from werkzeug.security import generate_password_hash
 
-from app.checklist import TOOL_MATCH_RULES, QC_SECTION_KEY, CHECKLIST_SECTIONS
+from app.checklist import TOOL_MATCH_RULES, QC_SECTION_KEY, QC_EVIDENCE_SECTION_KEY, QC_POWER_SECTION_KEY, QC_SECTION_KEYS, CHECKLIST_SECTIONS
 
 try:
     from zoneinfo import ZoneInfo
@@ -8490,7 +8490,7 @@ def update_service_record_scope(service_session_id, record_scope):
 def _get_qc_critical_item_keys_from_checklist():
     critical_keys = set()
     for section in CHECKLIST_SECTIONS or []:
-        if (section or {}).get("key") != QC_SECTION_KEY:
+        if (section or {}).get("key") not in QC_SECTION_KEYS:
             continue
         for item in section.get("items") or []:
             if item and item.get("critical"):
@@ -8502,47 +8502,58 @@ def _get_qc_critical_item_keys_from_checklist():
 
 def backfill_qc_items_is_critical():
     critical_keys = _get_qc_critical_item_keys_from_checklist()
-    if not critical_keys:
-        return {"updated_rows": 0, "total_qc_items": 0, "critical_keys_now": []}
-
+    sorted_all_keys = sorted(QC_SECTION_KEYS)
     connection = get_db()
-    placeholders = ",".join("?" for _ in critical_keys)
-    sorted_keys = sorted(critical_keys)
+    placeholders_keys = ",".join("?" for _ in critical_keys) if critical_keys else "''"
+    placeholders_sections = ",".join("?" for _ in sorted_all_keys)
+    sorted_critical = sorted(critical_keys)
 
-    counts = connection.execute(
-        "SELECT COUNT(*) AS total FROM qc_items WHERE section_key = ?",
-        (QC_SECTION_KEY,),
-    ).fetchone()
+    if is_postgres():
+        count_sql = f"SELECT COUNT(*) AS total FROM qc_items WHERE section_key IN ({placeholders_sections})"
+    else:
+        count_sql = f"SELECT COUNT(*) AS total FROM qc_items WHERE section_key IN ({placeholders_sections})"
+    counts = connection.execute(count_sql, sorted_all_keys).fetchone()
     total_qc_items = (counts["total"] if isinstance(counts, dict) else counts[0]) if counts else 0
 
-    set_sql_critical = f"""
-        UPDATE qc_items
-        SET is_critical = 1
-        WHERE section_key = ?
-          AND item_key IN ({placeholders})
-          AND COALESCE(is_critical, 0) != 1
-    """
-    cursor_set = connection.execute(set_sql_critical, [QC_SECTION_KEY, *sorted_keys])
-    rows_set_critical = cursor_set.rowcount or 0
+    updated_rows = 0
+    rows_set_critical = 0
+    rows_cleared = 0
+
+    if critical_keys:
+        set_sql_critical = f"""
+            UPDATE qc_items
+            SET is_critical = 1
+            WHERE section_key IN ({placeholders_sections})
+              AND item_key IN ({placeholders_keys})
+              AND COALESCE(is_critical, 0) != 1
+        """
+        cursor_set = connection.execute(set_sql_critical, sorted_all_keys + sorted_critical)
+        rows_set_critical = cursor_set.rowcount or 0
+        updated_rows += int(rows_set_critical)
 
     clear_sql = f"""
         UPDATE qc_items
         SET is_critical = 0
-        WHERE section_key = ?
-          AND item_key NOT IN ({placeholders})
-          AND COALESCE(is_critical, 0) != 0
+        WHERE section_key IN ({placeholders_sections})
     """
-    cursor_clear = connection.execute(clear_sql, [QC_SECTION_KEY, *sorted_keys])
+    if critical_keys:
+        clear_sql += f" AND item_key NOT IN ({placeholders_keys})"
+    clear_sql += " AND COALESCE(is_critical, 0) != 0"
+    if critical_keys:
+        cursor_clear = connection.execute(clear_sql, sorted_all_keys + sorted_critical)
+    else:
+        cursor_clear = connection.execute(clear_sql, sorted_all_keys)
     rows_cleared = cursor_clear.rowcount or 0
+    updated_rows += int(rows_cleared)
 
     connection.commit()
 
     return {
-        "updated_rows": int(rows_set_critical) + int(rows_cleared),
+        "updated_rows": int(updated_rows),
         "rows_set_critical": int(rows_set_critical),
         "rows_cleared_non_critical": int(rows_cleared),
         "total_qc_items_section": int(total_qc_items),
-        "critical_keys_now": sorted_keys,
+        "critical_keys_now": sorted_critical,
     }
 
 
