@@ -5313,17 +5313,30 @@ def qc_new():
             for item in power_section.get("items", []):
                 k = item["key"]
                 _power_overrides[f"status__{k}"] = power_status
-                # Siempre sobrescribir las notes y reason con las del motor automático.
-                # El textarea del template "Detalle / Observación" es sólo opcional informativo para el usuario;
-                # calculate_section_score requiere notes != "" cuando status es nc_menor/nc_mayor, y queremos
-                # siempre el reason técnico de la medición, incluso cuando el auditor escribió algo manual.
+                # Construir notes:
+                #  - SIEMPRE incluimos el motivo técnico automático (para que calculate_section_score nunca
+                #    vea notes vacío cuando hay NC, y evitar el error "Debes agregar detalle en...").
+                #  - SI el auditor escribió una nota MANUAL en el textarea de potencia, la anteponemos
+                #    como "[Nota auditor: XXXX] | <motivo técnico>" para que en detalle/reporte se vea
+                #    lo que el auditor escribió realmente (no solo lo generado en código).
                 if power_no_aplica:
-                    note_txt = "No aplica"
+                    auto_note = "No aplica"
                 elif power_att_diff is not None:
-                    note_txt = power_reason
+                    auto_note = power_reason
                 else:
-                    note_txt = ""
-                _power_overrides[f"notes__{k}"] = note_txt
+                    auto_note = ""
+                existing_note = (request.form.get(f"notes__{k}") or "").strip()
+                auto_note_norm = (auto_note or "").strip()
+                existing_norm = existing_note.strip().upper()
+                auto_norm = auto_note_norm.strip().upper()
+                both_distinct = bool(existing_note and auto_note_norm) and (existing_norm != auto_norm) and (auto_norm not in existing_norm) and (existing_norm not in auto_norm)
+                if both_distinct:
+                    combined_notes = f"[Nota auditor: {existing_note}] | {auto_note_norm}"
+                elif existing_note:
+                    combined_notes = existing_note
+                else:
+                    combined_notes = auto_note_norm
+                _power_overrides[f"notes__{k}"] = combined_notes
                 # El campo reason__{k} se usa para non_compliance_reason; lo llenamos con power_reason cuando aplica.
                 if power_status in {"nc_menor", "nc_mayor"} and power_reason:
                     _power_overrides[f"reason__{k}"] = power_reason
