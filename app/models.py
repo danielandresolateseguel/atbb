@@ -560,6 +560,71 @@ def append_supervisor_scope_filters(where_clauses, params, supervisor_scope_name
     return None
 
 
+def _migrate_technicians_add_vehicle_id_sqlite(connection):
+    try:
+        cols = [r["name"] if hasattr(r, "keys") else (r[1] if isinstance(r, tuple) and len(r) > 1 else r["name"])
+                for r in connection.execute("PRAGMA table_info(technicians)").fetchall()]
+    except Exception:
+        cols = []
+    if "vehicle_id" in cols:
+        return
+    try:
+        connection.execute("ALTER TABLE technicians ADD COLUMN vehicle_id INTEGER REFERENCES vehicles(id)")
+    except Exception as exc:
+        err = str(exc).lower()
+        if "duplicate" in err or "already exists" in err:
+            return
+        try:
+            connection.execute("ALTER TABLE technicians ADD COLUMN vehicle_id INTEGER")
+        except Exception:
+            pass
+
+
+def _migrate_technicians_add_vehicle_id_postgres(connection, cursor):
+    try:
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='technicians' AND column_name='vehicle_id'"
+        )
+        row = cursor.fetchone()
+        if row:
+            return
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE technicians ADD COLUMN vehicle_id INTEGER REFERENCES vehicles(id)")
+    except Exception as exc:
+        err = str(exc).lower()
+        if "duplicate" in err or "already exists" in err:
+            return
+        try:
+            cursor.execute("ALTER TABLE technicians ADD COLUMN vehicle_id INTEGER")
+        except Exception:
+            pass
+    try:
+        connection.commit()
+    except Exception:
+        pass
+
+
+def _ensure_vehicle_id_column_exists():
+    """Idempotent check-and-migrate, usable at runtime (e.g. before a SELECT that references t.vehicle_id)."""
+    try:
+        if is_postgres():
+            from psycopg.rows import dict_row
+            conn = psycopg.connect(current_app.config["DATABASE_URL"], row_factory=dict_row)
+            cur = conn.cursor()
+            _migrate_technicians_add_vehicle_id_postgres(conn, cur)
+            cur.close()
+            conn.close()
+        else:
+            conn = sqlite3.connect(current_app.config["DATABASE_PATH"])
+            _migrate_technicians_add_vehicle_id_sqlite(conn)
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
+
+
 def init_db():
     if is_postgres():
         init_db_postgres()
@@ -655,7 +720,8 @@ def init_db():
             emergency_number TEXT,
             profile_photo_path TEXT,
             badge_share_token TEXT UNIQUE,
-            user_id INTEGER
+            user_id INTEGER,
+            vehicle_id INTEGER REFERENCES vehicles(id)
         );
 
         CREATE TABLE IF NOT EXISTS vehicles (
@@ -1059,6 +1125,7 @@ def init_db():
     ensure_legacy_columns(connection)
     seed_demo_data(connection)
     ensure_mobile_unit_codes_normalized_sqlite(connection)
+    _migrate_technicians_add_vehicle_id_sqlite(connection)
     connection.commit()
     connection.close()
 
@@ -1173,7 +1240,8 @@ def init_db_postgres():
             emergency_number TEXT,
             profile_photo_path TEXT,
             badge_share_token TEXT UNIQUE,
-            user_id INTEGER REFERENCES users (id)
+            user_id INTEGER REFERENCES users (id),
+            vehicle_id INTEGER REFERENCES vehicles(id)
         )
         """
     )
@@ -1652,6 +1720,7 @@ def init_db_postgres():
         )
     except Exception:
         pass
+    _migrate_technicians_add_vehicle_id_postgres(connection, cursor)
     connection.commit()
     connection.close()
 
@@ -3346,6 +3415,7 @@ def fetch_technicians():
 
 
 def fetch_technicians_for_export():
+    _ensure_vehicle_id_column_exists()
     rows = get_db().execute(
         """
         SELECT
@@ -10071,6 +10141,7 @@ def import_technicians(rows):
 
 
 def import_technician_information(rows):
+    _ensure_vehicle_id_column_exists()
     connection = get_db()
     created_count = 0
     updated_count = 0
