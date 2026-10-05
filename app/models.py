@@ -5004,6 +5004,7 @@ def _news_feed_subqueries(auditor_user_id=None, supervisor_scope_names=None):
         b_params.append(auditor_user_id)
     b_where.append("LOWER(COALESCE(audit_items.status, '')) IN ('no_cumple', 'nc_menor', 'nc_mayor')")
     b_where.append("COALESCE(audit_items.photo_path, '') <> ''")
+    b_where.append("audit_findings.id IS NULL")
     b_where_sql = ("WHERE " + " AND ".join(b_where)) if b_where else ""
     concat_expr_obs = f"COALESCE(audit_items.section_title, '') || '{sep_dash}' || COALESCE(audit_items.item_label, '')"
     b_event_ts = _ts_coalesce_iso("audits.created_at", "audits.audit_date")
