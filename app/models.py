@@ -3414,10 +3414,151 @@ def fetch_technicians():
     return [dict(row) for row in rows]
 
 
+def _try_add_vehicle_id_on(connection_cursor):
+    """Intenta agregar vehicle_id a technicians en la conexion/cursor proveida.
+    Retorna True si la columna existe (ahora o ya existia).
+    Idempotente, nunca lanza excepcion.
+    Se usa LA MISMA conexion que luego hara el SELECT/UPDATE, de modo que
+    la transaccion vea la columna de inmediato (no hay problemas de snapshot
+    entre conexiones distintas en PostgreSQL).
+    """
+    pg = is_postgres()
+    if pg:
+        try:
+            connection_cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='technicians' AND column_name='vehicle_id'"
+            )
+            if connection_cursor.fetchone():
+                return True
+        except Exception:
+            pass
+        try:
+            connection_cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS vehicle_id INTEGER")
+            try:
+                connection_cursor.execute("COMMIT")
+            except Exception:
+                pass
+            return True
+        except Exception:
+            try:
+                connection_cursor.execute("ROLLBACK")
+            except Exception:
+                pass
+            # Fallback: chequea denuevo si existe (puede haber sido agregado antes del rollback)
+            try:
+                connection_cursor.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name='technicians' AND column_name='vehicle_id'"
+                )
+                if connection_cursor.fetchone():
+                    return True
+            except Exception:
+                pass
+            return False
+    else:
+        try:
+            cols = []
+            for r in connection_cursor.execute("PRAGMA table_info(technicians)").fetchall():
+                try:
+                    cols.append(r["name"])
+                except Exception:
+                    try:
+                        cols.append(r[1])
+                    except Exception:
+                        pass
+            if "vehicle_id" in cols:
+                return True
+        except Exception:
+            pass
+        try:
+            connection_cursor.execute("ALTER TABLE technicians ADD COLUMN vehicle_id INTEGER")
+            return True
+        except Exception:
+            return False
+
+
 def fetch_technicians_for_export():
-    _ensure_vehicle_id_column_exists()
-    rows = get_db().execute(
+    # Usamos LA MISMA conexion que usaremos luego para el SELECT
+    conn = get_db()
+    # Intentamos migrar en este mismo cursor/connection (nada de abrir conexiones paralelas)
+    try:
+        if is_postgres():
+            cur = conn.cursor()
+            col_ok = _try_add_vehicle_id_on(cur)
+            cur.close()
+        else:
+            col_ok = _try_add_vehicle_id_on(conn)
+    except Exception:
+        col_ok = False
+
+    columns = ["employee_code","name","region","phone","commune","team","centro",
+               "empresa","sindicato","supervisor","patente","grupo_sanguineo",
+               "art","numero_emergencia","alergias","activo","movil"]
+
+    def _map_row(row):
+        # Robusto: dict(row), row[key], row[pos] en ese orden
+        try:
+            d = dict(row)
+            if d:
+                return {c: d.get(c) for c in columns}
+        except Exception:
+            pass
+        try:
+            return {c: row[c] for c in columns}
+        except Exception:
+            pass
+        return {c: (row[i] if i < len(row) else None) for i, c in enumerate(columns)}
+
+    # Query 1: con LEFT JOIN vehicles v ON v.id = t.vehicle_id (si la columna existe)
+    if col_ok:
+        sql_ok = """
+            SELECT
+                t.employee_code,
+                t.name,
+                t.region,
+                t.phone,
+                t.commune,
+                t.team,
+                t.center_name AS centro,
+                t.company_name AS empresa,
+                t.union_name AS sindicato,
+                t.supervisor_name AS supervisor,
+                v.plate AS patente,
+                t.blood_group AS grupo_sanguineo,
+                t.art_provider AS art,
+                t.emergency_number AS numero_emergencia,
+                t.allergies AS alergias,
+                t.is_active AS activo,
+                mu.mobile_code AS movil
+            FROM technicians t
+            LEFT JOIN vehicles v ON v.id = t.vehicle_id
+            LEFT JOIN (
+                SELECT mu.technician_id, MIN(mu.mobile_code) AS mobile_code
+                FROM mobile_units mu
+                GROUP BY mu.technician_id
+            ) mu ON mu.technician_id = t.id
+            ORDER BY t.employee_code ASC
         """
+        try:
+            rows = conn.execute(sql_ok).fetchall()
+            return [_map_row(r) for r in rows]
+        except Exception as exc_a:
+            # Fallthrough (quizas la columna no existia realmente)
+            try:
+                if is_postgres():
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            err_a = str(exc_a).lower()
+            if not ("vehicle_id" in err_a or "undefinedcolumn" in err_a or "column" in err_a):
+                raise
+
+    # Query 2: SIN JOIN vehicles (patente NULL). Funciona incluso sin vehicle_id.
+    sql_fallback = """
         SELECT
             t.employee_code,
             t.name,
@@ -3429,7 +3570,7 @@ def fetch_technicians_for_export():
             t.company_name AS empresa,
             t.union_name AS sindicato,
             t.supervisor_name AS supervisor,
-            v.plate AS patente,
+            CAST(NULL AS TEXT) AS patente,
             t.blood_group AS grupo_sanguineo,
             t.art_provider AS art,
             t.emergency_number AS numero_emergencia,
@@ -3437,33 +3578,31 @@ def fetch_technicians_for_export():
             t.is_active AS activo,
             mu.mobile_code AS movil
         FROM technicians t
-        LEFT JOIN vehicles v ON v.id = t.vehicle_id
         LEFT JOIN (
             SELECT mu.technician_id, MIN(mu.mobile_code) AS mobile_code
             FROM mobile_units mu
             GROUP BY mu.technician_id
         ) mu ON mu.technician_id = t.id
         ORDER BY t.employee_code ASC
-        """
-    ).fetchall()
-    columns = ["employee_code","name","region","phone","commune","team","centro",
-               "empresa","sindicato","supervisor","patente","grupo_sanguineo",
-               "art","numero_emergencia","alergias","activo","movil"]
+    """
+    try:
+        rows = conn.execute(sql_fallback).fetchall()
+    except Exception as exc_b:
+        try:
+            if is_postgres():
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        raise exc_b
     out = []
-    for row in rows:
-        try:
-            d = dict(row)
-            if d:
-                out.append({col: d.get(col) for col in columns})
-                continue
-        except Exception:
-            pass
-        try:
-            out.append({col: row[col] for col in columns})
-            continue
-        except Exception:
-            pass
-        out.append({col: (row[i] if i < len(row) else None) for i, col in enumerate(columns)})
+    for r in rows:
+        mapped = _map_row(r)
+        # Forzar patente a None en el fallback (asegurar consistencia)
+        mapped["patente"] = None
+        out.append(mapped)
     return out
 
 
@@ -10141,8 +10280,20 @@ def import_technicians(rows):
 
 
 def import_technician_information(rows):
-    _ensure_vehicle_id_column_exists()
     connection = get_db()
+    # Asegurarse que vehicle_id exista SOBRE LA MISMA conexion (no abrir conexiones paralelas)
+    # Esto corrige el bug de snapshot/transaccion en PostgreSQL connection pools:
+    # ALTER TABLE en otra conexion no se ve hasta cerrar la transaccion actual.
+    col_vehicle_id_ok = False
+    try:
+        if is_postgres():
+            cur = connection.cursor()
+            col_vehicle_id_ok = _try_add_vehicle_id_on(cur)
+            cur.close()
+        else:
+            col_vehicle_id_ok = _try_add_vehicle_id_on(connection)
+    except Exception:
+        col_vehicle_id_ok = False
     created_count = 0
     updated_count = 0
     skipped_rows = []
@@ -10442,48 +10593,51 @@ def import_technician_information(rows):
 
             new_employee_code = ensure_unique_employee_code(base_employee_code)
             final_active = 1 if safe_active is None else safe_active
-            connection.execute(
-                """
-                INSERT INTO technicians (
-                    name,
-                    employee_code,
-                    region,
-                    phone,
-                    commune,
-                    team,
-                    company_name,
-                    union_name,
-                    supervisor_name,
-                    supervisor_id,
-                    center_name,
-                    blood_group,
-                    allergies,
-                    art_provider,
-                    emergency_number,
-                    vehicle_id,
-                    is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    technician_name.strip(),
-                    new_employee_code,
-                    region_value,
-                    phone_value or None,
-                    commune_value or None,
-                    team_value or None,
-                    company_name or None,
-                    union_name or None,
-                    supervisor_name or None,
-                    supervisor_id,
-                    center_name or None,
-                    normalized_blood_group,
-                    allergies_value or None,
-                    art_provider_value or None,
-                    emergency_number_value or None,
-                    vehicle_id,
-                    final_active,
-                ),
+            insert_cols = [
+                "name",
+                "employee_code",
+                "region",
+                "phone",
+                "commune",
+                "team",
+                "company_name",
+                "union_name",
+                "supervisor_name",
+                "supervisor_id",
+                "center_name",
+                "blood_group",
+                "allergies",
+                "art_provider",
+                "emergency_number",
+                "is_active",
+            ]
+            insert_vals = [
+                technician_name.strip(),
+                new_employee_code,
+                region_value,
+                phone_value or None,
+                commune_value or None,
+                team_value or None,
+                company_name or None,
+                union_name or None,
+                supervisor_name or None,
+                supervisor_id,
+                center_name or None,
+                normalized_blood_group,
+                allergies_value or None,
+                art_provider_value or None,
+                emergency_number_value or None,
+                final_active,
+            ]
+            if col_vehicle_id_ok and vehicle_id is not None:
+                insert_cols.append("vehicle_id")
+                insert_vals.append(vehicle_id)
+            placeholders = ", ".join(["?"] * len(insert_cols))
+            sql_insert = (
+                f"INSERT INTO technicians ({', '.join(insert_cols)}) "
+                f"VALUES ({placeholders})"
             )
+            connection.execute(sql_insert, insert_vals)
             technician_row = connection.execute(
                 "SELECT id FROM technicians WHERE employee_code = ?",
                 (new_employee_code,),
@@ -10493,63 +10647,84 @@ def import_technician_information(rows):
         else:
             existing_vehicle_id = None
             existing_active = None
-            existing_row = connection.execute(
-                "SELECT vehicle_id, is_active FROM technicians WHERE id = ?",
-                (technician_id,),
-            ).fetchone()
-            if existing_row:
-                existing_vehicle_id = existing_row["vehicle_id"] if is_postgres() else existing_row[0]
-                existing_active = existing_row["is_active"] if is_postgres() else existing_row[1]
+            if col_vehicle_id_ok:
+                try:
+                    existing_row = connection.execute(
+                        "SELECT vehicle_id, is_active FROM technicians WHERE id = ?",
+                        (technician_id,),
+                    ).fetchone()
+                    if existing_row:
+                        existing_vehicle_id = existing_row["vehicle_id"] if is_postgres() else existing_row[0]
+                        existing_active = existing_row["is_active"] if is_postgres() else existing_row[1]
+                except Exception:
+                    try:
+                        if is_postgres():
+                            connection.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    existing_row = connection.execute(
+                        "SELECT is_active FROM technicians WHERE id = ?",
+                        (technician_id,),
+                    ).fetchone()
+                    if existing_row:
+                        existing_active = existing_row["is_active"] if is_postgres() else existing_row[0]
+            else:
+                existing_row = connection.execute(
+                    "SELECT is_active FROM technicians WHERE id = ?",
+                    (technician_id,),
+                ).fetchone()
+                if existing_row:
+                    existing_active = existing_row["is_active"] if is_postgres() else existing_row[0]
 
             final_vehicle_id = vehicle_id if vehicle_id is not None else existing_vehicle_id
             final_active = safe_active if safe_active is not None else existing_active
 
-            connection.execute(
-                """
-                UPDATE technicians
-                SET
-                    name = COALESCE(NULLIF(?, ''), name),
-                    company_name = COALESCE(NULLIF(?, ''), company_name),
-                    union_name = COALESCE(NULLIF(?, ''), union_name),
-                    supervisor_name = COALESCE(NULLIF(?, ''), supervisor_name),
-                    supervisor_id = COALESCE(?, supervisor_id),
-                    center_name = COALESCE(NULLIF(?, ''), center_name),
-                    region = CASE
-                        WHEN (region IS NULL OR region = '' OR region = '-')
-                            THEN COALESCE(NULLIF(?, ''), region)
-                        ELSE region
-                    END,
-                    phone = COALESCE(NULLIF(?, ''), phone),
-                    commune = COALESCE(NULLIF(?, ''), commune),
-                    team = COALESCE(NULLIF(?, ''), team),
-                    blood_group = COALESCE(?, blood_group),
-                    allergies = COALESCE(NULLIF(?, ''), allergies),
-                    art_provider = COALESCE(NULLIF(?, ''), art_provider),
-                    emergency_number = COALESCE(NULLIF(?, ''), emergency_number),
-                    vehicle_id = ?,
-                    is_active = ?
-                WHERE id = ?
-                """,
-                (
-                    technician_name,
-                    company_name,
-                    union_name,
-                    supervisor_name,
-                    supervisor_id,
-                    center_name,
-                    center_name,
-                    phone_value,
-                    commune_value,
-                    team_value,
-                    normalized_blood_group,
-                    allergies_value,
-                    art_provider_value,
-                    emergency_number_value,
-                    final_vehicle_id,
-                    final_active,
-                    technician_id,
-                ),
+            set_clauses = [
+                "name = COALESCE(NULLIF(?, ''), name)",
+                "company_name = COALESCE(NULLIF(?, ''), company_name)",
+                "union_name = COALESCE(NULLIF(?, ''), union_name)",
+                "supervisor_name = COALESCE(NULLIF(?, ''), supervisor_name)",
+                "supervisor_id = COALESCE(?, supervisor_id)",
+                "center_name = COALESCE(NULLIF(?, ''), center_name)",
+                "region = CASE "
+                "WHEN (region IS NULL OR region = '' OR region = '-') "
+                "   THEN COALESCE(NULLIF(?, ''), region) "
+                "ELSE region "
+                "END",
+                "phone = COALESCE(NULLIF(?, ''), phone)",
+                "commune = COALESCE(NULLIF(?, ''), commune)",
+                "team = COALESCE(NULLIF(?, ''), team)",
+                "blood_group = COALESCE(?, blood_group)",
+                "allergies = COALESCE(NULLIF(?, ''), allergies)",
+                "art_provider = COALESCE(NULLIF(?, ''), art_provider)",
+                "emergency_number = COALESCE(NULLIF(?, ''), emergency_number)",
+                "is_active = ?",
+            ]
+            params_update = [
+                technician_name,
+                company_name,
+                union_name,
+                supervisor_name,
+                supervisor_id,
+                center_name,
+                region_value,
+                phone_value,
+                commune_value,
+                team_value,
+                normalized_blood_group,
+                allergies_value,
+                art_provider_value,
+                emergency_number_value,
+                final_active,
+            ]
+            if col_vehicle_id_ok:
+                set_clauses.append("vehicle_id = ?")
+                params_update.append(final_vehicle_id)
+            params_update.append(technician_id)
+            sql_update = (
+                "UPDATE technicians SET " + ", ".join(set_clauses) + " WHERE id = ?"
             )
+            connection.execute(sql_update, params_update)
             updated_count += 1
 
         if mobile_code:
