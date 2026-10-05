@@ -3376,25 +3376,25 @@ def fetch_technicians_for_export():
         ORDER BY t.employee_code ASC
         """
     ).fetchall()
-    return [dict(row) if not isinstance(row, (list, tuple)) else {
-        "employee_code": row[0],
-        "name": row[1],
-        "region": row[2],
-        "phone": row[3],
-        "commune": row[4],
-        "team": row[5],
-        "centro": row[6],
-        "empresa": row[7],
-        "sindicato": row[8],
-        "supervisor": row[9],
-        "patente": row[10],
-        "grupo_sanguineo": row[11],
-        "art": row[12],
-        "numero_emergencia": row[13],
-        "alergias": row[14],
-        "activo": row[15],
-        "movil": row[16],
-    } for row in rows]
+    columns = ["employee_code","name","region","phone","commune","team","centro",
+               "empresa","sindicato","supervisor","patente","grupo_sanguineo",
+               "art","numero_emergencia","alergias","activo","movil"]
+    out = []
+    for row in rows:
+        try:
+            d = dict(row)
+            if d:
+                out.append({col: d.get(col) for col in columns})
+                continue
+        except Exception:
+            pass
+        try:
+            out.append({col: row[col] for col in columns})
+            continue
+        except Exception:
+            pass
+        out.append({col: (row[i] if i < len(row) else None) for i, col in enumerate(columns)})
+    return out
 
 
 def fetch_vehicles_all(only_active=None, include_assigned_technician_name=True, sort_for_audit_ui=True):
