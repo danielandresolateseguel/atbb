@@ -1,3 +1,4 @@
-employee_code,name,region,phone,commune,team,is_active
-TEC-001,Carlos Mena,Valparaiso,+56911111111,Valparaiso,Cuadrilla Norte,1
-TEC-002,Pedro Soto,Quilpue,+56922222222,Quilpue,Cuadrilla Centro,1
+employee_code,name,region,phone,commune,team,centro,empresa,sindicato,supervisor,patente,grupo_sanguineo,art,numero_emergencia,alergias,activo,movil
+79,Juan Pérez Mendoza,Mendoza,+54 9 261 555-0101,Maipú,Zona Norte - Turno Mañana,MA01,TechConnect S.A.,UOM,Alfredo Leiva,,O+,SANCOR SEGUROS,+54 9 261 555-9999,"Penicilina, mariscos, hipertensión",1,606
+606,Carlos Alberto Mena,Valparaíso,+56 9 1111-2222,Valparaíso,Cuadrilla Centro,VP02,Servicios Integrales Ltda.,SOEME,Marta Fuentes,,A+,SWISS MEDICAL,+56 9 2222-8888,"Asma, alergia a abejas",1,606
+600,Pedro Soto,Quilpué,+56 9 2222-3333,Quilpué,Cuadrilla Sur - Turno Tarde,VP03,TecnoRed S.A.,UPC,Felipe Rojas,,B-,,+56 9 3333-7777,,1,600

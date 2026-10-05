@@ -55,16 +55,51 @@
         <p class="hero-copy">
             Descarga estas plantillas y envialas a la empresa para recibir los datos en un formato listo para importar.
         </p>
-        <div class="button-row">
-            <a class="button button-secondary" href="{{ url_for('static', filename='templates/tecnicos_template.csv') }}">Plantilla tecnicos</a>
-            <a class="button button-secondary" href="{{ url_for('static', filename='templates/vehiculos_template.csv') }}">Plantilla vehiculos</a>
-            <a class="button button-secondary" href="{{ url_for('static', filename='templates/material_stock_template.csv') }}">Plantilla stock</a>
+        <p class="hero-copy" style="margin-top: 4px; font-size: 0.92em; color:#475569;">
+            👉 <strong>Recomendado:</strong> usá el formato <strong>Excel (.xlsx)</strong> para que los supervisores lo completen cómodamente. El CSV está disponible si lo preferís.
+        </p>
+
+        <div style="margin-top: 18px; padding: 18px; border: 1px solid #BFDBFE; background: #EFF6FF; border-radius: 14px;">
+            <div style="font-weight: 700; color: #1E3A8A; font-size: 1.02em; margin-bottom: 4px;">⚡ Exportar datos actuales de técnicos</div>
+            <p style="margin: 4px 0 12px 0; color: #1E40AF; font-size: 0.92em;">
+                Descarga un archivo <strong>con TODOS los técnicos ya cargados</strong> y todas sus columnas completadas.
+                Se lo enviás al supervisor, él sólo edita/agrega lo que necesite, y después lo volvés a importar.
+                {% if technicians_count %}<strong style="color:#1D4ED8;">Actualmente hay {{ technicians_count }} técnicos.</strong>{% endif %}
+            </p>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <a class="button button-primary" href="{{ url_for('main.export_technicians_xlsx') }}" style="font-weight:700;">📊 Exportar Excel .xlsx <span style="font-weight: 400; opacity: 0.9; font-size:0.88em;">(recomendado)</span></a>
+                <a class="button button-secondary" href="{{ url_for('main.export_technicians_csv') }}">📄 Exportar CSV</a>
+            </div>
+        </div>
+
+        <div class="template-groups" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 18px;">
+            <div class="template-group" style="padding: 16px; border: 1px solid #E5E7EB; border-radius: 12px; background: #F8FAFC;">
+                <div style="font-weight: 700; margin-bottom: 10px; color: #0f172a;">👷 Técnicos + Tarjeta</div>
+                <div class="button-row" style="gap: 8px;">
+                    <a class="button button-primary" href="{{ url_for('static', filename='templates/tecnicos_template.xlsx') }}">📊 Excel .xlsx</a>
+                    <a class="button button-secondary" href="{{ url_for('static', filename='templates/tecnicos_template.csv') }}">📄 CSV</a>
+                </div>
+            </div>
+            <div class="template-group" style="padding: 16px; border: 1px solid #E5E7EB; border-radius: 12px; background: #F8FAFC;">
+                <div style="font-weight: 700; margin-bottom: 10px; color: #0f172a;">🚚 Vehículos</div>
+                <div class="button-row" style="gap: 8px;">
+                    <a class="button button-primary" href="{{ url_for('static', filename='templates/vehiculos_template.xlsx') }}">📊 Excel .xlsx</a>
+                    <a class="button button-secondary" href="{{ url_for('static', filename='templates/vehiculos_template.csv') }}">📄 CSV</a>
+                </div>
+            </div>
+            <div class="template-group" style="padding: 16px; border: 1px solid #E5E7EB; border-radius: 12px; background: #F8FAFC;">
+                <div style="font-weight: 700; margin-bottom: 10px; color: #0f172a;">📦 Stock de materiales</div>
+                <div class="button-row" style="gap: 8px;">
+                    <a class="button button-primary" href="{{ url_for('static', filename='templates/material_stock_template.xlsx') }}">📊 Excel .xlsx</a>
+                    <a class="button button-secondary" href="{{ url_for('static', filename='templates/material_stock_template.csv') }}">📄 CSV</a>
+                </div>
+            </div>
         </div>
 
         <div class="guide-list">
             <article class="guide-card">
-                <strong>Técnicos</strong>
-                <p>Columnas mínimas: <code>employee_code</code>, <code>name</code>, <code>region</code>.</p>
+                <strong>Técnicos (tarjeta de presentación)</strong>
+                <p>Columnas recomendadas: <code>employee_code</code> (legajo), <code>name</code>, <code>phone</code>, <code>commune</code>, <code>team</code>, <code>centro</code>, <code>empresa</code>, <code>sindicato</code>, <code>supervisor</code>, <code>patente</code>, <code>grupo_sanguineo</code>, <code>art</code>, <code>numero_emergencia</code>, <code>alergias</code>, <code>activo</code>, <code>movil</code>. Si el legajo existe, actualiza; si no, crea.</p>
             </article>
             <article class="guide-card">
                 <strong>Vehículos</strong>

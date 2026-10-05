@@ -26,6 +26,21 @@ except ImportError:
     ImageDraw = None
     ImageFont = None
 
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    HAS_OPENPYXL = True
+except ImportError:
+    Workbook = None
+    Font = None
+    PatternFill = None
+    Alignment = None
+    Border = None
+    Side = None
+    get_column_letter = None
+    HAS_OPENPYXL = False
+
 from app.checklist import AUDIT_CHECKLIST_SECTIONS, CHECKLIST_SECTIONS, QC_SECTION_KEY, QC_EVIDENCE_SECTION_KEY, QC_POWER_SECTION_KEY, QC_SECTION_KEYS
 from app.spreadsheets import parse_tabular_upload
 
@@ -115,6 +130,7 @@ from app.models import (
     fetch_storage_locations,
     fetch_storage_locations_summary,
     fetch_technicians,
+    fetch_technicians_for_export,
     fetch_technician_list_summary,
     count_technicians_list,
     fetch_technician_by_id,
@@ -2297,7 +2313,7 @@ CSV_IMPORT_TYPES = {
         "importer": import_technicians,
     },
     "technician_information": {
-        "label": "Información técnicos (móvil, supervisor, centro, empresa, sindicato)",
+        "label": "Información técnicos (móvil, supervisor, centro, empresa, vehículo por patente y tarjeta de presentación)",
         "required_columns": [],
         "importer": import_technician_information,
     },
@@ -8537,6 +8553,163 @@ def rollback_import(batch_id):
         )
 
     return redirect(url_for("main.imports"))
+
+
+TECHNICIAN_EXPORT_HEADERS = [
+    "employee_code",
+    "name",
+    "region",
+    "phone",
+    "commune",
+    "team",
+    "centro",
+    "empresa",
+    "sindicato",
+    "supervisor",
+    "patente",
+    "grupo_sanguineo",
+    "art",
+    "numero_emergencia",
+    "alergias",
+    "activo",
+    "movil",
+]
+
+
+def _format_export_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    as_str = str(value)
+    if isinstance(value, str):
+        try:
+            floated = float(as_str)
+            if floated.is_integer() and ("." in as_str or as_str.lstrip("-").isdigit() is False):
+                return str(int(floated))
+        except (ValueError, TypeError):
+            pass
+    return as_str
+
+
+@main.route("/imports/technicians/export.csv")
+def export_technicians_csv():
+    if not can_import():
+        abort(403)
+    rows = fetch_technicians_for_export()
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(TECHNICIAN_EXPORT_HEADERS)
+    for row in rows:
+        writer.writerow([
+            _format_export_value(row.get("employee_code")),
+            _format_export_value(row.get("name")),
+            _format_export_value(row.get("region")),
+            _format_export_value(row.get("phone")),
+            _format_export_value(row.get("commune")),
+            _format_export_value(row.get("team")),
+            _format_export_value(row.get("centro")),
+            _format_export_value(row.get("empresa")),
+            _format_export_value(row.get("sindicato")),
+            _format_export_value(row.get("supervisor")),
+            _format_export_value(row.get("patente")),
+            _format_export_value(row.get("grupo_sanguineo")),
+            _format_export_value(row.get("art")),
+            _format_export_value(row.get("numero_emergencia")),
+            _format_export_value(row.get("alergias")),
+            _format_export_value(row.get("activo")),
+            _format_export_value(row.get("movil")),
+        ])
+    response = make_response(buffer.getvalue())
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    filename = f"tecnicos_actualizados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
+
+
+@main.route("/imports/technicians/export.xlsx")
+def export_technicians_xlsx():
+    if not can_import():
+        abort(403)
+    if not HAS_OPENPYXL:
+        return redirect(url_for("main.export_technicians_csv"))
+    rows = fetch_technicians_for_export()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Tecnicos"
+
+    HEADER_FILL = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+    HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
+    THIN_BORDER = Border(
+        left=Side(style="thin", color="D1D5DB"),
+        right=Side(style="thin", color="D1D5DB"),
+        top=Side(style="thin", color="D1D5DB"),
+        bottom=Side(style="thin", color="D1D5DB"),
+    )
+    CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    LEFT_WRAP = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    ws.append(TECHNICIAN_EXPORT_HEADERS)
+    for col in range(1, len(TECHNICIAN_EXPORT_HEADERS) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = CENTER
+        cell.border = THIN_BORDER
+
+    for row in rows:
+        ws.append([
+            _format_export_value(row.get("employee_code")),
+            _format_export_value(row.get("name")),
+            _format_export_value(row.get("region")),
+            _format_export_value(row.get("phone")),
+            _format_export_value(row.get("commune")),
+            _format_export_value(row.get("team")),
+            _format_export_value(row.get("centro")),
+            _format_export_value(row.get("empresa")),
+            _format_export_value(row.get("sindicato")),
+            _format_export_value(row.get("supervisor")),
+            _format_export_value(row.get("patente")),
+            _format_export_value(row.get("grupo_sanguineo")),
+            _format_export_value(row.get("art")),
+            _format_export_value(row.get("numero_emergencia")),
+            _format_export_value(row.get("alergias")),
+            _format_export_value(row.get("activo")),
+            _format_export_value(row.get("movil")),
+        ])
+    last_row = 1 + len(rows)
+    if last_row >= 2:
+        for r in range(2, last_row + 1):
+            for c in range(1, len(TECHNICIAN_EXPORT_HEADERS) + 1):
+                cell = ws.cell(row=r, column=c)
+                cell.border = THIN_BORDER
+                cell.alignment = LEFT_WRAP
+
+    ws.freeze_panes = "A2"
+    col_widths = {
+        "A": 16, "B": 28, "C": 16, "D": 22, "E": 16, "F": 26, "G": 12,
+        "H": 24, "I": 12, "J": 22, "K": 14, "L": 14, "M": 20, "N": 22,
+        "O": 34, "P": 10, "Q": 12,
+    }
+    for col_letter, width in col_widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"tecnicos_actualizados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @main.route("/storage-locations")

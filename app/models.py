@@ -3,6 +3,7 @@ import unicodedata
 import json
 import csv
 import os
+import re
 import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -2361,6 +2362,7 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "technicians", "art_provider", "TEXT")
     add_column_if_missing(connection, "technicians", "emergency_number", "TEXT")
     add_column_if_missing(connection, "technicians", "profile_photo_path", "TEXT")
+    add_column_if_missing(connection, "technicians", "vehicle_id", "INTEGER")
     add_column_if_missing(connection, "technicians", "badge_share_token", "TEXT")
     add_column_if_missing(connection, "technicians", "user_id", "INTEGER")
     add_column_if_missing(connection, "users", "technician_id", "INTEGER")
@@ -2787,6 +2789,7 @@ def ensure_technicians_columns_postgres(cursor):
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS art_provider TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS emergency_number TEXT")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS profile_photo_path TEXT")
+    cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS vehicle_id INTEGER")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS badge_share_token TEXT UNIQUE")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users (id)")
     cursor.execute("ALTER TABLE technicians ADD COLUMN IF NOT EXISTS phone TEXT")
@@ -3340,6 +3343,58 @@ def fetch_technicians():
         """
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def fetch_technicians_for_export():
+    rows = get_db().execute(
+        """
+        SELECT
+            t.employee_code,
+            t.name,
+            t.region,
+            t.phone,
+            t.commune,
+            t.team,
+            t.center_name AS centro,
+            t.company_name AS empresa,
+            t.union_name AS sindicato,
+            t.supervisor_name AS supervisor,
+            v.plate AS patente,
+            t.blood_group AS grupo_sanguineo,
+            t.art_provider AS art,
+            t.emergency_number AS numero_emergencia,
+            t.allergies AS alergias,
+            t.is_active AS activo,
+            mu.mobile_code AS movil
+        FROM technicians t
+        LEFT JOIN vehicles v ON v.id = t.vehicle_id
+        LEFT JOIN (
+            SELECT mu.technician_id, MIN(mu.mobile_code) AS mobile_code
+            FROM mobile_units mu
+            GROUP BY mu.technician_id
+        ) mu ON mu.technician_id = t.id
+        ORDER BY t.employee_code ASC
+        """
+    ).fetchall()
+    return [dict(row) if not isinstance(row, (list, tuple)) else {
+        "employee_code": row[0],
+        "name": row[1],
+        "region": row[2],
+        "phone": row[3],
+        "commune": row[4],
+        "team": row[5],
+        "centro": row[6],
+        "empresa": row[7],
+        "sindicato": row[8],
+        "supervisor": row[9],
+        "patente": row[10],
+        "grupo_sanguineo": row[11],
+        "art": row[12],
+        "numero_emergencia": row[13],
+        "alergias": row[14],
+        "activo": row[15],
+        "movil": row[16],
+    } for row in rows]
 
 
 def fetch_vehicles_all(only_active=None, include_assigned_technician_name=True, sort_for_audit_ui=True):
@@ -10021,6 +10076,8 @@ def import_technician_information(rows):
     updated_count = 0
     skipped_rows = []
 
+    VALID_BLOOD_GROUPS = {"A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"}
+
     def pick_first(row_data, keys):
         for key in keys:
             value = (row_data.get(key) or "").strip()
@@ -10064,6 +10121,33 @@ def import_technician_information(rows):
                 company = combined
         return company, union
 
+    def normalize_blood_group(value):
+        cleaned = (value or "").strip()
+        if not cleaned:
+            return None
+        compact_no_space = re.sub(r"\s+", "", cleaned.upper())
+        if compact_no_space in VALID_BLOOD_GROUPS:
+            return compact_no_space
+        normalized = compact_no_space
+        normalized = normalized.replace("POSITIVO", "+").replace("POS", "+")
+        normalized = normalized.replace("NEGATIVO", "-").replace("NEG", "-")
+        normalized = normalized.replace("CERO", "0").replace("ZERO", "0")
+        if normalized in VALID_BLOOD_GROUPS:
+            return normalized
+        return None
+
+    def find_vehicle_by_plate(plate_value):
+        cleaned = (plate_value or "").strip().upper().replace(" ", "")
+        if not cleaned:
+            return None
+        row_found = connection.execute(
+            "SELECT id FROM vehicles WHERE REPLACE(UPPER(plate), ' ', '') = ?",
+            (cleaned,),
+        ).fetchone()
+        if row_found:
+            return row_found["id"] if is_postgres() else row_found[0]
+        return None
+
     mobile_keys = [
         "movil",
         "movil_tecnico",
@@ -10081,6 +10165,7 @@ def import_technician_information(rows):
         "tecnico_codigo",
         "legajo",
         "legajo_tecnico",
+        "codigo_empleado",
     ]
     technician_name_keys = [
         "titular",
@@ -10089,12 +10174,14 @@ def import_technician_information(rows):
         "tecnico",
         "name",
         "nombre",
+        "nombre_completo",
     ]
     supervisor_keys = [
         "supervisor",
         "nombre_del_supervisor",
         "supervisor_nombre",
         "responsable",
+        "supervisor_name",
     ]
     center_keys = [
         "centro",
@@ -10102,6 +10189,7 @@ def import_technician_information(rows):
         "centro_nombre",
         "location",
         "localidad",
+        "center_name",
     ]
     company_keys = [
         "empresa",
@@ -10109,16 +10197,83 @@ def import_technician_information(rows):
         "contratista",
         "proveedor",
         "empresa_contratista",
+        "company_name",
     ]
     union_keys = [
         "sindicato",
         "union",
         "gremio",
+        "union_name",
     ]
     company_union_keys = [
         "empresa_y_sindicato",
         "empresa_sindicato",
         "empresa_y_gremio",
+    ]
+    phone_keys = [
+        "phone",
+        "telefono",
+        "celular",
+        "telefono_tecnico",
+        "telefono_celular",
+    ]
+    commune_keys = [
+        "commune",
+        "comuna",
+        "localidad_comuna",
+        "barrio_comuna",
+    ]
+    team_keys = [
+        "team",
+        "cuadrilla",
+        "equipo",
+        "zona",
+        "equipo_zona",
+        "turno",
+    ]
+    plate_keys = [
+        "plate",
+        "patente",
+        "dominio",
+        "matricula",
+        "patente_vehiculo",
+        "vehiculo_patente",
+    ]
+    blood_group_keys = [
+        "blood_group",
+        "grupo_sanguineo",
+        "sangre",
+        "factor_sanguineo",
+        "grupo_y_factor",
+    ]
+    art_keys = [
+        "art_provider",
+        "art",
+        "aseguradora",
+        "aseguradora_art",
+        "art_aseguradora",
+    ]
+    emergency_number_keys = [
+        "emergency_number",
+        "numero_emergencia",
+        "telefono_emergencia",
+        "contacto_emergencia",
+        "tel_emergencia",
+        "numero_de_emergencia",
+    ]
+    allergies_keys = [
+        "allergies",
+        "alergias",
+        "preexistentes",
+        "enfermedades_preexistentes",
+        "alergenos",
+        "alergias_preexistentes",
+    ]
+    is_active_keys = [
+        "is_active",
+        "activo",
+        "estado",
+        "habilitado",
     ]
 
     for index, row in enumerate(rows, start=2):
@@ -10132,6 +10287,33 @@ def import_technician_information(rows):
         union_name_raw = pick_first(row, union_keys)
         company_union_raw = pick_first(row, company_union_keys)
         company_name, union_name = parse_company_union(company_name_raw, union_name_raw, company_union_raw)
+        phone_value = pick_first(row, phone_keys)
+        commune_value = pick_first(row, commune_keys)
+        team_value = pick_first(row, team_keys)
+        plate_value = pick_first(row, plate_keys)
+        blood_group_raw = pick_first(row, blood_group_keys)
+        art_provider_value = pick_first(row, art_keys)
+        emergency_number_value = pick_first(row, emergency_number_keys)
+        allergies_value = pick_first(row, allergies_keys)
+        is_active_raw = pick_first(row, is_active_keys)
+
+        normalized_blood_group = normalize_blood_group(blood_group_raw)
+        if blood_group_raw and not normalized_blood_group:
+            skipped_rows.append(
+                f"Fila {index}: grupo sanguineo invalido '{blood_group_raw}'. "
+                f"Valores admitidos: {', '.join(sorted(VALID_BLOOD_GROUPS))}."
+            )
+            continue
+
+        vehicle_id = None
+        if plate_value:
+            vehicle_id = find_vehicle_by_plate(plate_value)
+            if vehicle_id is None:
+                skipped_rows.append(
+                    f"Fila {index}: no se encontro vehiculo con patente '{plate_value}'. "
+                    f"Verificar que exista antes de importar."
+                )
+                continue
 
         technician_id = None
         technician_row = None
@@ -10171,6 +10353,10 @@ def import_technician_information(rows):
         if not region_value:
             region_value = "-"
 
+        safe_active = None
+        if is_active_raw:
+            safe_active = normalize_active_value(is_active_raw)
+
         if technician_id is None:
             if not technician_name:
                 skipped_rows.append(f"Fila {index}: falta el titular/nombre del tecnico.")
@@ -10184,6 +10370,7 @@ def import_technician_information(rows):
                 continue
 
             new_employee_code = ensure_unique_employee_code(base_employee_code)
+            final_active = 1 if safe_active is None else safe_active
             connection.execute(
                 """
                 INSERT INTO technicians (
@@ -10198,18 +10385,32 @@ def import_technician_information(rows):
                     supervisor_name,
                     supervisor_id,
                     center_name,
+                    blood_group,
+                    allergies,
+                    art_provider,
+                    emergency_number,
+                    vehicle_id,
                     is_active
-                ) VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, ?, 1)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     technician_name.strip(),
                     new_employee_code,
                     region_value,
+                    phone_value or None,
+                    commune_value or None,
+                    team_value or None,
                     company_name or None,
                     union_name or None,
                     supervisor_name or None,
                     supervisor_id,
                     center_name or None,
+                    normalized_blood_group,
+                    allergies_value or None,
+                    art_provider_value or None,
+                    emergency_number_value or None,
+                    vehicle_id,
+                    final_active,
                 ),
             )
             technician_row = connection.execute(
@@ -10219,6 +10420,19 @@ def import_technician_information(rows):
             technician_id = technician_row["id"] if is_postgres() else technician_row[0]
             created_count += 1
         else:
+            existing_vehicle_id = None
+            existing_active = None
+            existing_row = connection.execute(
+                "SELECT vehicle_id, is_active FROM technicians WHERE id = ?",
+                (technician_id,),
+            ).fetchone()
+            if existing_row:
+                existing_vehicle_id = existing_row["vehicle_id"] if is_postgres() else existing_row[0]
+                existing_active = existing_row["is_active"] if is_postgres() else existing_row[1]
+
+            final_vehicle_id = vehicle_id if vehicle_id is not None else existing_vehicle_id
+            final_active = safe_active if safe_active is not None else existing_active
+
             connection.execute(
                 """
                 UPDATE technicians
@@ -10233,7 +10447,16 @@ def import_technician_information(rows):
                         WHEN (region IS NULL OR region = '' OR region = '-')
                             THEN COALESCE(NULLIF(?, ''), region)
                         ELSE region
-                    END
+                    END,
+                    phone = COALESCE(NULLIF(?, ''), phone),
+                    commune = COALESCE(NULLIF(?, ''), commune),
+                    team = COALESCE(NULLIF(?, ''), team),
+                    blood_group = COALESCE(?, blood_group),
+                    allergies = COALESCE(NULLIF(?, ''), allergies),
+                    art_provider = COALESCE(NULLIF(?, ''), art_provider),
+                    emergency_number = COALESCE(NULLIF(?, ''), emergency_number),
+                    vehicle_id = ?,
+                    is_active = ?
                 WHERE id = ?
                 """,
                 (
@@ -10244,6 +10467,15 @@ def import_technician_information(rows):
                     supervisor_id,
                     center_name,
                     center_name,
+                    phone_value,
+                    commune_value,
+                    team_value,
+                    normalized_blood_group,
+                    allergies_value,
+                    art_provider_value,
+                    emergency_number_value,
+                    final_vehicle_id,
+                    final_active,
                     technician_id,
                 ),
             )
