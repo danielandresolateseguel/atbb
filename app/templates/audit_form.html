@@ -253,13 +253,6 @@
             </article>
         </div>
 
-        <article class="guide-card">
-            <strong>Sugerencia automática para checklist de herramientas</strong>
-            <p>Estas coincidencias se basan en nombres cargados en equipos y stock del móvil. Son apoyo visual, no reemplazan la revisión del auditor.</p>
-            <div class="tool-match-grid" id="tool_match_grid">
-                <div class="tool-match-item tool-match-neutral">Selecciona un móvil para evaluar herramientas clave.</div>
-            </div>
-        </article>
     </section>
 
     {% set no_apta_allowed_sections = ["seguridad", "herramientas", "herramientas_mano", "vehiculo"] %}
@@ -305,8 +298,10 @@
                 <div class="checklist-items">
                     {% for item in section["items"] %}
                     {% if section["key"] == "herramientas_mano" and item.get("hand_tool") %}
+                    {% set _status_val = request.form.get('status__' + item['key'], '') %}
+                    {% set _is_expanded = _status_val in ('no_cumple',) %}
                     <article
-                        class="checklist-item hand-tool-item"
+                        class="checklist-item hand-tool-item {% if not _is_expanded %}checklist-item-collapsed{% endif %}"
                         id="item__{{ item['key'] }}"
                         data-item-key="{{ item['key'] }}"
                         data-item-label="{{ item['label'] }}"
@@ -314,22 +309,39 @@
                         data-section-key="{{ section['key'] }}"
                         data-critical="{{ 1 if item['critical'] else 0 }}"
                         data-evidence-required="{{ 1 if item.get('evidence_required', True) else 0 }}"
+                        data-item-expanded="{{ '1' if _is_expanded else '0' }}"
                     >
-                        <div class="checklist-header">
-                            <div>
+                        <div class="checklist-header checklist-item-head">
+                            <div class="checklist-item-title">
                                 <strong>{{ item["label"] }}</strong>
                                 {% if item["critical"] %}
                                     <span class="critical-chip">Crítico</span>
                                 {% endif %}
+                                <span class="item-status-pill item-status-pending" data-item-status-pill="{{ item['key'] }}">
+                                    {% if _status_val == 'cumple' %}Cumple{% elif _status_val == 'no_cumple' %}No cumple{% elif _status_val == 'no_aplica' %}No aplica{% else %}Sin responder{% endif %}
+                                </span>
                             </div>
+                            <button
+                                type="button"
+                                class="button button-secondary item-toggle"
+                                data-item-toggle="1"
+                                data-item-key="{{ item['key'] }}"
+                                aria-expanded="{{ 'true' if _is_expanded else 'false' }}"
+                                aria-controls="item_body__{{ item['key'] }}"
+                            >
+                                <svg class="item-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path fill="currentColor" d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                                </svg>
+                            </button>
                         </div>
 
-                        <div class="status-group">
-                            <label><input type="radio" name="status__{{ item['key'] }}" value="cumple" {% if request.form.get('status__' + item['key']) == 'cumple' %}checked{% endif %} required> Cumple</label>
-                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_cumple" {% if request.form.get('status__' + item['key']) == 'no_cumple' %}checked{% endif %}> No cumple</label>
-                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                        <div class="status-group checklist-item-status">
+                            <label><input type="radio" name="status__{{ item['key'] }}" value="cumple" data-expand-status="collapse" {% if _status_val == 'cumple' %}checked{% endif %} required> Cumple</label>
+                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_cumple" data-expand-status="expand" {% if _status_val == 'no_cumple' %}checked{% endif %}> No cumple</label>
+                            <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" data-expand-status="collapse" {% if _status_val == 'no_aplica' %}checked{% endif %}> No aplica</label>
                         </div>
 
+                        <div class="checklist-item-body" id="item_body__{{ item['key'] }}" {% if not _is_expanded %}hidden{% endif %}>
                         <label>
                             <span>Motivo (si no cumple)</span>
                             <select name="reason__{{ item['key'] }}">
@@ -402,12 +414,13 @@
                             <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`. En `Seguro vehicular`, `Oblea de GNC`, `RTO` y `Botiquín` no se exige foto.</small>
                         </label>
 
-                        <small class="auto-hint tool-match-neutral" data-hand-tool-state="{{ item['key'] }}">Sin responder aún.</small>
+                        </div>
                     </article>
                     {% else %}
                     {% if item["key"] == "edv" %}
+                    {% set _edv_expanded = (request.form.get('notes__' + item['key'], '') | length > 0) or false %}
                     <article
-                        class="checklist-item"
+                        class="checklist-item {% if not _edv_expanded %}checklist-item-collapsed{% endif %}"
                         id="item__{{ item['key'] }}"
                         data-item-key="{{ item['key'] }}"
                         data-item-label="{{ item['label'] }}"
@@ -416,14 +429,29 @@
                         data-critical="0"
                         data-evidence-required="0"
                         data-multi-evidence="1"
+                        data-item-expanded="{{ '1' if _edv_expanded else '0' }}"
                     >
                         <input type="radio" name="status__{{ item['key'] }}" value="no_aplica" checked style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;" tabindex="-1" aria-hidden="true">
-                        <div class="checklist-header">
-                            <div>
+                        <div class="checklist-header checklist-item-head">
+                            <div class="checklist-item-title">
                                 <strong>{{ item["label"] }}</strong>
+                                <span class="item-status-pill item-status-na">No aplica</span>
                             </div>
+                            <button
+                                type="button"
+                                class="button button-secondary item-toggle"
+                                data-item-toggle="1"
+                                data-item-key="{{ item['key'] }}"
+                                aria-expanded="{{ 'true' if _edv_expanded else 'false' }}"
+                                aria-controls="item_body__{{ item['key'] }}"
+                            >
+                                <svg class="item-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path fill="currentColor" d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                                </svg>
+                            </button>
                         </div>
 
+                        <div class="checklist-item-body" id="item_body__{{ item['key'] }}" {% if not _edv_expanded %}hidden{% endif %}>
                         <label>
                             <span>Detalle</span>
                             <textarea name="notes__{{ item['key'] }}" rows="4" placeholder="Detalle del estado del vehículo (opcional)">{{ request.form.get('notes__' + item['key'], '')|upper }}</textarea>
@@ -471,10 +499,26 @@
                             </div>
                             <small class="evidence-filename" data-evidence-filename="1">Sin archivos seleccionados.</small>
                         </label>
+
+                        </div>
                     </article>
                     {% else %}
+                    {% set _status_val = request.form.get('status__' + item['key'], '') %}
+                    {% set _is_calidad = (section["key"] == "calidad_instalaciones") %}
+                    {% if _is_calidad %}
+                        {% set _expand_values = ('nc_menor', 'nc_mayor') %}
+                        {% set _collapse_values = ('conforme', 'no_aplica') %}
+                    {% else %}
+                        {% set _expand_values = ('no_cumple',) %}
+                        {% set _collapse_values = ('cumple', 'no_aplica') %}
+                    {% endif %}
+                    {% set _is_expanded = _status_val in _expand_values %}
+                    {% set _has_expiry = item["key"] in ('extintor', 'seguro_vehicular', 'oblea_gnc', 'rto', 'botiquin') %}
+                    {% if _has_expiry and _status_val == 'cumple' %}
+                        {% set _is_expanded = true %}
+                    {% endif %}
                     <article
-                        class="checklist-item"
+                        class="checklist-item {% if not _is_expanded %}checklist-item-collapsed{% endif %}"
                         id="item__{{ item['key'] }}"
                         data-item-key="{{ item['key'] }}"
                         data-item-label="{{ item['label'] }}"
@@ -482,33 +526,50 @@
                         data-section-key="{{ section['key'] }}"
                         data-critical="{{ 1 if item['critical'] else 0 }}"
                         data-evidence-required="{{ 1 if item.get('evidence_required', True) else 0 }}"
+                        data-item-expanded="{{ '1' if _is_expanded else '0' }}"
                     >
-                        <div class="checklist-header">
-                            <div>
+                        <div class="checklist-header checklist-item-head">
+                            <div class="checklist-item-title">
                                 <strong>{{ item["label"] }}</strong>
                                 {% if item["critical"] %}
                                     <span class="critical-chip">Crítico</span>
                                 {% endif %}
+                                <span class="item-status-pill item-status-pending" data-item-status-pill="{{ item['key'] }}">
+                                    {% if _is_calidad %}
+                                        {% if _status_val == 'conforme' %}Conforme{% elif _status_val == 'nc_menor' %}NC menor{% elif _status_val == 'nc_mayor' %}NC mayor{% elif _status_val == 'no_aplica' %}No aplica{% else %}Sin responder{% endif %}
+                                    {% else %}
+                                        {% if _status_val == 'cumple' %}Cumple{% elif _status_val == 'no_cumple' %}No cumple{% elif _status_val == 'no_aplica' %}No aplica{% else %}Sin responder{% endif %}
+                                    {% endif %}
+                                </span>
                             </div>
+                            <button
+                                type="button"
+                                class="button button-secondary item-toggle"
+                                data-item-toggle="1"
+                                data-item-key="{{ item['key'] }}"
+                                aria-expanded="{{ 'true' if _is_expanded else 'false' }}"
+                                aria-controls="item_body__{{ item['key'] }}"
+                            >
+                                <svg class="item-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path fill="currentColor" d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                                </svg>
+                            </button>
                         </div>
 
-                        {% if section["key"] == "herramientas" %}
-                            <p class="auto-hint" data-tool-hint="{{ item['key'] }}">Sugerencia automática: sin evaluar aún.</p>
-                        {% endif %}
-
-                        <div class="status-group">
+                        <div class="status-group checklist-item-status">
                             {% if section["key"] == "calidad_instalaciones" %}
-                                <label><input type="radio" name="status__{{ item['key'] }}" value="conforme" {% if request.form.get('status__' + item['key']) == 'conforme' %}checked{% endif %} required> Conforme</label>
-                                <label><input type="radio" name="status__{{ item['key'] }}" value="nc_menor" {% if request.form.get('status__' + item['key']) == 'nc_menor' %}checked{% endif %}> No conformidad menor</label>
-                                <label><input type="radio" name="status__{{ item['key'] }}" value="nc_mayor" {% if request.form.get('status__' + item['key']) == 'nc_mayor' %}checked{% endif %}> No conformidad Mayor</label>
-                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="conforme" data-expand-status="collapse" {% if _status_val == 'conforme' %}checked{% endif %} required> Conforme</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="nc_menor" data-expand-status="expand" {% if _status_val == 'nc_menor' %}checked{% endif %}> No conformidad menor</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="nc_mayor" data-expand-status="expand" {% if _status_val == 'nc_mayor' %}checked{% endif %}> No conformidad Mayor</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" data-expand-status="collapse" {% if _status_val == 'no_aplica' %}checked{% endif %}> No aplica</label>
                             {% else %}
-                                <label><input type="radio" name="status__{{ item['key'] }}" value="cumple" {% if request.form.get('status__' + item['key']) == 'cumple' %}checked{% endif %} required> Cumple</label>
-                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_cumple" {% if request.form.get('status__' + item['key']) == 'no_cumple' %}checked{% endif %}> No cumple</label>
-                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" {% if request.form.get('status__' + item['key']) == 'no_aplica' %}checked{% endif %}> No aplica</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="cumple" data-expand-status="{% if _has_expiry %}expand{% else %}collapse{% endif %}" {% if _status_val == 'cumple' %}checked{% endif %} required> Cumple</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_cumple" data-expand-status="expand" {% if _status_val == 'no_cumple' %}checked{% endif %}> No cumple</label>
+                                <label><input type="radio" name="status__{{ item['key'] }}" value="no_aplica" data-expand-status="collapse" {% if _status_val == 'no_aplica' %}checked{% endif %}> No aplica</label>
                             {% endif %}
                         </div>
 
+                        <div class="checklist-item-body" id="item_body__{{ item['key'] }}" {% if not _is_expanded %}hidden{% endif %}>
                         {% if item["key"] == "extintor" %}
                             <label>
                                 <span>Fecha de caducidad del extintor</span>
@@ -668,6 +729,8 @@
                                 <small>Obligatoria si el item queda en `No cumple`, salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`. En `Seguro vehicular`, `Oblea de GNC`, `RTO` y `Botiquín` no se exige foto.</small>
                             </label>
                         {% endif %}
+
+                        </div>
                     </article>
                     {% endif %}
                     {% endif %}
@@ -1024,9 +1087,7 @@
         const stockUnitsTarget = document.getElementById("snapshot_stock_units");
         const equipmentListTarget = document.getElementById("snapshot_equipment_list");
         const stockListTarget = document.getElementById("snapshot_stock_list");
-        const toolMatchGridTarget = document.getElementById("tool_match_grid");
         const alertGridTarget = document.getElementById("snapshot_alert_grid");
-        const toolHintTargets = document.querySelectorAll("[data-tool-hint]");
         const auditorSignatureInput = document.getElementById("auditor_signature");
         const auditorSignatureCanvas = document.getElementById("auditor_signature_canvas");
         const clearAuditorSignatureButton = document.getElementById("clear_signature_button");
@@ -2106,32 +2167,16 @@
             handTools.forEach((tool) => {
                 const statusInput = document.querySelector(`input[name="status__${tool.key}"]:checked`);
                 const status = statusInput ? String(statusInput.value || "").trim() : "";
-                const stateHint = document.querySelector(`[data-hand-tool-state="${tool.key}"]`);
                 if (!status) {
-                    if (stateHint) {
-                        stateHint.textContent = "Sin responder aún.";
-                        stateHint.className = "auto-hint tool-match-neutral";
-                    }
                     return;
                 }
                 answered += 1;
                 if (status === "cumple") {
-                    if (stateHint) {
-                        stateHint.textContent = "Marcado: Cumple.";
-                        stateHint.className = "auto-hint tool-match-ok";
-                    }
+                    // ok
                 } else if (status === "no_cumple") {
                     missing += 1;
-                    if (stateHint) {
-                        stateHint.textContent = "Marcado: No cumple.";
-                        stateHint.className = "auto-hint tool-match-missing";
-                    }
                 } else if (status === "no_aplica") {
                     notApplicable += 1;
-                    if (stateHint) {
-                        stateHint.textContent = "Marcado: No aplica.";
-                        stateHint.className = "auto-hint tool-match-neutral";
-                    }
                 }
             });
             if (handToolsBadge) {
@@ -2555,11 +2600,6 @@
             stockItemsTarget.textContent = "0";
             stockUnitsTarget.textContent = "0";
             alertGridTarget.innerHTML = '<article class="alert-card alert-info"><strong>Sin alertas cargadas</strong><p>Selecciona un móvil para revisar riesgos operativos antes de auditar.</p></article>';
-            toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">Selecciona un móvil para evaluar herramientas clave.</div>';
-            toolHintTargets.forEach((element) => {
-                element.textContent = "Sugerencia automática: sin evaluar aún.";
-                element.className = "auto-hint";
-            });
             renderList(
                 equipmentListTarget,
                 [],
@@ -2586,54 +2626,6 @@
                 article.className = `alert-card alert-${alert.severity}`;
                 article.innerHTML = `<strong>${alert.title}</strong><p>${alert.detail}</p>`;
                 alertGridTarget.appendChild(article);
-            });
-        }
-
-        function getToolMatchText(match) {
-            if (!match) {
-                return "Sin sugerencia automática.";
-            }
-            if (match.status === "detected") {
-                return `Detectada en inventario: ${match.matched_name}`;
-            }
-            if (match.status === "missing") {
-                return "Sin evidencia automática en stock o equipos.";
-            }
-            return "Requiere revisión manual del auditor.";
-        }
-
-        function getToolMatchClass(match) {
-            if (!match) {
-                return "tool-match-neutral";
-            }
-            if (match.status === "detected") {
-                return "tool-match-ok";
-            }
-            if (match.status === "missing") {
-                return "tool-match-missing";
-            }
-            return "tool-match-neutral";
-        }
-
-        function renderToolMatches(matches) {
-            toolMatchGridTarget.innerHTML = "";
-            const entries = Object.entries(matches || {});
-            if (entries.length === 0) {
-                toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">No hay coincidencias disponibles.</div>';
-                return;
-            }
-
-            entries.forEach(([itemKey, match]) => {
-                const block = document.createElement("div");
-                block.className = `tool-match-item ${getToolMatchClass(match)}`;
-                block.innerHTML = `<strong>${match.label}</strong><span>${getToolMatchText(match)}</span>`;
-                toolMatchGridTarget.appendChild(block);
-
-                const hintTarget = document.querySelector(`[data-tool-hint="${itemKey}"]`);
-                if (hintTarget) {
-                    hintTarget.textContent = `Sugerencia automática: ${getToolMatchText(match)}`;
-                    hintTarget.className = `auto-hint ${getToolMatchClass(match)}`;
-                }
             });
         }
 
@@ -2687,15 +2679,9 @@
                     (item) => `${item.material_name} | Cantidad: ${Math.round(item.quantity || 0)}`,
                     "No hay stock cargado para este móvil."
                 );
-                renderToolMatches(data.tool_matches);
             } catch (_error) {
                 statusChip.textContent = "Sin datos";
                 alertGridTarget.innerHTML = '<article class="alert-card alert-warning"><strong>No se pudo cargar el contexto</strong><p>Intenta nuevamente o revisa la información del móvil.</p></article>';
-                toolMatchGridTarget.innerHTML = '<div class="tool-match-item tool-match-neutral">No fue posible evaluar las herramientas del móvil.</div>';
-                toolHintTargets.forEach((element) => {
-                    element.textContent = "Sugerencia automática: no fue posible cargar datos del móvil.";
-                    element.className = "auto-hint tool-match-neutral";
-                });
                 renderList(
                     equipmentListTarget,
                     [],
@@ -3205,6 +3191,7 @@
         }
 
         function openChecklistSectionForElement(element) {
+            openItemForElement(element);
             const section = element ? element.closest("[data-checklist-section]") : null;
             if (!section) {
                 return false;
@@ -3244,6 +3231,135 @@
             } catch (_err) {
             }
             return true;
+        }
+
+        function getItemCardFromElement(el) {
+            if (!el || !el.closest) {
+                return null;
+            }
+            return el.closest(".checklist-item[data-item-expanded]");
+        }
+
+        function getItemBody(card) {
+            if (!card) {
+                return null;
+            }
+            return card.querySelector(":scope > .checklist-item-body");
+        }
+
+        function setItemOpen(card, open, { focusToggle = false } = {}) {
+            if (!card) {
+                return;
+            }
+            const toggle = card.querySelector(":scope > .checklist-item-head [data-item-toggle]");
+            const body = getItemBody(card);
+            card.dataset.itemExpanded = open ? "1" : "0";
+            if (open) {
+                card.classList.remove("checklist-item-collapsed");
+            } else {
+                card.classList.add("checklist-item-collapsed");
+            }
+            if (toggle) {
+                toggle.setAttribute("aria-expanded", open ? "true" : "false");
+                if (focusToggle) {
+                    try { toggle.focus({ preventScroll: true }); } catch (_err) {}
+                }
+            }
+            if (body) {
+                if (open) {
+                    body.hidden = false;
+                } else {
+                    body.hidden = true;
+                }
+            }
+        }
+
+        function updateItemStatusPill(card, statusValue) {
+            if (!card) {
+                return;
+            }
+            const pill = card.querySelector("[data-item-status-pill]");
+            if (!pill) {
+                return;
+            }
+            const normalized = String(statusValue || "").trim();
+            let label = "Sin responder";
+            let cls = "item-status-pending";
+            if (normalized === "cumple" || normalized === "conforme") {
+                label = normalized === "conforme" ? "Conforme" : "Cumple";
+                cls = "item-status-ok";
+            } else if (normalized === "no_cumple") {
+                label = "No cumple";
+                cls = "item-status-missing";
+            } else if (normalized === "nc_menor") {
+                label = "NC menor";
+                cls = "item-status-warning";
+            } else if (normalized === "nc_mayor") {
+                label = "NC mayor";
+                cls = "item-status-missing";
+            } else if (normalized === "no_aplica") {
+                label = "No aplica";
+                cls = "item-status-na";
+            }
+            pill.textContent = label;
+            pill.classList.remove("item-status-pending", "item-status-ok", "item-status-missing", "item-status-na", "item-status-warning");
+            pill.classList.add(cls);
+        }
+
+        function openItemForElement(el) {
+            const card = getItemCardFromElement(el);
+            if (!card) {
+                return;
+            }
+            setItemOpen(card, true);
+        }
+
+        function initChecklistItemAccordion() {
+            const cards = document.querySelectorAll(".checklist-item[data-item-expanded]");
+            if (cards.length === 0) {
+                return;
+            }
+
+            cards.forEach((card) => {
+                const toggle = card.querySelector(":scope > .checklist-item-head [data-item-toggle]");
+                if (toggle) {
+                    toggle.addEventListener("click", function () {
+                        const isOpen = card.dataset.itemExpanded === "1";
+                        setItemOpen(card, !isOpen, { focusToggle: true });
+                        if (!isOpen) {
+                            card.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                    });
+                }
+
+                const statusRadios = card.querySelectorAll(":scope .checklist-item-status input[type=\"radio\"]");
+                statusRadios.forEach((radio) => {
+                    radio.addEventListener("change", function () {
+                        const value = String(radio.value || "").trim();
+                        const behavior = radio.dataset.expandStatus || (value === "no_cumple" || value === "nc_menor" || value === "nc_mayor" ? "expand" : "collapse");
+                        if (behavior === "expand") {
+                            setItemOpen(card, true);
+                        } else if (behavior === "collapse") {
+                            setItemOpen(card, false);
+                        }
+                        updateItemStatusPill(card, value);
+                    });
+
+                    if (radio.checked) {
+                        updateItemStatusPill(card, radio.value);
+                    }
+                });
+
+                const body = getItemBody(card);
+                if (body) {
+                    const noteInputs = body.querySelectorAll("textarea, select, input[type=\"text\"], input[type=\"date\"], input[type=\"file\"]");
+                    noteInputs.forEach((input) => {
+                        input.addEventListener("focus", function () {
+                            setItemOpen(card, true);
+                        }, true);
+                    });
+                }
+            });
         }
 
         function initChecklistAccordion() {
@@ -3504,6 +3620,7 @@
             clearDraft();
         }
         initChecklistAccordion();
+        initChecklistItemAccordion();
         resizeSignatureCanvas();
         syncMobileContext();
         syncVehicleContext();
