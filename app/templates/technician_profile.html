@@ -108,9 +108,9 @@
             <button class="button button-primary" type="submit">Aplicar</button>
             <a class="button button-secondary" href="{{ url_for('main.technician_profile', technician_id=technician.id) }}">Reset</a>
             <div class="quick-range-inline">
-                <a class="chip {% if filters.all_time %}chip-active{% endif %}" data-range="all">Todo</a>
+                <a class="chip chip-active-default {% if filters.all_time %}chip-active{% endif %}" data-range="all">Todo</a>
                 <a class="chip" data-range="30">30 d</a>
-                <a class="chip chip-active-default" data-range="90">90 d</a>
+                <a class="chip" data-range="90">90 d</a>
                 <a class="chip" data-range="180">180 d</a>
                 <a class="chip" data-range="365">365 d</a>
             </div>

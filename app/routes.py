@@ -5782,18 +5782,18 @@ def technician_list():
     all_time_flag = request.args.get("all_time", "").strip() == "1"
 
     default_from, default_to = _default_technician_profile_range()
-    if all_time_flag:
+    if not has_any_filter_arg:
+        all_time_flag = True
+        from_date = ""
+        to_date = ""
+    elif all_time_flag:
         from_date = ""
         to_date = ""
     else:
         from_date_raw = request.args.get("from_date", "").strip()
         to_date_raw = request.args.get("to_date", "").strip()
-        if not has_any_filter_arg:
-            from_date = default_from
-            to_date = default_to
-        else:
-            from_date = from_date_raw
-            to_date = to_date_raw
+        from_date = from_date_raw
+        to_date = to_date_raw
 
     q = request.args.get("q", "").strip()
     region = request.args.get("region", "").strip()
@@ -5905,6 +5905,40 @@ def technician_list():
             pages_window.append(None)
         pages_window.append(page_count)
 
+    try:
+        _picker_params = []
+        _picker_clauses = []
+        if supervisor_scope_names is not None and not is_technician():
+            _allowed = [s.upper().strip() for s in supervisor_scope_names if s]
+            if _allowed:
+                _ph = ",".join("?" for _ in _allowed)
+                _picker_clauses.append(f"UPPER(COALESCE(supervisor_name, '')) IN ({_ph})")
+                _picker_params.extend(_allowed)
+        _picker_where = ("WHERE " + " AND ".join(_picker_clauses)) if _picker_clauses else ""
+        _picker_sql = f"""
+            SELECT id, name, employee_code, is_active
+            FROM technicians
+            {_picker_where}
+            ORDER BY CASE COALESCE(is_active, 1) WHEN 1 THEN 0 ELSE 1 END ASC,
+                     CAST(employee_code AS INTEGER) ASC NULLS LAST,
+                     employee_code ASC
+            LIMIT 5000
+        """
+        if not is_postgres():
+            _picker_sql = _picker_sql.replace("NULLS LAST", "")
+        _picker_rows = get_db().execute(_picker_sql, _picker_params).fetchall()
+        quick_pick_technicians = [
+            {
+                "id": r["id"],
+                "code": r["employee_code"] or "",
+                "name_upper": (r["name"] or "").upper(),
+                "is_active": bool(r["is_active"]),
+            }
+            for r in _picker_rows
+        ]
+    except Exception:
+        quick_pick_technicians = []
+
     return render_template(
         "technician_list.html",
         technicians=rows,
@@ -5920,6 +5954,7 @@ def technician_list():
         has_prev_page=has_prev_page,
         has_next_page=has_next_page,
         pages_window=pages_window,
+        quick_pick_technicians=quick_pick_technicians,
         filter_options={
             "regions": fetch_distinct_regions(),
             "supervisors": fetch_distinct_supervisors(),
@@ -6182,18 +6217,18 @@ def technician_profile(technician_id):
     has_any_filter_arg = any(k in request.args for k in ("from_date", "to_date", "all_time"))
     all_time_flag = request.args.get("all_time", "").strip() == "1"
     default_from, default_to = _default_technician_profile_range()
-    if all_time_flag:
+    if not has_any_filter_arg:
+        all_time_flag = True
+        from_date = ""
+        to_date = ""
+    elif all_time_flag:
         from_date = ""
         to_date = ""
     else:
         from_date_raw = request.args.get("from_date", "").strip()
         to_date_raw = request.args.get("to_date", "").strip()
-        if not has_any_filter_arg:
-            from_date = default_from
-            to_date = default_to
-        else:
-            from_date = from_date_raw
-            to_date = to_date_raw
+        from_date = from_date_raw
+        to_date = to_date_raw
 
     filters = {
         "from_date": from_date,

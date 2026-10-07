@@ -137,6 +137,23 @@
 </section>
 
 <section class="card filter-card">
+    <div class="technician-quick-pick">
+        <label for="technician_picker" class="quick-pick-label">
+            <strong>⚡ Ir al técnico</strong>
+            <span class="meta">Seleccioná el técnico (ordenados por Legajo - NOMBRE. Abre el perfil directamente con Todo histórico.</span>
+        </label>
+        <div class="quick-pick-row">
+            <select id="technician_picker" name="technician_picker">
+                <option value="">-- Seleccioná un técnico --</option>
+                {% for t in quick_pick_technicians %}
+                    <option value="{{ t.id }}">
+                        {{- t.code if t.code else '-' }} - {{ t.name_upper }}{% if not t.is_active %} · Inactivo{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <button type="button" id="technician_picker_go" class="button button-primary">Abrir perfil</button>
+        </div>
+    </div>
     <form class="filter-grid audit-filters" method="get" action="{{ url_for('main.technician_list') }}">
         <label>
             <span>Buscar (nombre / legajo / teléfono / comuna / equipo)</span>
@@ -201,9 +218,9 @@
     </form>
     <div class="quick-range">
         <span>Rápido:</span>
-        <a class="chip {% if filters.all_time %}chip-active{% endif %}" data-range="all" title="Todo el histórico">Todo histórico</a>
+        <a class="chip chip-active-default {% if filters.all_time %}chip-active{% endif %}" data-range="all" title="Todo el histórico">Todo histórico</a>
         <a class="chip" data-range="30">Último mes</a>
-        <a class="chip chip-active-default" data-range="90">Último trimestre</a>
+        <a class="chip" data-range="90">Último trimestre</a>
         <a class="chip" data-range="180">Último semestre</a>
         <a class="chip" data-range="365">Último año</a>
         <span class="quick-range-sep"></span>
@@ -498,6 +515,49 @@
         top: 0;
         background: #fff;
     }
+    .technician-quick-pick {
+        padding: 12px 16px;
+        margin-bottom: 14px;
+        background: #EFF6FF;
+        border: 1px solid #BFDBFE;
+        border-radius: 10px;
+    }
+    .quick-pick-label {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-bottom: 8px;
+        color: #1E3A8A;
+    }
+    .quick-pick-label strong {
+        font-size: 0.95rem;
+    }
+    .quick-pick-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .quick-pick-row select {
+        flex: 1 1 360px;
+        min-width: 260px;
+        padding: 9px 12px;
+        border: 1px solid #93C5FD;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 0.9rem;
+        color: #111827;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        max-height: 42px;
+    }
+    .quick-pick-row select:focus {
+        border-color: #2563EB;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+    .quick-pick-row .button {
+        white-space: nowrap;
+    }
 </style>
 
 <script>
@@ -566,6 +626,37 @@
                 window.location.href = window.location.pathname + (qs ? "?" + qs : "");
             });
         });
+
+        (function () {
+            var picker = document.getElementById("technician_picker");
+            var goBtn = document.getElementById("technician_picker_go");
+            if (!picker || !goBtn) return;
+
+            function navigateToTechnician() {
+                var id = (picker.value || "").trim();
+                if (!id) {
+                    picker.focus();
+                    picker.style.borderColor = "#DC2626";
+                    picker.style.boxShadow = "0 0 0 3px rgba(220, 38, 38, 0.15)";
+                    setTimeout(function () {
+                        picker.style.borderColor = "";
+                        picker.style.boxShadow = "";
+                    }, 1200);
+                    return;
+                }
+                var baseUrl = "{{ url_for('main.technician_profile', technician_id=0) }}".replace("/0", "/" + id);
+                window.location.href = baseUrl + "?all_time=1";
+            }
+
+            goBtn.addEventListener("click", navigateToTechnician);
+            picker.addEventListener("change", navigateToTechnician);
+            picker.addEventListener("keydown", function (e) {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    navigateToTechnician();
+                }
+            });
+        })();
     })();
 </script>
 
