@@ -5301,12 +5301,12 @@ def qc_new():
                 except ValueError as exc:
                     raise ValueError("Sección Potencia Óptica: los valores de Poste y ONT deben ser números válidos (dBm).") from exc
                 power_att_diff = round(p_poste - p_ont, 2)
-                # Regla: NC mayor si atenuación > 1 dBm O si atenuación <= 0 (ONT >= Poste, invertido / imposible físicamente)
-                if power_att_diff <= 0.0:
+                # Regla: NC mayor si atenuación < 0 (ONT > Poste, invertido / imposible) O si atenuación > 1 dBm
+                if power_att_diff < 0.0:
                     power_status = "nc_mayor"
                     power_reason = (
                         f"Valores invertidos o imposibles: Poste {p_poste:.2f} dBm, ONT {p_ont:.2f} dBm. "
-                        f"Atenuación = {power_att_diff:+.2f} dBm (<= 0). Tratado como NC Mayor."
+                        f"Atenuación = {power_att_diff:+.2f} dBm (< 0). Tratado como NC Mayor."
                     )
                 elif power_att_diff > 1.0:
                     power_status = "nc_mayor"
