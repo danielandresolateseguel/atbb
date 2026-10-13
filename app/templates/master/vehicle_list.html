@@ -167,6 +167,7 @@
                             </td>
                             <td class="actions-col">
                                 <a class="button button-secondary button-small" href="{{ url_for('main.master_vehicle_edit', vehicle_id=row.id) }}">Editar</a>
+                                <a class="button button-primary button-small" href="{{ url_for('main.new_vehicle_audit', vehicle_id=row.id) }}">Auditar</a>
                                 <form method="post" action="{{ url_for('main.master_vehicle_toggle', vehicle_id=row.id) }}" style="display:inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="button button-small {{ 'button-warn' if (row.status or '') == 'activo' else 'button-primary' }}" type="submit">

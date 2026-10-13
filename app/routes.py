@@ -41,7 +41,7 @@ except ImportError:
     get_column_letter = None
     HAS_OPENPYXL = False
 
-from app.checklist import AUDIT_CHECKLIST_SECTIONS, CHECKLIST_SECTIONS, QC_SECTION_KEY, QC_EVIDENCE_SECTION_KEY, QC_POWER_SECTION_KEY, QC_SECTION_KEYS
+from app.checklist import AUDIT_CHECKLIST_SECTIONS, CHECKLIST_SECTIONS, QC_SECTION_KEY, QC_EVIDENCE_SECTION_KEY, QC_POWER_SECTION_KEY, QC_SECTION_KEYS, VEHICLE_ONLY_SECTIONS
 from app.spreadsheets import parse_tabular_upload
 
 try:
@@ -6854,6 +6854,7 @@ def audit_list():
         "status": request.args.get("status", "").strip(),
         "auditor": request.args.get("auditor", "").strip(),
         "include_pruebas": request.args.get("include_pruebas", "").strip(),
+        "audit_scope": request.args.get("audit_scope", "").strip(),
         "sort": request.args.get("sort", "").strip(),
         "dir": request.args.get("dir", "").strip(),
     }
@@ -6922,6 +6923,7 @@ def audit_list():
             filters["status"],
             filters["auditor"],
             filters["include_pruebas"],
+            filters["audit_scope"],
         ]
     )
     return render_template(
@@ -9278,6 +9280,151 @@ def new_audit():
                     "note": "Una auditoría puede quedar Crítica si un ítem crítico falla con estado imputable.",
                 },
             },
+            today=datetime.today().strftime("%Y-%m-%d"),
+        )
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@main.route("/audits/new-vehicle", methods=["GET", "POST"])
+def new_vehicle_audit():
+    if not can_create_audit():
+        abort(403)
+    vehicles = fetch_vehicles()
+    preselected_vehicle_id = (request.args.get("vehicle_id") or "").strip()
+
+    if request.method == "POST":
+        try:
+            user = current_user()
+            auditor_user_id = user["id"] if user else None
+
+            vehicle_id_raw = request.form.get("vehicle_id", "").strip()
+            if not vehicle_id_raw:
+                raise ValueError("Debes seleccionar un vehiculo.")
+            vehicle_id = int(vehicle_id_raw)
+
+            audit_date = datetime.strptime(request.form["audit_date"], "%Y-%m-%d").date().isoformat()
+
+            vehiculo_section = VEHICLE_ONLY_SECTIONS[0]
+            _, _, items = calculate_section_score(vehiculo_section, request.form, request.files)
+            persist_item_evidence(items, audit_date)
+
+            auditor_signature_path = persist_auditor_signature(
+                request.form.get("auditor_signature"),
+                audit_date,
+            )
+
+            extinguisher_expiry = (request.form.get("expiry__extintor") or "").strip()
+            extintor_status = (request.form.get("status__extintor") or "").strip()
+            if extintor_status == "cumple" and extinguisher_expiry:
+                if extinguisher_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de caducidad del extintor no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_extinguisher_expiry(vehicle_id, extinguisher_expiry)
+
+            insurance_expiry = (request.form.get("expiry__insurance") or "").strip()
+            seguro_vehicular_status = (request.form.get("status__seguro_vehicular") or "").strip()
+            if seguro_vehicular_status == "cumple" and insurance_expiry:
+                if insurance_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de vencimiento del seguro no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_insurance_expiry(vehicle_id, insurance_expiry)
+
+            gnc_expiry = (request.form.get("expiry__gnc") or "").strip()
+            gnc_status = (request.form.get("status__oblea_gnc") or "").strip()
+            if gnc_status == "cumple" and gnc_expiry:
+                if gnc_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de caducidad de la oblea de GNC no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_gnc_expiry(vehicle_id, gnc_expiry)
+
+            rto_expiry = (request.form.get("expiry__rto") or "").strip()
+            rto_status = (request.form.get("status__rto") or "").strip()
+            if rto_status == "cumple" and rto_expiry:
+                if rto_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de vencimiento de la RTO no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_rto_expiry(vehicle_id, rto_expiry)
+
+            botiquin_expiry = (request.form.get("expiry__botiquin") or "").strip()
+            botiquin_status = (request.form.get("status__botiquin") or "").strip()
+            if botiquin_status == "cumple" and botiquin_expiry:
+                if botiquin_expiry < audit_date:
+                    raise ValueError(
+                        "La fecha de vencimiento del botiquin no puede ser anterior a la fecha de la auditoria."
+                    )
+                update_vehicle_botiquin_expiry(vehicle_id, botiquin_expiry)
+
+            auditor_name = request.form["auditor_name"].strip().upper()
+            if user and user.get("role") == "auditor":
+                auditor_name = user["username"].upper()
+
+            location = (request.form.get("location") or "").strip().upper() or "VEHICULO"
+            address = (request.form.get("address") or "").strip().upper() or None
+
+            audit_id = create_audit(
+                {
+                    "audit_date": audit_date,
+                    "auditor_name": auditor_name,
+                    "auditor_user_id": auditor_user_id,
+                    "sa_number": None,
+                    "auditor_signature_path": auditor_signature_path,
+                    "technician_signature_path": None,
+                    "technician_display_name": None,
+                    "technician_employee_code": None,
+                    "technician_company_snapshot": None,
+                    "technician_supervisor_snapshot": None,
+                    "technician_center_snapshot": None,
+                    "location": location,
+                    "address": address,
+                    "installation_type": "VEHICULO",
+                    "mobile_unit_id": None,
+                    "technician_id": None,
+                    "vehicle_id": vehicle_id,
+                    "total_score": 0,
+                    "result_status": "Registrada",
+                    "audit_scope": "vehiculo",
+                    "general_notes": request.form.get("general_notes", "").strip().upper() or None,
+                    "serialized_stock_status": None,
+                    "serialized_stock_notes": None,
+                    "material_stock_status": None,
+                    "material_stock_notes": None,
+                },
+                items,
+                [],
+            )
+            flash("Auditoria de vehiculo guardada correctamente.", "success")
+            return redirect(url_for("main.audit_detail", audit_id=audit_id))
+        except ValueError as exc:
+            flash(str(exc), "error")
+        except Exception as exc:
+            current_app.logger.exception(
+                "POST /audits/new-vehicle FAILED form_keys=%s files_keys=%s",
+                sorted(request.form.keys()),
+                sorted(request.files.keys()),
+            )
+            safe_msg = str(exc) if current_app and current_app.config.get("DEBUG") else "Contacta a soporte o revisa los logs."
+            flash(f"Error interno al guardar la auditoria de vehiculo. {safe_msg}", "error")
+
+    response = make_response(
+        render_template(
+            "audit_form.html",
+            checklist_sections=VEHICLE_ONLY_SECTIONS,
+            mobile_units=[],
+            vehicles=vehicles,
+            material_index={},
+            herramientas_section=None,
+            hand_tools=[],
+            vehicle_only=True,
+            preselected_vehicle_id=preselected_vehicle_id,
+            auditor_rules=None,
             today=datetime.today().strftime("%Y-%m-%d"),
         )
     )

@@ -48,6 +48,17 @@
 
             <section class="report-hero">
                 <div class="report-score-card">
+                    {% if audit.get("audit_scope") == "vehiculo" %}
+                    <div class="score-ring">
+                        <svg viewBox="0 0 140 140" aria-hidden="true">
+                            <circle class="score-ring-track" cx="70" cy="70" r="54"></circle>
+                        </svg>
+                        <div class="score-ring-center">
+                            <strong style="font-size:0.9rem;">Vehículo</strong>
+                            <span>Sin puntaje</span>
+                        </div>
+                    </div>
+                    {% else %}
                     <div class="score-ring">
                         <svg viewBox="0 0 140 140" aria-hidden="true">
                             <circle class="score-ring-track" cx="70" cy="70" r="54"></circle>
@@ -64,6 +75,7 @@
                             <span>Puntaje final</span>
                         </div>
                     </div>
+                    {% endif %}
                     <div>
                         <span class="badge badge-{{ audit['result_status']|lower|replace(' ', '-') }}">{{ audit["result_status"] }}</span>
                         <h2>Estado general de la auditoría</h2>
@@ -89,6 +101,7 @@
                             <span>Auditor</span>
                             <strong>{{ audit["auditor_name"] }}</strong>
                         </article>
+                        {% if audit.get("audit_scope") != "vehiculo" %}
                         <article>
                             <span>SA</span>
                             <strong>{{ audit["sa_number"] or "-" }}</strong>
@@ -112,6 +125,7 @@
                             <span>Centro</span>
                             <strong>{{ audit["technician_center"] or "-" }}</strong>
                         </article>
+                        {% endif %}
                         <article>
                             <span>Vehículo</span>
                             <strong>
@@ -185,6 +199,7 @@
             </section>
 
             <section class="report-grid">
+                {% if audit.get("audit_scope") != "vehiculo" %}
                 <article class="report-card">
                     <div class="section-heading">
                         <div>
@@ -211,6 +226,7 @@
                         {% endfor %}
                     </div>
                 </article>
+                {% endif %}
 
                 <article class="report-card">
                     <div class="section-heading">
@@ -223,6 +239,7 @@
                         <p><strong>Tipo de trabajo:</strong> {{ audit["installation_type"] }}</p>
                         <p><strong>Registro:</strong> {{ audit["created_at"]|ar_dt }}</p>
                         <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "Sin observación general registrada." }}</p>
+                        {% if audit.get("audit_scope") != "vehiculo" %}
                         <p>
                             <strong>Impacto supervisor:</strong>
                             {{ report["summary"]["non_compliant_count"] }} hallazgos con impacto
@@ -259,6 +276,7 @@
                         </p>
                         {% if audit["material_stock_status"] == "missing" %}
                             <p><strong>Detalle faltantes:</strong> {{ audit["material_stock_notes"] or "-" }}</p>
+                        {% endif %}
                         {% endif %}
                         <p>
                             <strong>tNPS:</strong>
@@ -371,6 +389,7 @@
                 {% endif %}
             </section>
 
+            {% if audit.get("audit_scope") != "vehiculo" %}
             <section class="report-card{% if print_mode %} break-before-page{% endif %}">
                 <div class="section-heading">
                     <div>
@@ -411,6 +430,7 @@
                     <p class="empty-state">No se registraron solicitudes asociadas a la auditoría.</p>
                 {% endif %}
             </section>
+            {% endif %}
 
             {% if not pdf_detail_mode %}
                 <section class="report-card{% if print_mode %} break-before-page{% endif %}">
@@ -524,6 +544,7 @@
                     {% endif %}
                 </article>
 
+                {% if audit.get("audit_scope") != "vehiculo" %}
                 <article class="report-card">
                     <div class="section-heading">
                         <div>
@@ -544,6 +565,7 @@
                         <p class="empty-state">No se registró firma del técnico en esta auditoría.</p>
                     {% endif %}
                 </article>
+                {% endif %}
             </section>
         </section>
     </main>

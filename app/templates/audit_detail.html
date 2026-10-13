@@ -8,13 +8,16 @@
         <p class="eyebrow">Revisión</p>
         <h2>Auditoría {{ audit["id"] }}</h2>
         <p class="hero-copy">
-            {{ audit["audit_date"] }} | {% if audit["mobile_code"] %}Móvil {{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}
+            {{ audit["audit_date"] }} | {% if audit.get("audit_scope") == "vehiculo" %}Vehículo {{ audit["vehicle_plate"] or "-" }}{% else %}{% if audit["mobile_code"] %}Móvil {{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}{% endif %}
         </p>
     </div>
     <div class="hero-actions no-print">
         <span class="badge badge-{{ audit['result_status']|lower|replace(' ', '-') }}">{{ audit["result_status"] }}</span>
         {% if audit["record_scope"] == "pruebas" %}
             <span class="badge badge-pruebas">Pruebas</span>
+        {% endif %}
+        {% if audit.get("audit_scope") == "vehiculo" %}
+            <span class="badge" style="background:#DBEAFE;color:#1E40AF;">Auditoría de vehículo</span>
         {% endif %}
         <a class="button button-secondary" href="{{ url_for('main.audit_report', audit_id=audit['id']) }}">Ver informe ejecutivo</a>
         <button class="button button-primary" type="button" onclick="window.print();">Imprimir / Guardar PDF</button>
@@ -59,11 +62,13 @@
         <div class="info-list">
             <p><strong>Auditor:</strong> {{ audit["auditor_name"] }}</p>
             <p><strong>Sector:</strong> {% if audit["record_scope"] == "pruebas" %}Pruebas{% else %}Oficial{% endif %}</p>
+            {% if audit.get("audit_scope") != "vehiculo" %}
             <p><strong>SA:</strong> {{ audit["sa_number"] or "-" }}</p>
             <p><strong>Móvil técnico:</strong> {% if audit["mobile_code"] %}{{ audit["mobile_code"] }} | {% endif %}{{ audit["technician_name"] }}{% if audit["employee_code"] %} | {{ audit["employee_code"] }}{% endif %}</p>
             <p><strong>Empresa:</strong> {{ audit["technician_company"] or "-" }}</p>
             <p><strong>Supervisor:</strong> {{ audit["technician_supervisor"] or "-" }}</p>
             <p><strong>Centro:</strong> {{ audit["technician_center"] or "-" }}</p>
+            {% endif %}
             <p><strong>Vehículo:</strong>
                 {% if audit["vehicle_plate"] %}
                     {% if audit["vehicle_unit_number"] %}{{ audit["vehicle_unit_number"] }} - {% endif %}{{ audit["vehicle_plate"] }}
@@ -164,9 +169,12 @@
             </div>
         </div>
         <div class="info-list">
+            {% if audit.get("audit_scope") != "vehiculo" %}
             <p><strong>Puntaje:</strong> {{ audit["total_score"] }}</p>
+            {% endif %}
             <p><strong>Fecha registro:</strong> {{ audit["created_at"]|ar_dt }}</p>
             <p><strong>Comentario general:</strong> {{ audit["general_notes"] or "-" }}</p>
+            {% if audit.get("audit_scope") != "vehiculo" %}
             <p>
                 <strong>Serializados:</strong>
                 {% if audit["serialized_stock_status"] == "ok" %}
@@ -196,6 +204,7 @@
             </p>
             {% if audit["material_stock_status"] == "missing" %}
                 <p><strong>Detalle faltantes:</strong> {{ audit["material_stock_notes"] or "-" }}</p>
+            {% endif %}
             {% endif %}
         </div>
     </article>
@@ -394,6 +403,7 @@
     {% endif %}
 </section>
 
+{% if audit.get("audit_scope") != "vehiculo" %}
 <section class="card signature-display-card">
     <div class="section-heading">
         <div>
@@ -414,5 +424,6 @@
         <p class="empty-state">Esta auditoría no tiene firma de técnico registrada.</p>
     {% endif %}
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}

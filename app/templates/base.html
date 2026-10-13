@@ -79,6 +79,7 @@
                             <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
                             {% if can_create_audit %}
                                 <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
+                                <a href="{{ url_for('main.new_vehicle_audit') }}">Auditar vehículo</a>
                             {% endif %}
                             <a href="{{ url_for('main.audit_list') }}">Historial</a>
                             {% if can_view_findings %}

@@ -74,6 +74,9 @@ TREATMENT_REASON_LABELS = {value: label for value, label in TREATMENT_REASON_OPT
 AUDIT_SCOPE_OFFICIAL = "oficial"
 AUDIT_SCOPE_TESTING = "pruebas"
 
+AUDIT_AUDIT_SCOPE_COMPLETA = "completa"
+AUDIT_AUDIT_SCOPE_VEHICULO = "vehiculo"
+
 AUDIT_MATERIAL_STOCK_PRIORITY_NAMES = [
     "CBL.DROP PLANO 70M G657 CONECT.RE. FORZ",
     "CONECT.OPT.MEC.SC/APC P/CBL.DROP",
@@ -89,6 +92,13 @@ def normalize_audit_record_scope(value):
     if normalized == AUDIT_SCOPE_TESTING:
         return AUDIT_SCOPE_TESTING
     return AUDIT_SCOPE_OFFICIAL
+
+
+def normalize_audit_scope(value):
+    normalized = (value or AUDIT_AUDIT_SCOPE_COMPLETA).strip().lower()
+    if normalized == AUDIT_AUDIT_SCOPE_VEHICULO:
+        return AUDIT_AUDIT_SCOPE_VEHICULO
+    return AUDIT_AUDIT_SCOPE_COMPLETA
 
 
 def normalize_material_name(value):
@@ -880,6 +890,7 @@ def init_db():
             total_score REAL NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
             record_scope TEXT NOT NULL DEFAULT 'oficial',
+            audit_scope TEXT NOT NULL DEFAULT 'completa',
             general_notes TEXT,
             serialized_stock_status TEXT,
             serialized_stock_notes TEXT,
@@ -1431,6 +1442,7 @@ def init_db_postgres():
             total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
             result_status TEXT NOT NULL,
             record_scope TEXT NOT NULL DEFAULT 'oficial',
+            audit_scope TEXT NOT NULL DEFAULT 'completa',
             general_notes TEXT,
             serialized_stock_status TEXT,
             serialized_stock_notes TEXT,
@@ -2545,6 +2557,7 @@ def ensure_legacy_columns(connection):
     add_column_if_missing(connection, "audits", "technician_center_snapshot", "TEXT")
     add_column_if_missing(connection, "audits", "address", "TEXT")
     add_column_if_missing(connection, "audits", "record_scope", "TEXT NOT NULL DEFAULT 'oficial'")
+    add_column_if_missing(connection, "audits", "audit_scope", "TEXT NOT NULL DEFAULT 'completa'")
     add_column_if_missing(connection, "audits", "serialized_stock_status", "TEXT")
     add_column_if_missing(connection, "audits", "serialized_stock_notes", "TEXT")
     add_column_if_missing(connection, "audits", "material_stock_status", "TEXT")
@@ -2915,6 +2928,7 @@ def ensure_audits_columns_postgres(cursor):
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS sa_number TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS address TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS record_scope TEXT NOT NULL DEFAULT 'oficial'")
+    cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS audit_scope TEXT NOT NULL DEFAULT 'completa'")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_company_snapshot TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_supervisor_snapshot TEXT")
     cursor.execute("ALTER TABLE audits ADD COLUMN IF NOT EXISTS technician_center_snapshot TEXT")
@@ -4486,6 +4500,8 @@ def fetch_dashboard_stats(auditor_user_id=None, supervisor_scope_names=None):
     where_clauses = []
     params = []
 
+    where_clauses.append("COALESCE(audits.audit_scope, 'completa') != 'vehiculo'")
+
     append_audit_visibility_filters(where_clauses, params)
     append_supervisor_scope_filters(where_clauses, params, supervisor_scope_names=supervisor_scope_names)
 
@@ -5581,6 +5597,7 @@ def fetch_all_audits(filters=None, auditor_user_id=None, supervisor_scope_names=
             audits.total_score,
             audits.result_status,
             audits.record_scope,
+            audits.audit_scope,
             mobile_units.mobile_code,
             COALESCE(technicians.name, audits.technician_display_name) AS technician_name,
             vehicles.plate AS vehicle_plate
@@ -5704,6 +5721,7 @@ def build_audits_where_sql(
     supervisor_scope_names=None,
     extra_clauses=None,
     extra_params=None,
+    exclude_vehicle_scope=False,
 ):
     filters = filters or {}
     extra_clauses = extra_clauses or []
@@ -5711,6 +5729,9 @@ def build_audits_where_sql(
 
     where_clauses = []
     params = []
+
+    if exclude_vehicle_scope:
+        where_clauses.append("COALESCE(audits.audit_scope, 'completa') != 'vehiculo'")
 
     from_date = (filters.get("from_date") or "").strip()
     to_date = (filters.get("to_date") or "").strip()
@@ -5741,6 +5762,11 @@ def build_audits_where_sql(
             where_clauses.append("LOWER(COALESCE(audits.auditor_name, '')) LIKE ?")
             params.append(like_value.lower())
 
+    audit_scope = (filters.get("audit_scope") or "").strip().lower()
+    if audit_scope in {"completa", "vehiculo"}:
+        where_clauses.append("audits.audit_scope = ?")
+        params.append(audit_scope)
+
     if auditor_user_id is not None:
         where_clauses.append("audits.auditor_user_id = ?")
         params.append(auditor_user_id)
@@ -5764,6 +5790,7 @@ def build_audits_where_sql_with_technicians(
     supervisor_scope_names=None,
     extra_clauses=None,
     extra_params=None,
+    exclude_vehicle_scope=False,
 ):
     filters = filters or {}
     extra_clauses = list(extra_clauses or [])
@@ -5784,6 +5811,7 @@ def build_audits_where_sql_with_technicians(
         supervisor_scope_names=supervisor_scope_names,
         extra_clauses=extra_clauses,
         extra_params=extra_params,
+        exclude_vehicle_scope=exclude_vehicle_scope,
     )
 
 
@@ -5880,7 +5908,7 @@ def fetch_distinct_finding_supervisors(filters=None, auditor_user_id=None, super
 
 
 def fetch_audit_reports_management_summary(filters=None, auditor_user_id=None):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     row = get_db().execute(
         f"""
         SELECT
@@ -5913,7 +5941,7 @@ def fetch_audit_reports_management_summary(filters=None, auditor_user_id=None):
 
 
 def fetch_audit_reports_status_breakdown(filters=None, auditor_user_id=None):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     rows = get_db().execute(
         f"""
         SELECT
@@ -5941,7 +5969,7 @@ def fetch_audit_reports_status_breakdown(filters=None, auditor_user_id=None):
 
 
 def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None, limit=500):
-    where_sql, params = build_audits_where_sql_with_technicians(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql_with_technicians(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     label_expr = "COALESCE(technicians.supervisor_name, 'Sin supervisor')"
     rows = get_db().execute(
         f"""
@@ -6077,7 +6105,7 @@ def fetch_audit_reports_supervisor_breakdown(filters=None, auditor_user_id=None,
 
 
 def fetch_audit_reports_center_breakdown(filters=None, auditor_user_id=None, limit=500):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     label_expr = "COALESCE(technicians.center_name, 'Sin centro')"
     rows = get_db().execute(
         f"""
@@ -6118,7 +6146,7 @@ def fetch_audit_reports_center_breakdown(filters=None, auditor_user_id=None, lim
 
 
 def fetch_audit_reports_company_breakdown(filters=None, auditor_user_id=None, limit=500):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     label_expr = "COALESCE(technicians.company_name, 'Sin empresa')"
     rows = get_db().execute(
         f"""
@@ -6159,7 +6187,7 @@ def fetch_audit_reports_company_breakdown(filters=None, auditor_user_id=None, li
 
 
 def fetch_audit_reports_technician_ranking(filters=None, auditor_user_id=None, limit=200):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     name_expr = "COALESCE(technicians.name, audits.technician_display_name, 'Sin técnico')"
     employee_expr = "COALESCE(technicians.employee_code, audits.technician_employee_code, '')"
     supervisor_expr = "COALESCE(technicians.supervisor_name, '')"
@@ -6212,7 +6240,7 @@ def fetch_audit_reports_technician_ranking(filters=None, auditor_user_id=None, l
 
 
 def fetch_audit_reports_mobile_ranking(filters=None, auditor_user_id=None, limit=200):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     rows = get_db().execute(
         f"""
         SELECT
@@ -6256,7 +6284,7 @@ def fetch_audit_reports_time_series(filters=None, auditor_user_id=None, granular
     if normalized not in {"month", "week"}:
         raise ValueError("Granularidad no valida. Usa 'month' o 'week'.")
 
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
 
     if is_postgres():
         if normalized == "month":
@@ -6310,7 +6338,7 @@ def fetch_audit_reports_time_series(filters=None, auditor_user_id=None, granular
 
 
 def fetch_audit_reports_section_breakdown(filters=None, auditor_user_id=None):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     rows = get_db().execute(
         f"""
         SELECT
@@ -6337,6 +6365,7 @@ def fetch_audit_reports_critical_findings(filters=None, auditor_user_id=None, li
         filters,
         auditor_user_id=auditor_user_id,
         extra_clauses=extra_clauses,
+        exclude_vehicle_scope=True,
     )
 
     rows = get_db().execute(
@@ -6386,6 +6415,7 @@ def fetch_audit_reports_missing_evidence(filters=None, auditor_user_id=None, lim
         auditor_user_id=auditor_user_id,
         extra_clauses=extra_clauses,
         extra_params=list(optional_reasons) + list(optional_items),
+        exclude_vehicle_scope=True,
     )
 
     rows = get_db().execute(
@@ -6430,6 +6460,7 @@ def fetch_audit_reports_supervisor_responsibility_detail(filters=None, auditor_u
         auditor_user_id=auditor_user_id,
         extra_clauses=extra_clauses,
         extra_params=list(supervisor_reasons),
+        exclude_vehicle_scope=True,
     )
 
     supervisor_expr = "COALESCE(technicians.supervisor_name, 'Sin supervisor')"
@@ -6470,7 +6501,7 @@ def fetch_audit_reports_supervisor_responsibility_detail(filters=None, auditor_u
 
 
 def fetch_audit_reports_supply_requests_detail(filters=None, auditor_user_id=None, limit=2000):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     rows = get_db().execute(
         f"""
         SELECT
@@ -6512,7 +6543,7 @@ def fetch_audit_reports_supply_requests_detail(filters=None, auditor_user_id=Non
 
 
 def fetch_audit_reports_supply_requests_summary(filters=None, auditor_user_id=None, limit=2000):
-    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id)
+    where_sql, params = build_audits_where_sql(filters, auditor_user_id=auditor_user_id, exclude_vehicle_scope=True)
     rows = get_db().execute(
         f"""
         SELECT
@@ -6558,6 +6589,7 @@ def fetch_audit_detail(audit_id, supervisor_scope_names=None):
             audits.total_score,
             audits.result_status,
             audits.record_scope,
+            audits.audit_scope,
             audits.general_notes,
             audits.serialized_stock_status,
             audits.serialized_stock_notes,
@@ -8555,6 +8587,7 @@ def create_audit(audit_data, items, supply_requests=None):
                 total_score,
                 result_status,
                 record_scope,
+                audit_scope,
                 general_notes,
                 serialized_stock_status,
                 serialized_stock_notes,
@@ -8563,7 +8596,7 @@ def create_audit(audit_data, items, supply_requests=None):
                 mobile_unit_id,
                 technician_id,
                 vehicle_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         insert_params = (
             audit_data["audit_date"],
@@ -8583,6 +8616,7 @@ def create_audit(audit_data, items, supply_requests=None):
             audit_data["total_score"],
             audit_data["result_status"],
             normalize_audit_record_scope(audit_data.get("record_scope")),
+            normalize_audit_scope(audit_data.get("audit_scope")),
             audit_data["general_notes"],
             audit_data.get("serialized_stock_status"),
             audit_data.get("serialized_stock_notes"),

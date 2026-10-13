@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Nueva auditoría{% endblock %}
+{% block title %}{% if vehicle_only %}Nueva auditoría de vehículo{% else %}Nueva auditoría{% endif %}{% endblock %}
 
 {% block content %}
 <section class="section-heading">
     <div>
         <p class="eyebrow">Registro</p>
-        <h2>Nueva auditoría en terreno</h2>
+        <h2>{% if vehicle_only %}Nueva auditoría de vehículo{% else %}Nueva auditoría en terreno{% endif %}</h2>
     </div>
 </section>
 
@@ -29,6 +29,7 @@
             >
         </label>
 
+        {% if not vehicle_only %}
         <label>
             <span>SA (opcional)</span>
             <input
@@ -67,6 +68,7 @@
                 {% endfor %}
             </select>
         </label>
+        {% endif %}
 
         <label>
             <span>Vehículo</span>
@@ -80,7 +82,7 @@
                         data-gnc-expiry="{{ vehicle.gnc_expiry or '' }}"
                         data-rto-expiry="{{ vehicle.rto_expiry or '' }}"
                         data-botiquin-expiry="{{ vehicle.botiquin_expiry or '' }}"
-                        {% if request.form.get('vehicle_id') == vehicle.id|string %}selected{% endif %}
+                        {% if request.form.get('vehicle_id') == vehicle.id|string or preselected_vehicle_id == vehicle.id|string %}selected{% endif %}
                     >
                         {% if vehicle.unit_number %}{{ vehicle.unit_number }} - {% endif %}{{ vehicle.plate }} - {{ vehicle.brand }} {{ vehicle.model }}{% if vehicle.odometer_km %} ({{ vehicle.odometer_km }} km){% endif %}
                     </option>
@@ -90,7 +92,7 @@
 
         <label>
             <span>Ubicación</span>
-            <input type="text" name="location" value="{{ request.form.get('location', '')|upper }}" placeholder="Distrito / Provincia" required>
+            <input type="text" name="location" value="{{ request.form.get('location', '')|upper }}" placeholder="Distrito / Provincia" {% if not vehicle_only %}required{% endif %}>
         </label>
 
         <label>
@@ -98,12 +100,15 @@
             <input type="text" name="address" value="{{ request.form.get('address', '')|upper }}" placeholder="Calle y número / referencia">
         </label>
 
+        {% if not vehicle_only %}
         <label>
             <span>Tipo de instalación</span>
             <input type="text" name="installation_type" value="{{ request.form.get('installation_type', '')|upper }}" placeholder="Alta / Service" required>
         </label>
+        {% endif %}
     </section>
 
+    {% if not vehicle_only %}
     <section class="card mobile-context-card" id="mobile_context_card">
         <div class="section-heading">
             <div>
@@ -254,6 +259,7 @@
         </div>
 
     </section>
+    {% endif %}
 
     {% set no_apta_allowed_sections = ["seguridad", "herramientas", "herramientas_mano", "vehiculo"] %}
     {% set no_apta_excluded_items = ["documentacion", "seguro_vehicular", "oblea_gnc", "rto"] %}
@@ -805,6 +811,7 @@
         <small>Los items en `No cumple` deben tener observación y motivo. La evidencia fotográfica es obligatoria salvo motivo `Olvido / En otro cliente`, `Pérdida`, `Robo` o `No asignado`. En `Seguro vehicular`, `Oblea de GNC`, `RTO` y `Botiquín` no se exige foto.</small>
     </section>
 
+    {% if not vehicle_only %}
     <section class="card table-card" id="auditor_rules_card">
         <div class="section-heading">
             <div>
@@ -1021,6 +1028,7 @@
             <p class="empty-state">No hay reglas disponibles.</p>
         {% endif %}
     </section>
+    {% endif %}
 
     <div class="signature-grid">
         <section class="card signature-card">
@@ -1041,6 +1049,7 @@
             <small>Campo obligatorio para cerrar la auditoría.</small>
         </section>
 
+        {% if not vehicle_only %}
         <section class="card signature-card">
             <div class="section-heading">
                 <div>
@@ -1059,6 +1068,7 @@
             </div>
             <small>Campo obligatorio para cerrar la auditoría.</small>
         </section>
+        {% endif %}
     </div>
 
     <div class="sticky-actions">
@@ -1069,6 +1079,7 @@
 
 <script>
     (function () {
+        const VEHICLE_ONLY = {{ 'true' if vehicle_only else 'false' }};
         const DRAFT_STORAGE_KEY = "audit_form_draft_v1";
         const DRAFT_RESTORE_FLAG_KEY = "audit_form_restore_flag_v1";
         const mobileSelect = document.getElementById("mobile_unit_id");
@@ -3457,23 +3468,27 @@
             });
         });
 
-        serializedStockInputs.forEach((radio) => {
-            radio.addEventListener("change", function () {
-                syncSerializedStockUI();
-                scheduleDraftSave();
+        if (!VEHICLE_ONLY) {
+            serializedStockInputs.forEach((radio) => {
+                radio.addEventListener("change", function () {
+                    syncSerializedStockUI();
+                    scheduleDraftSave();
+                });
             });
-        });
-        syncSerializedStockUI();
+            syncSerializedStockUI();
 
-        materialStockInputs.forEach((radio) => {
-            radio.addEventListener("change", function () {
-                syncMaterialStockUI();
-                scheduleDraftSave();
+            materialStockInputs.forEach((radio) => {
+                radio.addEventListener("change", function () {
+                    syncMaterialStockUI();
+                    scheduleDraftSave();
+                });
             });
-        });
-        syncMaterialStockUI();
+            syncMaterialStockUI();
+        }
 
-        mobileSelect.addEventListener("change", syncMobileContext);
+        if (mobileSelect) {
+            mobileSelect.addEventListener("change", syncMobileContext);
+        }
         if (vehicleSelect) {
             vehicleSelect.addEventListener("change", syncVehicleContext);
         }
@@ -3496,7 +3511,7 @@
             const closure = evaluateClosure();
             const requestValidation = validateSupplyRequests();
             const missingAuditorSignature = !pads[0].hasSignature();
-            const missingTechnicianSignature = !pads[1].hasSignature();
+            const missingTechnicianSignature = pads.length > 1 ? !pads[1].hasSignature() : false;
             if (closure.blockingIssues.length > 0) {
                 event.preventDefault();
                 document.getElementById("closure_check_card").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3511,9 +3526,16 @@
                 window.alert(requestValidation.message || "Revisa las solicitudes ingresadas.");
                 return;
             }
-            if (missingAuditorSignature || missingTechnicianSignature) {
+            if (missingAuditorSignature) {
                 event.preventDefault();
-                window.alert("Debes registrar la firma del auditor y del técnico antes de guardar la auditoría.");
+                window.alert(VEHICLE_ONLY
+                    ? "Debes registrar la firma del auditor antes de guardar la auditoría."
+                    : "Debes registrar la firma del auditor y del técnico antes de guardar la auditoría.");
+                return;
+            }
+            if (!VEHICLE_ONLY && missingTechnicianSignature) {
+                event.preventDefault();
+                window.alert("Debes registrar la firma del técnico antes de guardar la auditoría.");
                 return;
             }
             event.preventDefault();
@@ -3593,7 +3615,9 @@
         });
 
         pads.push(setupSignaturePad(auditorSignatureCanvas, auditorSignatureInput, clearAuditorSignatureButton));
-        pads.push(setupSignaturePad(technicianSignatureCanvas, technicianSignatureInput, clearTechnicianSignatureButton));
+        if (technicianSignatureCanvas) {
+            pads.push(setupSignaturePad(technicianSignatureCanvas, technicianSignatureInput, clearTechnicianSignatureButton));
+        }
 
         function resizeSignatureCanvas() {
             pads.forEach((pad) => pad.resize());
@@ -3622,7 +3646,9 @@
         initChecklistAccordion();
         initChecklistItemAccordion();
         resizeSignatureCanvas();
-        syncMobileContext();
+        if (mobileSelect) {
+            syncMobileContext();
+        }
         syncVehicleContext();
         syncHandToolsStatus();
         evaluateClosure();

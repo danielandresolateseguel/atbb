@@ -9,6 +9,7 @@
     'status': filters.status if filters.status else '',
     'auditor': filters.auditor if filters.auditor else '',
     'include_pruebas': filters.include_pruebas if filters.include_pruebas else '',
+    'audit_scope': filters.audit_scope if filters.audit_scope else '',
     'sort': filters.sort if filters.sort else '',
     'dir': filters.dir if filters.dir else '',
     'page': page,
@@ -24,6 +25,7 @@
     status=merged.status if merged.status else none,
     auditor=merged.auditor if merged.auditor else none,
     include_pruebas=merged.include_pruebas if merged.include_pruebas else none,
+    audit_scope=merged.audit_scope if merged.audit_scope else none,
     sort=merged.sort if merged.sort else none,
     dir=merged.dir if merged.dir else none,
     page=merged.page if merged.page and merged.page != 1 else none,
@@ -62,6 +64,14 @@
                 <option value="Aprobada con observaciones" {% if filters.status == "Aprobada con observaciones" %}selected{% endif %}>Aprobada con observaciones</option>
                 <option value="Critica" {% if filters.status == "Critica" %}selected{% endif %}>Crítica</option>
                 <option value="Rechazada" {% if filters.status == "Rechazada" %}selected{% endif %}>Rechazada</option>
+            </select>
+        </label>
+        <label>
+            <span>Tipo de auditoría</span>
+            <select name="audit_scope">
+                <option value="" {% if not filters.audit_scope %}selected{% endif %}>Todas</option>
+                <option value="completa" {% if filters.audit_scope == "completa" %}selected{% endif %}>Completa</option>
+                <option value="vehiculo" {% if filters.audit_scope == "vehiculo" %}selected{% endif %}>Solo vehículo</option>
             </select>
         </label>
         {% if can_view_all_audits %}
@@ -173,8 +183,11 @@
                                 {% if audit.record_scope == "pruebas" %}
                                     <span class="badge badge-pruebas">Pruebas</span>
                                 {% endif %}
+                                {% if audit.audit_scope == "vehiculo" %}
+                                    <span class="badge" style="background:#DBEAFE;color:#1E40AF;">Vehículo</span>
+                                {% endif %}
                             </td>
-                            <td>{{ audit.total_score }}</td>
+                            <td>{% if audit.audit_scope == "vehiculo" %}—{% else %}{{ audit.total_score }}{% endif %}</td>
                             <td><a class="table-link" href="{{ url_for('main.audit_detail', audit_id=audit.id) }}" target="_blank" rel="noopener noreferrer">Ver detalle</a></td>
                         </tr>
                     {% endfor %}

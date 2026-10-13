@@ -298,6 +298,10 @@ AUDIT_CHECKLIST_SECTIONS = [
     section for section in CHECKLIST_SECTIONS if section.get("key") not in QC_SECTION_KEYS
 ]
 
+VEHICLE_ONLY_SECTIONS = [
+    section for section in CHECKLIST_SECTIONS if section.get("key") == "vehiculo"
+]
+
 
 TOOL_MATCH_RULES = {
     "fusionadora": {
