@@ -226,23 +226,25 @@
                 <div style="grid-column: 1 / -1; padding: 14px 16px; background: #F8FAFC; border: 1px solid #E5E7EB; border-radius: 12px;">
                     <div style="font-weight:700; color:#0f172a; margin-bottom:10px;">Acciones rápidas</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;">
-                        <form method="post" action="{{ url_for('main.master_technician_reset_password', technician_id=row.id) }}" style="display:contents;">
+                        <div style="display:contents;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input type="hidden" name="mode" value="temporary">
                             <button class="button button-primary" type="submit"
+                                formaction="{{ url_for('main.master_technician_reset_password', technician_id=row.id) }}" formmethod="post"
                                 onclick="return confirm('Establecerá la contraseña genérica temporal y obligará al técnico a cambiarla en el próximo ingreso. ¿Continuar?')">
                                 🔄 Restablecer a temporal
                             </button>
-                        </form>
-                        <form method="post" action="{{ url_for('main.master_technician_reset_password', technician_id=row.id) }}" style="display:grid; grid-template-columns: 1fr auto; gap:8px;">
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr auto; gap:8px;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input type="hidden" name="mode" value="custom">
-                            <input type="password" name="new_password" minlength="8" required placeholder="Nueva contraseña (mín 8)" style="width:100%;">
+                            <input type="password" name="new_password" minlength="8" placeholder="Nueva contraseña (mín 8)" style="width:100%;">
                             <button class="button button-secondary" type="submit"
+                                formaction="{{ url_for('main.master_technician_reset_password', technician_id=row.id) }}" formmethod="post"
                                 onclick="return confirm('Asignarás esta nueva contraseña de forma inmediata. ¿Continuar?')">
                                 Guardar
                             </button>
-                        </form>
+                        </div>
                     </div>
                     <small style="color:#64748b; display:block; margin-top:8px;">
                         La contraseña genérica temporal actual es la que configura <code>Config.INITIAL_TECHNICIAN_PASSWORD</code> / env var.
@@ -269,13 +271,14 @@
                             Copiar
                         </button>
                     </div>
-                    <form method="post" action="{{ url_for('main.master_technician_regenerate_token', technician_id=row.id) }}" style="margin-top:12px;">
+                    <div style="margin-top:12px;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button class="button button-ghost" type="submit"
+                            formaction="{{ url_for('main.master_technician_regenerate_token', technician_id=row.id) }}" formmethod="post"
                             onclick="return confirm('⚠️ El link anterior dejará de funcionar inmediatamente. ¿Regenerar un token nuevo y único?')">
                             🔁 Regenerar token público
                         </button>
-                    </form>
+                    </div>
                     <small style="color:#9a3412; display:block; margin-top:8px;">
                         Si se filtrara este link, regenerá el token para invalidar el viejo y comunicá el nuevo al técnico.
                     </small>
@@ -305,4 +308,22 @@
     .inline-checkbox { margin-top: 4px; transform: scale(1.1); }
     code { background: #F3F4F6; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
 </style>
+<script>
+(function() {
+    const supervisorSelect = document.querySelector('select[name="supervisor_id"]');
+    const supervisorNameInput = document.querySelector('input[name="supervisor_name"]');
+    if (supervisorSelect && supervisorNameInput) {
+        supervisorSelect.addEventListener('change', function() {
+            if (this.value) {
+                supervisorNameInput.value = '';
+            }
+        });
+        supervisorNameInput.addEventListener('input', function() {
+            if (this.value.trim()) {
+                supervisorSelect.value = '';
+            }
+        });
+    }
+})();
+</script>
 {% endblock %}
