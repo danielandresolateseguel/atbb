@@ -74,3 +74,6 @@ class Config:
     WEATHER_WIND_BLOCK_KMH = env_float("WEATHER_WIND_BLOCK_KMH", 70.0)
     WEATHER_ZONDA_WIND_BLOCK_KMH = env_float("WEATHER_ZONDA_WIND_BLOCK_KMH", 50.0)
     WEATHER_ENABLED = env_bool("WEATHER_ENABLED", True)
+    # Token compartido para la sincronización automática de OT desde el Sistema Integral.
+    # Si no está configurado, los endpoints /api/si/* requieren login de sesión normal.
+    SI_API_TOKEN = os.environ.get("SI_API_TOKEN") or None

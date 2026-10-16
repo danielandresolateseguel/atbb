@@ -635,12 +635,113 @@ def _ensure_vehicle_id_column_exists():
         pass
 
 
+def _migrate_si_actividades_pk_sqlite(connection):
+    """El catalogo si_actividades paso a tener "Id" como clave primaria.
+
+    La version anterior usaba 'id_actividad' como PK, lo que colapsaba filas:
+    la tabla Actividades tiene 274 filas con "Id" unico, pero solo 230
+    'id_actividad' distintos. Como es un catalogo derivado (se repuebla en la
+    sincronizacion completa), si detectamos el esquema viejo lo recreamos vacio.
+    """
+    try:
+        info = connection.execute("PRAGMA table_info(si_actividades)").fetchall()
+        if info and info[0][1] != "Id":
+            connection.execute("DROP TABLE si_actividades")
+    except Exception:
+        pass
+
+
+def _migrate_si_actividades_pk_postgres(connection, cursor):
+    """Equivalente Postgres de _migrate_si_actividades_pk_sqlite."""
+    try:
+        row = cursor.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'si_actividades' ORDER BY ordinal_position LIMIT 1"
+        ).fetchone()
+        first = (row.get("column_name") if isinstance(row, dict) else (row[0] if row else None))
+        if first and first != "Id":
+            cursor.execute("DROP TABLE si_actividades")
+    except Exception:
+        pass
+
+
+def _migrate_si_ot_realizadas_add_estado_sqlite(connection):
+    """Agrega a si_ot_realizadas las columnas del estado real (bitacora OT_WFX_2)."""
+    try:
+        cols = {row[1] for row in connection.execute("PRAGMA table_info(si_ot_realizadas)").fetchall()}
+    except Exception:
+        return
+    for col in ("estado_real", "cod_res", "tipo_trabajo", "nodo"):
+        if cols and col not in cols:
+            try:
+                connection.execute(f"ALTER TABLE si_ot_realizadas ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
+
+
+def _migrate_si_ot_realizadas_add_estado_postgres(cursor):
+    # Solo actuar si la tabla ya existe. En una base nueva (p.ej. Render antes de
+    # desplegar el SI) un ALTER sobre una tabla inexistente lanza UndefinedTable y
+    # ABORTA la transaccion, rompiendo el arranque en los CREATE TABLE siguientes.
+    try:
+        rows = cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'si_ot_realizadas'"
+        ).fetchall()
+    except Exception:
+        return
+    cols = {(r.get("column_name") if isinstance(r, dict) else r[0]) for r in rows}
+    if not cols:
+        return
+    for col in ("estado_real", "cod_res", "tipo_trabajo", "nodo"):
+        if col not in cols:
+            try:
+                cursor.execute(f'ALTER TABLE si_ot_realizadas ADD COLUMN IF NOT EXISTS "{col}" TEXT')
+            except Exception:
+                pass
+
+
+def _migrate_si_tecnicos_add_nombre_sqlite(connection):
+    """Agrega dni/nombre/apellido a si_tecnicos (se resuelven desde DatosPersonales)."""
+    try:
+        cols = {row[1] for row in connection.execute("PRAGMA table_info(si_tecnicos)").fetchall()}
+    except Exception:
+        return
+    for col, decl in (("dni", "INTEGER"), ("nombre", "TEXT"), ("apellido", "TEXT")):
+        if cols and col not in cols:
+            try:
+                connection.execute(f"ALTER TABLE si_tecnicos ADD COLUMN {col} {decl}")
+            except Exception:
+                pass
+
+
+def _migrate_si_tecnicos_add_nombre_postgres(cursor):
+    # Mismo guard que la migracion de si_ot_realizadas: no tocar la tabla si no existe.
+    try:
+        rows = cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'si_tecnicos'"
+        ).fetchall()
+    except Exception:
+        return
+    cols = {(r.get("column_name") if isinstance(r, dict) else r[0]) for r in rows}
+    if not cols:
+        return
+    for col, decl in (("dni", "INTEGER"), ("nombre", "TEXT"), ("apellido", "TEXT")):
+        if col not in cols:
+            try:
+                cursor.execute(f'ALTER TABLE si_tecnicos ADD COLUMN IF NOT EXISTS "{col}" {decl}')
+            except Exception:
+                pass
+
+
 def init_db():
     if is_postgres():
         init_db_postgres()
         return
 
     connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
+    _migrate_si_actividades_pk_sqlite(connection)
+    _migrate_si_ot_realizadas_add_estado_sqlite(connection)
+    _migrate_si_tecnicos_add_nombre_sqlite(connection)
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -1113,6 +1214,127 @@ def init_db():
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(center_name, weather_date)
         );
+
+        -- ===== Tablas dedicadas: OT del Sistema Integral (Berardi) =====
+        CREATE TABLE IF NOT EXISTS si_ot_realizadas (
+            id INTEGER PRIMARY KEY,
+            n_ot TEXT NOT NULL UNIQUE,
+            id_u INTEGER,
+            direccion TEXT,
+            n_cliente INTEGER,
+            sect_op TEXT,
+            fecha_tec TEXT,
+            tecA INTEGER,
+            tecB INTEGER,
+            punt_tecA REAL,
+            punt_tecB REAL,
+            observacion TEXT,
+            Firma_TecA TEXT,
+            Fecha_Carga TEXT,
+            Centro INTEGER,
+            Empresa INTEGER,
+            Sindicato INTEGER,
+            Contingencia INTEGER DEFAULT 0,
+            estado_id INTEGER,
+            estado_real TEXT,
+            cod_res TEXT,
+            tipo_trabajo TEXT,
+            nodo TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_fecha_tec ON si_ot_realizadas (fecha_tec);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_fecha_carga ON si_ot_realizadas (Fecha_Carga);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_centro ON si_ot_realizadas (Centro);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_estado ON si_ot_realizadas (estado_id);
+
+        CREATE TABLE IF NOT EXISTS si_ot_actividades (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            cantidad INTEGER,
+            actividad_id INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_si_ot_actividades_id_ot ON si_ot_actividades (id_ot);
+
+        CREATE TABLE IF NOT EXISTS si_ot_materiales (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            material INTEGER,
+            cantidad INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_si_ot_materiales_id_ot ON si_ot_materiales (id_ot);
+
+        CREATE TABLE IF NOT EXISTS si_materiales (
+            id_material INTEGER PRIMARY KEY,
+            descri TEXT,
+            id_tipo INTEGER,
+            B_Min INTEGER,
+            B_Max INTEGER,
+            M_Max INTEGER,
+            M_Min INTEGER,
+            habilitado INTEGER DEFAULT 1,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS si_tecnicos (
+            n_tec INTEGER PRIMARY KEY,
+            dni INTEGER,
+            coord INTEGER,
+            sup INTEGER,
+            Centro INTEGER,
+            nombre TEXT,
+            apellido TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS si_empresas (
+            Id_Empresa INTEGER PRIMARY KEY,
+            Codigo TEXT,
+            cuit TEXT,
+            RazonSocial TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS si_sindicatos (
+            Id_Sindicato INTEGER PRIMARY KEY,
+            descripcion TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS si_centros (
+            Id_Centro INTEGER PRIMARY KEY,
+            Codigo TEXT,
+            Id_Provincia INTEGER,
+            Descripcion TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS si_proveedores (
+            id INTEGER PRIMARY KEY,
+            descri TEXT,
+            Codigo TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS si_actividades (
+            Id INTEGER PRIMARY KEY,
+            id_actividad INTEGER,
+            id_cable INTEGER,
+            descri TEXT,
+            puntaje REAL,
+            id_tipo INTEGER,
+            Ins_Eqp INTEGER DEFAULT 0,
+            Rec_Eqp INTEGER DEFAULT 0,
+            Habilitado INTEGER DEFAULT 1,
+            Sindicato_id INTEGER,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS si_tipo_ot_estados (
+            Id INTEGER PRIMARY KEY,
+            descri TEXT,
+            descripcion TEXT,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         """
     )
     try:
@@ -1147,6 +1369,9 @@ def init_db_postgres():
 
     connection = psycopg.connect(current_app.config["DATABASE_URL"], row_factory=dict_row)
     cursor = connection.cursor()
+    _migrate_si_actividades_pk_postgres(connection, cursor)
+    _migrate_si_ot_realizadas_add_estado_postgres(cursor)
+    _migrate_si_tecnicos_add_nombre_postgres(cursor)
 
     cursor.execute(
         """
@@ -1686,6 +1911,180 @@ def init_db_postgres():
         """
     )
 
+    # ===== Tablas dedicadas: OT del Sistema Integral (Berardi) =====
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_ot_realizadas (
+            id INTEGER PRIMARY KEY,
+            n_ot TEXT NOT NULL UNIQUE,
+            id_u INTEGER,
+            direccion TEXT,
+            n_cliente BIGINT,
+            sect_op TEXT,
+            fecha_tec TIMESTAMPTZ,
+            tecA INTEGER,
+            tecB INTEGER,
+            punt_tecA DOUBLE PRECISION,
+            punt_tecB DOUBLE PRECISION,
+            observacion TEXT,
+            "Firma_TecA" TEXT,
+            "Fecha_Carga" TIMESTAMPTZ,
+            "Centro" INTEGER,
+            "Empresa" INTEGER,
+            "Sindicato" INTEGER,
+            "Contingencia" INTEGER DEFAULT 0,
+            estado_id INTEGER,
+            estado_real TEXT,
+            cod_res TEXT,
+            tipo_trabajo TEXT,
+            nodo TEXT,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_fecha_tec ON si_ot_realizadas (fecha_tec)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_fecha_carga ON si_ot_realizadas (\"Fecha_Carga\")")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_centro ON si_ot_realizadas (\"Centro\")")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_realizadas_estado ON si_ot_realizadas (estado_id)")
+    except Exception:
+        pass
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_ot_actividades (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            cantidad INTEGER,
+            actividad_id INTEGER
+        )
+        """
+    )
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_actividades_id_ot ON si_ot_actividades (id_ot)")
+    except Exception:
+        pass
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_ot_materiales (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            material INTEGER,
+            cantidad BIGINT
+        )
+        """
+    )
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_materiales_id_ot ON si_ot_materiales (id_ot)")
+    except Exception:
+        pass
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_materiales (
+            id_material INTEGER PRIMARY KEY,
+            descri TEXT,
+            id_tipo INTEGER,
+            "B_Min" BIGINT,
+            "B_Max" BIGINT,
+            "M_Max" BIGINT,
+            "M_Min" BIGINT,
+            habilitado INTEGER DEFAULT 1,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_tecnicos (
+            n_tec INTEGER PRIMARY KEY,
+            dni INTEGER,
+            coord INTEGER,
+            sup INTEGER,
+            "Centro" INTEGER,
+            nombre TEXT,
+            apellido TEXT,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_empresas (
+            "Id_Empresa" INTEGER PRIMARY KEY,
+            "Codigo" TEXT,
+            "cuit" TEXT,
+            "RazonSocial" TEXT,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_sindicatos (
+            "Id_Sindicato" INTEGER PRIMARY KEY,
+            "descripcion" TEXT,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_centros (
+            "Id_Centro" INTEGER PRIMARY KEY,
+            "Codigo" TEXT,
+            "Id_Provincia" INTEGER,
+            "Descripcion" TEXT,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_proveedores (
+            id INTEGER PRIMARY KEY,
+            descri TEXT,
+            "Codigo" TEXT,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_actividades (
+            "Id" INTEGER PRIMARY KEY,
+            id_actividad INTEGER,
+            id_cable INTEGER,
+            descri TEXT,
+            puntaje DOUBLE PRECISION,
+            id_tipo INTEGER,
+            "Ins_Eqp" INTEGER DEFAULT 0,
+            "Rec_Eqp" INTEGER DEFAULT 0,
+            "Habilitado" INTEGER DEFAULT 1,
+            "Sindicato_id" INTEGER,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_tipo_ot_estados (
+            "Id" INTEGER PRIMARY KEY,
+            descri TEXT,
+            descripcion TEXT,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
     ensure_technicians_columns_postgres(cursor)
     cursor.execute(
         """
@@ -1735,6 +2134,481 @@ def init_db_postgres():
     _migrate_technicians_add_vehicle_id_postgres(connection, cursor)
     connection.commit()
     connection.close()
+
+
+# =========================================================================
+# Sistema Integral (Berardi) - UPSERT de OT y catálogos
+# =========================================================================
+
+def _si_bool(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return 1 if value else 0
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return 1
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _si_upsert_ot(ot):
+    """Inserta o actualiza una OT en si_ot_realizadas por n_ot.
+    Retorna el id interno de la OT (campo 'id' del SI)."""
+    db = get_db()
+    placeholder = "%s" if is_postgres() else "?"
+    now = datetime.now(timezone.utc).isoformat()
+
+    ot_id = ot.get("id")
+    n_ot = ot.get("n_ot")
+    if not n_ot:
+        return None
+
+    # Si no viene id, buscamos el existente por n_ot para preservar actividades/materiales
+    if ot_id is None:
+        row = db.execute(
+            f"SELECT id FROM si_ot_realizadas WHERE n_ot = {placeholder}",
+            (n_ot,),
+        ).fetchone()
+        ot_id = row["id"] if row else None
+
+    if is_postgres():
+        sql = """
+            INSERT INTO si_ot_realizadas
+                (id, n_ot, id_u, direccion, n_cliente, sect_op, fecha_tec,
+                 tecA, tecB, punt_tecA, punt_tecB, observacion, "Firma_TecA",
+                 "Fecha_Carga", "Centro", "Empresa", "Sindicato", "Contingencia",
+                 estado_id, estado_real, cod_res, tipo_trabajo, nodo, synced_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (n_ot) DO UPDATE SET
+                id = EXCLUDED.id,
+                id_u = EXCLUDED.id_u,
+                direccion = EXCLUDED.direccion,
+                n_cliente = EXCLUDED.n_cliente,
+                sect_op = EXCLUDED.sect_op,
+                fecha_tec = EXCLUDED.fecha_tec,
+                tecA = EXCLUDED.tecA,
+                tecB = EXCLUDED.tecB,
+                punt_tecA = EXCLUDED.punt_tecA,
+                punt_tecB = EXCLUDED.punt_tecB,
+                observacion = EXCLUDED.observacion,
+                "Firma_TecA" = EXCLUDED."Firma_TecA",
+                "Fecha_Carga" = EXCLUDED."Fecha_Carga",
+                "Centro" = EXCLUDED."Centro",
+                "Empresa" = EXCLUDED."Empresa",
+                "Sindicato" = EXCLUDED."Sindicato",
+                "Contingencia" = EXCLUDED."Contingencia",
+                estado_id = EXCLUDED.estado_id,
+                estado_real = EXCLUDED.estado_real,
+                cod_res = EXCLUDED.cod_res,
+                tipo_trabajo = EXCLUDED.tipo_trabajo,
+                nodo = EXCLUDED.nodo,
+                synced_at = EXCLUDED.synced_at
+        """
+    else:
+        sql = """
+            INSERT OR REPLACE INTO si_ot_realizadas
+                (id, n_ot, id_u, direccion, n_cliente, sect_op, fecha_tec,
+                 tecA, tecB, punt_tecA, punt_tecB, observacion, Firma_TecA,
+                 Fecha_Carga, Centro, Empresa, Sindicato, Contingencia,
+                 estado_id, estado_real, cod_res, tipo_trabajo, nodo, synced_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """
+
+    params = (
+        ot_id,
+        n_ot,
+        ot.get("id_u"),
+        ot.get("direccion"),
+        ot.get("n_cliente"),
+        ot.get("sect_op"),
+        ot.get("fecha_tec"),
+        ot.get("tecA"),
+        ot.get("tecB"),
+        ot.get("punt_tecA"),
+        ot.get("punt_tecB"),
+        ot.get("observacion"),
+        ot.get("Firma_TecA"),
+        ot.get("Fecha_Carga"),
+        ot.get("Centro"),
+        ot.get("Empresa"),
+        ot.get("Sindicato"),
+        _si_bool(ot.get("Contingencia")),
+        ot.get("estado_id"),
+        ot.get("estado_real"),
+        ot.get("cod_res"),
+        ot.get("tipo_trabajo"),
+        ot.get("nodo"),
+        now,
+    )
+    db.execute(sql, params)
+    return ot_id
+
+
+def _si_replace_children(ot_id, actividades, materiales):
+    """Borra y reinserta actividades y materiales de una OT por id_ot."""
+    if ot_id is None:
+        return 0, 0
+    db = get_db()
+    placeholder = "%s" if is_postgres() else "?"
+
+    db.execute(f"DELETE FROM si_ot_actividades WHERE id_ot = {placeholder}", (ot_id,))
+    db.execute(f"DELETE FROM si_ot_materiales WHERE id_ot = {placeholder}", (ot_id,))
+
+    act_count = 0
+    for a in (actividades or []):
+        if is_postgres():
+            sql = """
+                INSERT INTO si_ot_actividades (id, id_ot, cantidad, actividad_id)
+                VALUES (%s,%s,%s,%s)
+                ON CONFLICT (id) DO UPDATE SET
+                    id_ot = EXCLUDED.id_ot,
+                    cantidad = EXCLUDED.cantidad,
+                    actividad_id = EXCLUDED.actividad_id
+            """
+        else:
+            sql = """
+                INSERT OR REPLACE INTO si_ot_actividades (id, id_ot, cantidad, actividad_id)
+                VALUES (?,?,?,?)
+            """
+        db.execute(sql, (a.get("id"), ot_id, a.get("cantidad"), a.get("actividad_id")))
+        act_count += 1
+
+    mat_count = 0
+    for m in (materiales or []):
+        if is_postgres():
+            sql = """
+                INSERT INTO si_ot_materiales (id, id_ot, material, cantidad)
+                VALUES (%s,%s,%s,%s)
+                ON CONFLICT (id) DO UPDATE SET
+                    id_ot = EXCLUDED.id_ot,
+                    material = EXCLUDED.material,
+                    cantidad = EXCLUDED.cantidad
+            """
+        else:
+            sql = """
+                INSERT OR REPLACE INTO si_ot_materiales (id, id_ot, material, cantidad)
+                VALUES (?,?,?,?)
+            """
+        db.execute(sql, (m.get("id"), ot_id, m.get("material"), m.get("cantidad")))
+        mat_count += 1
+
+    return act_count, mat_count
+
+
+def _si_upsert_catalog(catalog_name, rows, columns, pk_column):
+    """Upsert genérico para catálogos."""
+    if not rows:
+        return 0
+    db = get_db()
+    count = 0
+    for row in rows:
+        values = [row.get(col) for col in columns]
+        placeholders = ", ".join(["%s" if is_postgres() else "?"] * len(columns))
+        col_list = ", ".join(columns)
+
+        if is_postgres():
+            col_list = ", ".join([f'"{c}"' for c in columns])
+            set_clause = ", ".join([f'"{c}" = EXCLUDED."{c}"' for c in columns if c != pk_column])
+            sql = f'INSERT INTO {catalog_name} ({col_list}) VALUES ({placeholders}) ON CONFLICT ("{pk_column}") DO UPDATE SET {set_clause}'
+        else:
+            col_list = ", ".join(columns)
+            sql = f"INSERT OR REPLACE INTO {catalog_name} ({col_list}) VALUES ({placeholders})"
+
+        db.execute(sql, values)
+        count += 1
+    return count
+
+
+def upsert_si_ot_batch(payload):
+    """Procesa un lote de OT + catálogos provenientes del Sistema Integral.
+
+    payload (dict) puede contener:
+      - "ots": lista de OT, cada una con sus campos y opcionalmente
+               "actividades" y "materiales" embebidos, O bien
+               "actividades" y "materiales" pueden venir como listas paralelas
+               dentro de cada OT.
+      - "catalogos": dict con claves: materiales, tecnicos, centros,
+                     proveedores, actividades, tipo_ot_estados.
+
+    Retorna dict con conteos.
+    """
+    ots = payload.get("ots") or []
+    catalogos = payload.get("catalogos") or {}
+
+    ot_count = 0
+    act_count = 0
+    mat_count = 0
+    errors = []
+
+    for ot in ots:
+        try:
+            ot_id = _si_upsert_ot(ot)
+            if ot_id is not None:
+                a, m = _si_replace_children(ot_id, ot.get("actividades"), ot.get("materiales"))
+                act_count += a
+                mat_count += m
+            ot_count += 1
+        except Exception as exc:
+            errors.append({"n_ot": ot.get("n_ot"), "error": str(exc)})
+
+    catalog_counts = {}
+    try:
+        catalog_counts["materiales"] = _si_upsert_catalog(
+            "si_materiales", catalogos.get("materiales") or [],
+            ["id_material", "descri", "id_tipo", "B_Min", "B_Max", "M_Max", "M_Min", "habilitado"],
+            "id_material",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "materiales", "error": str(exc)})
+
+    try:
+        catalog_counts["tecnicos"] = _si_upsert_catalog(
+            "si_tecnicos", catalogos.get("tecnicos") or [],
+            ["n_tec", "dni", "coord", "sup", "Centro", "nombre", "apellido"],
+            "n_tec",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "tecnicos", "error": str(exc)})
+
+    try:
+        catalog_counts["empresas"] = _si_upsert_catalog(
+            "si_empresas", catalogos.get("empresas") or [],
+            ["Id_Empresa", "Codigo", "cuit", "RazonSocial"],
+            "Id_Empresa",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "empresas", "error": str(exc)})
+
+    try:
+        catalog_counts["sindicatos"] = _si_upsert_catalog(
+            "si_sindicatos", catalogos.get("sindicatos") or [],
+            ["Id_Sindicato", "descripcion"],
+            "Id_Sindicato",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "sindicatos", "error": str(exc)})
+
+    try:
+        catalog_counts["centros"] = _si_upsert_catalog(
+            "si_centros", catalogos.get("centros") or [],
+            ["Id_Centro", "Codigo", "Id_Provincia", "Descripcion"],
+            "Id_Centro",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "centros", "error": str(exc)})
+
+    try:
+        catalog_counts["proveedores"] = _si_upsert_catalog(
+            "si_proveedores", catalogos.get("proveedores") or [],
+            ["id", "descri", "Codigo"],
+            "id",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "proveedores", "error": str(exc)})
+
+    try:
+        catalog_counts["actividades"] = _si_upsert_catalog(
+            "si_actividades", catalogos.get("actividades") or [],
+            ["Id", "id_actividad", "id_cable", "descri", "puntaje", "id_tipo", "Ins_Eqp", "Rec_Eqp", "Habilitado", "Sindicato_id"],
+            "Id",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "actividades", "error": str(exc)})
+
+    try:
+        catalog_counts["tipo_ot_estados"] = _si_upsert_catalog(
+            "si_tipo_ot_estados", catalogos.get("tipo_ot_estados") or [],
+            ["Id", "descri", "descripcion"],
+            "Id",
+        )
+    except Exception as exc:
+        errors.append({"catalogo": "tipo_ot_estados", "error": str(exc)})
+
+    get_db().commit()
+
+    return {
+        "ok": True,
+        "ots": ot_count,
+        "actividades": act_count,
+        "materiales": mat_count,
+        "catalogos": catalog_counts,
+        "errors": errors,
+    }
+
+
+def fetch_si_ot_stats():
+    """Estadísticas rápidas de las tablas del SI."""
+    db = get_db()
+    placeholder = "%s" if is_postgres() else "?"
+    stats = {}
+    for table in ["si_ot_realizadas", "si_ot_actividades", "si_ot_materiales"]:
+        try:
+            row = db.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
+            stats[table] = row["c"] if isinstance(row, dict) else row[0]
+        except Exception:
+            stats[table] = 0
+    return stats
+
+
+def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None,
+                     fecha_desde=None, fecha_hasta=None, page=1, per_page=50):
+    """Lista paginada de OT del Sistema Integral con filtros opcionales.
+
+    Devuelve dict con: rows (lista de dicts), total, page, per_page, total_pages.
+    """
+    db = get_db()
+    placeholder = "%s" if is_postgres() else "?"
+
+    where = []
+    params = []
+
+    if q:
+        where.append(f"(direccion LIKE {placeholder} OR n_ot LIKE {placeholder} OR CAST(n_cliente AS TEXT) LIKE {placeholder})")
+        like = f"%{q}%"
+        params.extend([like, like, like])
+
+    if n_ot:
+        where.append(f"n_ot LIKE {placeholder}")
+        params.append(f"%{n_ot}%")
+
+    if centro:
+        where.append(f"\"Centro\" = {placeholder}")
+        params.append(centro)
+
+    if estado_id is not None and str(estado_id) != "":
+        where.append(f"estado_id = {placeholder}")
+        params.append(int(estado_id))
+
+    if fecha_desde:
+        where.append(f"fecha_tec >= {placeholder}")
+        params.append(fecha_desde)
+
+    if fecha_hasta:
+        where.append(f"fecha_tec <= {placeholder}")
+        params.append(fecha_hasta + " 23:59:59")
+
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+    # Conteo total
+    count_sql = f"SELECT COUNT(*) AS c FROM si_ot_realizadas{where_sql}"
+    row = db.execute(count_sql, params).fetchone()
+    total = row["c"] if isinstance(row, dict) else row[0]
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+
+    order_col = "Fecha_Carga" if is_postgres() else "Fecha_Carga"
+    select_sql = (
+        f"SELECT o.id, o.n_ot, o.id_u, o.direccion, o.n_cliente, o.sect_op, o.fecha_tec, "
+        f"o.tecA, o.tecB, o.punt_tecA, o.punt_tecB, o.observacion, "
+        f"o.\"Fecha_Carga\" AS fecha_carga, o.\"Centro\" AS centro, "
+        f"o.\"Empresa\" AS empresa, o.\"Sindicato\" AS sindicato, "
+        f"o.\"Contingencia\" AS contingencia, o.estado_id, o.synced_at, "
+        f"c.Descripcion AS centro_desc, "
+        f"e.\"RazonSocial\" AS empresa_desc, "
+        f"s.\"descripcion\" AS sindicato_desc, "
+        f"o.estado_real, o.cod_res, o.tipo_trabajo "
+        f"FROM si_ot_realizadas o "
+        f"LEFT JOIN si_centros c ON c.Id_Centro = o.\"Centro\" "
+        f"LEFT JOIN si_empresas e ON e.\"Id_Empresa\" = o.\"Empresa\" "
+        f"LEFT JOIN si_sindicatos s ON s.\"Id_Sindicato\" = o.\"Sindicato\""
+        f"{where_sql} "
+        f"ORDER BY o.fecha_tec DESC, o.id DESC "
+        f"LIMIT {placeholder} OFFSET {placeholder}"
+    )
+    rows = db.execute(select_sql, params + [per_page, offset]).fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r) if isinstance(r, dict) else {
+            "id": r[0], "n_ot": r[1], "id_u": r[2], "direccion": r[3],
+            "n_cliente": r[4], "sect_op": r[5], "fecha_tec": r[6],
+            "tecA": r[7], "tecB": r[8], "punt_tecA": r[9], "punt_tecB": r[10],
+            "observacion": r[11], "fecha_carga": r[12], "centro": r[13],
+            "empresa": r[14], "sindicato": r[15], "contingencia": r[16],
+            "estado_id": r[17], "synced_at": r[18], "centro_desc": r[19],
+            "empresa_desc": r[20], "sindicato_desc": r[21],
+            "estado_real": r[22], "cod_res": r[23], "tipo_trabajo": r[24],
+        }
+        result.append(d)
+
+    return {
+        "rows": result,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+    }
+
+
+def fetch_si_ot_detail(ot_id):
+    """Devuelve una OT del SI con sus actividades y materiales."""
+    db = get_db()
+    placeholder = "%s" if is_postgres() else "?"
+
+    row = db.execute(
+        f"SELECT o.id, o.n_ot, o.id_u, o.direccion, o.n_cliente, o.sect_op, o.fecha_tec, "
+        f"o.tecA, o.tecB, o.punt_tecA, o.punt_tecB, o.observacion, "
+        f"o.\"Fecha_Carga\" AS fecha_carga, o.\"Centro\" AS centro, "
+        f"o.\"Empresa\" AS empresa, o.\"Sindicato\" AS sindicato, "
+        f"o.\"Contingencia\" AS contingencia, o.estado_id, "
+        f"o.estado_real, o.cod_res, o.tipo_trabajo, o.nodo, o.synced_at, "
+        f"c.Descripcion AS centro_desc, "
+        f"e.\"RazonSocial\" AS empresa_desc, "
+        f"s.\"descripcion\" AS sindicato_desc, "
+        f"ta.nombre AS tecA_nombre, ta.apellido AS tecA_apellido, "
+        f"tb.nombre AS tecB_nombre, tb.apellido AS tecB_apellido "
+        f"FROM si_ot_realizadas o "
+        f"LEFT JOIN si_centros c ON c.Id_Centro = o.\"Centro\" "
+        f"LEFT JOIN si_empresas e ON e.\"Id_Empresa\" = o.\"Empresa\" "
+        f"LEFT JOIN si_sindicatos s ON s.\"Id_Sindicato\" = o.\"Sindicato\" "
+        f"LEFT JOIN si_tecnicos ta ON ta.n_tec = o.tecA "
+        f"LEFT JOIN si_tecnicos tb ON tb.n_tec = o.tecB "
+        f"WHERE o.id = {placeholder}",
+        (ot_id,),
+    ).fetchone()
+    if not row:
+        return None
+
+    ot = dict(row) if isinstance(row, dict) else {
+        "id": row[0], "n_ot": row[1], "id_u": row[2], "direccion": row[3],
+        "n_cliente": row[4], "sect_op": row[5], "fecha_tec": row[6],
+        "tecA": row[7], "tecB": row[8], "punt_tecA": row[9], "punt_tecB": row[10],
+        "observacion": row[11], "fecha_carga": row[12], "centro": row[13],
+        "empresa": row[14], "sindicato": row[15], "contingencia": row[16],
+        "estado_id": row[17], "estado_real": row[18], "cod_res": row[19],
+        "tipo_trabajo": row[20], "nodo": row[21], "synced_at": row[22],
+        "centro_desc": row[23], "empresa_desc": row[24], "sindicato_desc": row[25],
+        "tecA_nombre": row[26], "tecA_apellido": row[27],
+        "tecB_nombre": row[28], "tecB_apellido": row[29],
+    }
+
+    actividades = db.execute(
+        f"SELECT oa.id, oa.id_ot, oa.cantidad, oa.actividad_id, "
+        f"a.id_actividad AS actividad_codigo, a.descri AS actividad_desc "
+        f"FROM si_ot_actividades oa "
+        f"LEFT JOIN si_actividades a ON a.\"Id\" = oa.actividad_id "
+        f"WHERE oa.id_ot = {placeholder} ORDER BY oa.id",
+        (ot_id,),
+    ).fetchall()
+    materiales = db.execute(
+        f"SELECT om.id, om.id_ot, om.material, om.cantidad, m.descri AS material_desc "
+        f"FROM si_ot_materiales om "
+        f"LEFT JOIN si_materiales m ON m.id_material = om.material "
+        f"WHERE om.id_ot = {placeholder} ORDER BY om.id",
+        (ot_id,),
+    ).fetchall()
+
+    ot["actividades"] = [dict(a) if isinstance(a, dict) else {"id": a[0], "id_ot": a[1], "cantidad": a[2], "actividad_id": a[3], "actividad_codigo": a[4], "actividad_desc": a[5]} for a in actividades]
+    ot["materiales"] = [dict(m) if isinstance(m, dict) else {"id": m[0], "id_ot": m[1], "material": m[2], "cantidad": m[3], "material_desc": m[4]} for m in materiales]
+
+    return ot
 
 
 def count_users():

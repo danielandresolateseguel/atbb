@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:1000px;margin:24px auto;padding:0 14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;">
+        <div>
+            <a href="{{ url_for('main.si_ot_list') }}" style="color:#93c5fd;font-weight:600;font-size:13px;">← Volver al listado</a>
+            <div class="section-kicker" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;margin:8px 0 6px;font-weight:700;">
+                Sistema Integral · OT {{ ot.n_ot }}
+            </div>
+            <h1 style="margin:0;font-size:24px;line-height:1.2;color:#ffffff;font-weight:800;">
+                {{ ot.n_ot }}
+            </h1>
+        </div>
+    </div>
+
+    {# Datos principales #}
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
+        <h2 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#0f172a;">Datos de la OT</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">ID interno</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.id }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">N° OT</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;font-family:ui-monospace,monospace;">{{ ot.n_ot }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">ID usuario (id_u)</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.id_u or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">N° cliente</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.n_cliente or '—' }}</div>
+            </div>
+            <div style="grid-column:1 / -1;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Dirección</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.direccion or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Sector operativo</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.sect_op or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Fecha técnica</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.fecha_tec or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Fecha de carga</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.fecha_carga or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Técnico A</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{% if ot.tecA_nombre or ot.tecA_apellido %}{{ ot.tecA_nombre }} {{ ot.tecA_apellido }} <span style="color:#64748b;font-weight:500;">(#{{ ot.tecA }})</span>{% else %}{{ ot.tecA or '—' }}{% endif %}{% if ot.punt_tecA %} (punt: {{ ot.punt_tecA }}){% endif %}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Técnico B</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{% if ot.tecB_nombre or ot.tecB_apellido %}{{ ot.tecB_nombre }} {{ ot.tecB_apellido }} <span style="color:#64748b;font-weight:500;">(#{{ ot.tecB }})</span>{% else %}{{ ot.tecB or '—' }}{% endif %}{% if ot.punt_tecB %} (punt: {{ ot.punt_tecB }}){% endif %}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Centro</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{% if ot.centro_desc %}{{ ot.centro_desc }}{% if ot.centro %} ({{ ot.centro }}){% endif %}{% else %}{{ ot.centro or '—' }}{% endif %}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Empresa</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{% if ot.empresa_desc %}{{ ot.empresa_desc }}{% if ot.empresa %} <span style="color:#64748b;font-weight:500;">({{ ot.empresa }})</span>{% endif %}{% else %}{{ ot.empresa or '—' }}{% endif %}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Sindicato</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{% if ot.sindicato_desc %}{{ ot.sindicato_desc }}{% if ot.sindicato %} <span style="color:#64748b;font-weight:500;">({{ ot.sindicato }})</span>{% endif %}{% else %}{{ ot.sindicato or '—' }}{% endif %}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Estado</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{% if ot.estado_real %}{{ ot.estado_real }}{% else %}{{ ot.estado_id or '—' }}{% endif %}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Resolución</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.cod_res or '—' }}</div>
+            </div>
+            <div style="grid-column:1 / -1;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Tipo de trabajo</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.tipo_trabajo or '—' }}{% if ot.nodo %} <span style="color:#64748b;font-weight:500;">· Nodo: {{ ot.nodo }}</span>{% endif %}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Contingencia</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">
+                    {% if ot.contingencia %}<span style="color:#991b1b;">Sí</span>{% else %}No{% endif %}
+                </div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Sincronizado el</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.synced_at or '—' }}</div>
+            </div>
+            {% if ot.observacion %}
+            <div style="grid-column:1 / -1;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Observación</div>
+                <div style="font-size:14px;font-weight:600;color:#0f172a;margin-top:2px;line-height:1.5;">{{ ot.observacion }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Actividades #}
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
+        <h2 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#0f172a;">Actividades ({{ ot.actividades|length }})</h2>
+        {% if ot.actividades %}
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f8fafc;">
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">ID</th>
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">Actividad</th>
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">Cantidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in ot.actividades %}
+                    <tr style="border-top:1px solid #f1f5f9;">
+                        <td style="padding:10px 12px;font-weight:600;color:#0f172a;">{{ a.id }}</td>
+                        <td style="padding:10px 12px;font-weight:600;color:#0f172a;">
+                            {{ a.actividad_desc or '—' }}<span style="color:#64748b;font-weight:500;"> ({{ a.actividad_codigo if a.actividad_codigo is not none else a.actividad_id }})</span>
+                        </td>
+                        <td style="padding:10px 12px;font-weight:700;color:#0f172a;">{{ a.cantidad }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="color:#64748b;font-weight:600;">Sin actividades.</p>
+        {% endif %}
+    </div>
+
+    {# Materiales #}
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
+        <h2 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#0f172a;">Materiales ({{ ot.materiales|length }})</h2>
+        {% if ot.materiales %}
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f8fafc;">
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">ID</th>
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">Material</th>
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">Cantidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in ot.materiales %}
+                    <tr style="border-top:1px solid #f1f5f9;">
+                        <td style="padding:10px 12px;font-weight:600;color:#0f172a;">{{ m.id }}</td>
+                        <td style="padding:10px 12px;font-weight:600;color:#0f172a;">
+                            {{ m.material_desc or '—' }}<span style="color:#64748b;font-weight:500;"> ({{ m.material }})</span>
+                        </td>
+                        <td style="padding:10px 12px;font-weight:700;color:#0f172a;">{{ m.cantidad }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="color:#64748b;font-weight:600;">Sin materiales.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

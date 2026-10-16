@@ -261,6 +261,10 @@ from app.models import (
     fetch_news_feed,
     count_news_feed,
     to_app_tz_string,
+    upsert_si_ot_batch,
+    fetch_si_ot_stats,
+    fetch_si_ot_list,
+    fetch_si_ot_detail,
 )
 
 
@@ -1699,6 +1703,19 @@ def require_login():
     endpoint = request.endpoint or ""
     if endpoint.startswith("static"):
         return None
+
+    # Permitir acceso a los endpoints de sincronización del Sistema Integral
+    # mediante un token compartido (sin necesidad de sesión de usuario).
+    path = str(request.path or "")
+    if path.startswith("/api/si/"):
+        configured_token = current_app.config.get("SI_API_TOKEN")
+        if configured_token:
+            provided = request.headers.get("X-API-Token") or request.args.get("token")
+            if provided and provided == configured_token:
+                return None
+            # Token configurado pero no enviado o inválido: 401 JSON.
+            return jsonify({"ok": False, "error": "unauthorized", "detail": "token invalido o ausente"}), 401
+        # Si no hay token configurado, se aplica el login normal (sesión).
 
     def _is_json_request():
         try:
@@ -12065,4 +12082,98 @@ def technician_order_share_badge(order_id):
         "badge_download_jpg_rel": badge_download_jpg_rel,
         "technician_name": technician.get("name") if technician else None,
     })
+
+
+# =========================================================================
+# Sistema Integral (Berardi) - Endpoints de sincronización de OT
+# =========================================================================
+
+@main.route("/api/si/ot/upsert", methods=["POST"])
+def api_si_ot_upsert():
+    """Recibe un lote de OT + catálogos del Sistema Integral y hace UPSERT.
+
+    Body JSON esperado:
+    {
+      "ots": [
+        {
+          "id": 123, "n_ot": "OT001", "id_u": 1, "direccion": "...",
+          "fecha_tec": "2026-10-13 10:00:00", "tecA": 5, ...
+          "actividades": [{"id":1,"id_ot":123,"cantidad":2,"actividad_id":5}],
+          "materiales": [{"id":1,"id_ot":123,"material":10,"cantidad":3}]
+        }
+      ],
+      "catalogos": {
+        "materiales": [...], "tecnicos": [...], "centros": [...],
+        "proveedores": [...], "actividades": [...], "tipo_ot_estados": [...]
+      }
+    }
+    """
+    try:
+        payload = request.get_json(force=True, silent=True)
+        if not payload or not isinstance(payload, dict):
+            return jsonify({"ok": False, "error": "body JSON invalido"}), 400
+
+        result = upsert_si_ot_batch(payload)
+        status = 200 if result.get("ok") else 500
+        return jsonify(result), status
+    except Exception as exc:
+        current_app.logger.exception("api_si_ot_upsert error")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@main.route("/api/si/ot/stats", methods=["GET"])
+def api_si_ot_stats():
+    """Devuelve conteos de las tablas del Sistema Integral."""
+    try:
+        return jsonify({"ok": True, "stats": fetch_si_ot_stats()})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# =========================================================================
+# Vista UI: Listado y detalle de OT del Sistema Integral
+# =========================================================================
+
+@main.route("/si/ot", methods=["GET"])
+def si_ot_list():
+    """Página que lista las OT sincronizadas desde el Sistema Integral."""
+    q = (request.args.get("q") or "").strip() or None
+    n_ot = (request.args.get("n_ot") or "").strip() or None
+    centro = (request.args.get("centro") or "").strip() or None
+    estado_id = (request.args.get("estado_id") or "").strip() or None
+    fecha_desde = (request.args.get("fecha_desde") or "").strip() or None
+    fecha_hasta = (request.args.get("fecha_hasta") or "").strip() or None
+    try:
+        page = int(request.args.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+
+    data = fetch_si_ot_list(
+        q=q, n_ot=n_ot, centro=centro, estado_id=estado_id,
+        fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, page=page, per_page=50,
+    )
+    stats = fetch_si_ot_stats()
+
+    return render_template(
+        "si_ot_list.html",
+        rows=data["rows"],
+        total=data["total"],
+        page=data["page"],
+        per_page=data["per_page"],
+        total_pages=data["total_pages"],
+        stats=stats,
+        q=q or "", n_ot=n_ot or "", centro=centro or "",
+        estado_id=estado_id or "", fecha_desde=fecha_desde or "",
+        fecha_hasta=fecha_hasta or "",
+    )
+
+
+@main.route("/si/ot/<int:ot_id>", methods=["GET"])
+def si_ot_detail(ot_id):
+    """Detalle de una OT del Sistema Integral con actividades y materiales."""
+    ot = fetch_si_ot_detail(ot_id)
+    if not ot:
+        flash("OT no encontrada.", "error")
+        return redirect(url_for("main.si_ot_list"))
+    return render_template("si_ot_detail.html", ot=ot)
 
