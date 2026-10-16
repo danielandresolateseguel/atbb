@@ -113,7 +113,9 @@
                             {% if can_import %}
                                 <a href="{{ url_for('main.imports') }}">Importar datos</a>
                             {% endif %}
-                            <a href="{{ url_for('main.si_ot_list') }}">Sistema Integral (OT)</a>
+                            {% if is_admin %}
+                                <a href="{{ url_for('main.si_ot_list') }}">Sistema Integral (OT)</a>
+                            {% endif %}
                         {% endif %}
                     {% else %}
                         <a href="{{ url_for('main.login') }}">Ingresar</a>

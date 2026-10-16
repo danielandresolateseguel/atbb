@@ -12137,6 +12137,8 @@ def api_si_ot_stats():
 @main.route("/si/ot", methods=["GET"])
 def si_ot_list():
     """Página que lista las OT sincronizadas desde el Sistema Integral."""
+    if not is_admin():
+        abort(403)
     q = (request.args.get("q") or "").strip() or None
     n_ot = (request.args.get("n_ot") or "").strip() or None
     centro = (request.args.get("centro") or "").strip() or None
@@ -12171,6 +12173,8 @@ def si_ot_list():
 @main.route("/si/ot/<int:ot_id>", methods=["GET"])
 def si_ot_detail(ot_id):
     """Detalle de una OT del Sistema Integral con actividades y materiales."""
+    if not is_admin():
+        abort(403)
     ot = fetch_si_ot_detail(ot_id)
     if not ot:
         flash("OT no encontrada.", "error")
