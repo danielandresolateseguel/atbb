@@ -2113,24 +2113,29 @@ def init_db_postgres():
     ensure_users_columns_postgres(cursor)
     ensure_all_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
+    # Persistir toda la DDL y migraciones anteriores ANTES de los indices opcionales.
+    # Si un CREATE UNIQUE INDEX falla (p.ej. datos duplicados en produccion) la
+    # transaccion de psycopg queda abortada y el commit final de abajo hace ROLLBACK
+    # de todo, borrando tambien las tablas si_* recien creadas.
+    connection.commit()
     try:
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_audits_unique_sa_tech_date ON audits (COALESCE(sa_number, ''), technician_id, audit_date)"
         )
     except Exception:
-        pass
+        connection.rollback()
     try:
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_qc_sessions_unique_sa_tech_date ON qc_sessions (COALESCE(sa_number, ''), technician_id, qc_date)"
         )
     except Exception:
-        pass
+        connection.rollback()
     try:
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_service_sessions_unique_sa_tech_date ON service_sessions (COALESCE(sa_number, ''), technician_id, service_date)"
         )
     except Exception:
-        pass
+        connection.rollback()
     _migrate_technicians_add_vehicle_id_postgres(connection, cursor)
     connection.commit()
     connection.close()
