@@ -2467,9 +2467,10 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None, movil=None,
             )
             params.extend([centro_raw, centro_raw])
         else:
-            like_centro = f"%{centro_raw}%"
+            like_centro = f"%{centro_raw.lower()}%"
             where.append(
-                f'(c."Descripcion" LIKE {placeholder} OR CAST(c."Codigo" AS TEXT) LIKE {placeholder})'
+                f"(LOWER(TRIM(COALESCE(c.\"Descripcion\", ''))) LIKE {placeholder} "
+                f"OR LOWER(TRIM(CAST(c.\"Codigo\" AS TEXT))) LIKE {placeholder})"
             )
             params.extend([like_centro, like_centro])
 
