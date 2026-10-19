@@ -2460,8 +2460,18 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None, movil=None,
         params.append(f"%{n_ot}%")
 
     if centro:
-        where.append(f"\"Centro\" = {placeholder}")
-        params.append(centro)
+        centro_raw = str(centro).strip()
+        if centro_raw.isdigit():
+            where.append(
+                f'(CAST(o."Centro" AS TEXT) = {placeholder} OR CAST(c."Codigo" AS TEXT) = {placeholder})'
+            )
+            params.extend([centro_raw, centro_raw])
+        else:
+            like_centro = f"%{centro_raw}%"
+            where.append(
+                f'(c."Descripcion" LIKE {placeholder} OR CAST(c."Codigo" AS TEXT) LIKE {placeholder})'
+            )
+            params.extend([like_centro, like_centro])
 
     if estado_id is not None and str(estado_id) != "":
         where.append(f"estado_id = {placeholder}")
@@ -2482,9 +2492,17 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None, movil=None,
         params.append(fecha_hasta + " 23:59:59")
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    from_sql = (
+        f' FROM si_ot_realizadas o '
+        f'LEFT JOIN si_centros c ON c."Id_Centro" = o."Centro" '
+        f'LEFT JOIN si_empresas e ON e."Id_Empresa" = o."Empresa" '
+        f'LEFT JOIN si_sindicatos s ON s."Id_Sindicato" = o."Sindicato" '
+        f'LEFT JOIN si_tecnicos ta ON ta.n_tec = o.tecA '
+        f'LEFT JOIN si_tecnicos tb ON tb.n_tec = o.tecB'
+    )
 
     # Conteo total
-    count_sql = f"SELECT COUNT(*) AS c FROM si_ot_realizadas{where_sql}"
+    count_sql = f"SELECT COUNT(*) AS c{from_sql}{where_sql}"
     row = db.execute(count_sql, params).fetchone()
     total = row["c"] if isinstance(row, dict) else row[0]
 
@@ -2506,13 +2524,7 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None, movil=None,
         f"o.estado_real, o.cod_res, o.tipo_trabajo, "
         f"ta.nombre AS \"tecA_nombre\", ta.apellido AS \"tecA_apellido\", "
         f"tb.nombre AS \"tecB_nombre\", tb.apellido AS \"tecB_apellido\" "
-        f"FROM si_ot_realizadas o "
-        f"LEFT JOIN si_centros c ON c.\"Id_Centro\" = o.\"Centro\" "
-        f"LEFT JOIN si_empresas e ON e.\"Id_Empresa\" = o.\"Empresa\" "
-        f"LEFT JOIN si_sindicatos s ON s.\"Id_Sindicato\" = o.\"Sindicato\" "
-        f"LEFT JOIN si_tecnicos ta ON ta.n_tec = o.tecA "
-        f"LEFT JOIN si_tecnicos tb ON tb.n_tec = o.tecB"
-        f"{where_sql} "
+        f"{from_sql}{where_sql} "
         f"ORDER BY o.fecha_tec DESC, o.id DESC "
         f"LIMIT {placeholder} OFFSET {placeholder}"
     )
