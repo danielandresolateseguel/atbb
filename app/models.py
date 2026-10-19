@@ -2496,11 +2496,15 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None,
         f"c.\"Descripcion\" AS centro_desc, "
         f"e.\"RazonSocial\" AS empresa_desc, "
         f"s.\"descripcion\" AS sindicato_desc, "
-        f"o.estado_real, o.cod_res, o.tipo_trabajo "
+        f"o.estado_real, o.cod_res, o.tipo_trabajo, "
+        f"ta.nombre AS tecA_nombre, ta.apellido AS tecA_apellido, "
+        f"tb.nombre AS tecB_nombre, tb.apellido AS tecB_apellido "
         f"FROM si_ot_realizadas o "
         f"LEFT JOIN si_centros c ON c.\"Id_Centro\" = o.\"Centro\" "
         f"LEFT JOIN si_empresas e ON e.\"Id_Empresa\" = o.\"Empresa\" "
-        f"LEFT JOIN si_sindicatos s ON s.\"Id_Sindicato\" = o.\"Sindicato\""
+        f"LEFT JOIN si_sindicatos s ON s.\"Id_Sindicato\" = o.\"Sindicato\" "
+        f"LEFT JOIN si_tecnicos ta ON ta.n_tec = o.tecA "
+        f"LEFT JOIN si_tecnicos tb ON tb.n_tec = o.tecB"
         f"{where_sql} "
         f"ORDER BY o.fecha_tec DESC, o.id DESC "
         f"LIMIT {placeholder} OFFSET {placeholder}"
@@ -2518,6 +2522,8 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None,
             "estado_id": r[17], "synced_at": r[18], "centro_desc": r[19],
             "empresa_desc": r[20], "sindicato_desc": r[21],
             "estado_real": r[22], "cod_res": r[23], "tipo_trabajo": r[24],
+            "tecA_nombre": r[25], "tecA_apellido": r[26],
+            "tecB_nombre": r[27], "tecB_apellido": r[28],
         }
         result.append(d)
 

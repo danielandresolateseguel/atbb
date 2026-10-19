@@ -103,7 +103,17 @@
                             {{ o.fecha_tec|si_fecha or '—' }}
                         </td>
                         <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;">
-                            {% if o.tecA %}A:{{ o.tecA }}{% endif %}{% if o.tecB %} · B:{{ o.tecB }}{% endif %}{% if not o.tecA and not o.tecB %}—{% endif %}
+                            {% if o.tecA_nombre or o.tecA_apellido %}
+                                <div>A: {{ o.tecA_nombre }} {{ o.tecA_apellido }}{% if o.tecA %} <span style="color:#64748b;font-weight:500;">(#{{ o.tecA }})</span>{% endif %}</div>
+                            {% elif o.tecA %}
+                                <div>A: {{ o.tecA }}</div>
+                            {% endif %}
+                            {% if o.tecB_nombre or o.tecB_apellido %}
+                                <div style="margin-top:2px;">B: {{ o.tecB_nombre }} {{ o.tecB_apellido }}{% if o.tecB %} <span style="color:#64748b;font-weight:500;">(#{{ o.tecB }})</span>{% endif %}</div>
+                            {% elif o.tecB %}
+                                <div style="margin-top:2px;">B: {{ o.tecB }}</div>
+                            {% endif %}
+                            {% if not o.tecA and not o.tecB and not o.tecA_nombre and not o.tecB_nombre %}—{% endif %}
                         </td>
                         <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;">{% if o.centro_desc %}{{ o.centro_desc }}{% if o.centro %} <span style="color:#64748b;font-weight:500;">({{ o.centro }})</span>{% endif %}{% else %}{{ o.centro or '—' }}{% endif %}</td>
                         <td style="padding:12px 14px;vertical-align:top;">
