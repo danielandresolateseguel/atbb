@@ -2438,7 +2438,7 @@ def fetch_si_ot_stats():
     return stats
 
 
-def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None,
+def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None, movil=None,
                      fecha_desde=None, fecha_hasta=None, page=1, per_page=50):
     """Lista paginada de OT del Sistema Integral con filtros opcionales.
 
@@ -2466,6 +2466,12 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None,
     if estado_id is not None and str(estado_id) != "":
         where.append(f"estado_id = {placeholder}")
         params.append(int(estado_id))
+
+    if movil:
+        where.append(
+            f"(CAST(tecA AS TEXT) LIKE {placeholder} OR CAST(tecB AS TEXT) LIKE {placeholder})"
+        )
+        params.extend([f"%{movil}%", f"%{movil}%"])
 
     if fecha_desde:
         where.append(f"fecha_tec >= {placeholder}")

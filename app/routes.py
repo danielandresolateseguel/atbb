@@ -12157,6 +12157,7 @@ def si_ot_list():
         abort(403)
     q = (request.args.get("q") or "").strip() or None
     n_ot = (request.args.get("n_ot") or "").strip() or None
+    movil = (request.args.get("movil") or "").strip().lstrip("#") or None
     centro = (request.args.get("centro") or "").strip() or None
     estado_id = (request.args.get("estado_id") or "").strip() or None
     fecha_desde = (request.args.get("fecha_desde") or "").strip() or None
@@ -12167,7 +12168,7 @@ def si_ot_list():
         page = 1
 
     data = fetch_si_ot_list(
-        q=q, n_ot=n_ot, centro=centro, estado_id=estado_id,
+        q=q, n_ot=n_ot, centro=centro, estado_id=estado_id, movil=movil,
         fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, page=page, per_page=50,
     )
     stats = fetch_si_ot_stats()
@@ -12180,7 +12181,7 @@ def si_ot_list():
         per_page=data["per_page"],
         total_pages=data["total_pages"],
         stats=stats,
-        q=q or "", n_ot=n_ot or "", centro=centro or "",
+        q=q or "", n_ot=n_ot or "", movil=movil or "", centro=centro or "",
         estado_id=estado_id or "", fecha_desde=fecha_desde or "",
         fecha_hasta=fecha_hasta or "",
     )

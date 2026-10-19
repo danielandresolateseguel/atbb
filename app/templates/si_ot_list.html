@@ -41,7 +41,7 @@
 
     {# Buscador / filtros #}
     <form method="GET" action="{{ url_for('main.si_ot_list') }}" class="si-search-grid"
-          style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;margin-bottom:16px;align-items:end;">
+          style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:16px;align-items:end;">
         <div>
             <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Buscar (dirección / OT / cliente)</label>
             <input type="search" name="q" value="{{ q }}" placeholder="Ej: calle, n° OT, n° cliente"
@@ -55,6 +55,11 @@
         <div>
             <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Estado</label>
             <input type="number" name="estado_id" value="{{ estado_id }}" placeholder="Ej: 1"
+                   style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+        </div>
+        <div>
+            <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Móvil</label>
+            <input type="text" name="movil" value="{{ movil }}" placeholder="Ej: 504"
                    style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
         </div>
         <div style="display:flex;gap:8px;">
@@ -140,7 +145,7 @@
                         <td colspan="8" style="padding:40px 20px;text-align:center;">
                             <div style="font-size:48px;margin-bottom:10px;">📋</div>
                             <div style="font-size:18px;font-weight:700;margin-bottom:6px;">
-                                No hay OT{% if q or n_ot or fecha_desde or fecha_hasta %} que coincidan con los filtros{% endif %}
+                                No hay OT{% if q or n_ot or movil or fecha_desde or fecha_hasta %} que coincidan con los filtros{% endif %}
                             </div>
                             <div style="font-size:13px;color:#475569;margin-top:4px;font-weight:600;">
                                 Las OT aparecen aquí cuando se sincronizan desde el Sistema Integral.
@@ -157,11 +162,11 @@
     {% if total_pages and total_pages > 1 %}
     <div style="display:flex;gap:10px;justify-content:center;margin:20px 0;align-items:center;flex-wrap:wrap;">
         {% if page > 1 %}
-        <a class="button button-secondary" href="{{ url_for('main.si_ot_list', q=q, n_ot=n_ot, estado_id=estado_id, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, page=page-1) }}">← Pág. {{ page - 1 }}</a>
+        <a class="button button-secondary" href="{{ url_for('main.si_ot_list', q=q, n_ot=n_ot, movil=movil, estado_id=estado_id, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, page=page-1) }}">← Pág. {{ page - 1 }}</a>
         {% endif %}
         <span style="font-size:14px;color:#1e293b;font-weight:600;">Página <b>{{ page }}</b> de {{ total_pages }} · {{ total }} OT</span>
         {% if page < total_pages %}
-        <a class="button button-secondary" href="{{ url_for('main.si_ot_list', q=q, n_ot=n_ot, estado_id=estado_id, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, page=page+1) }}">Pág. {{ page + 1 }} →</a>
+        <a class="button button-secondary" href="{{ url_for('main.si_ot_list', q=q, n_ot=n_ot, movil=movil, estado_id=estado_id, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, page=page+1) }}">Pág. {{ page + 1 }} →</a>
         {% endif %}
     </div>
     {% endif %}
