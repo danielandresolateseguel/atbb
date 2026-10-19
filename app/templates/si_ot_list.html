@@ -100,7 +100,7 @@
                         <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;">{{ o.direccion or '—' }}</td>
                         <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;">{{ o.n_cliente or '—' }}</td>
                         <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:700;white-space:nowrap;">
-                            {{ (o.fecha_tec or '')[:10] or '—' }}
+                            {{ o.fecha_tec|si_fecha or '—' }}
                         </td>
                         <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;">
                             {% if o.tecA %}A:{{ o.tecA }}{% endif %}{% if o.tecB %} · B:{{ o.tecB }}{% endif %}{% if not o.tecA and not o.tecB %}—{% endif %}

@@ -43,11 +43,11 @@
             </div>
             <div>
                 <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Fecha técnica</div>
-                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.fecha_tec or '—' }}</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.fecha_tec|si_fecha or '—' }}</div>
             </div>
             <div>
                 <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Fecha de carga</div>
-                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.fecha_carga or '—' }}</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.fecha_carga|si_fecha or '—' }}</div>
             </div>
             <div>
                 <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Técnico A</div>
@@ -89,7 +89,7 @@
             </div>
             <div>
                 <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Sincronizado el</div>
-                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.synced_at or '—' }}</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.synced_at|to_app_tz or '—' }}</div>
             </div>
             {% if ot.observacion %}
             <div style="grid-column:1 / -1;">

@@ -12,7 +12,7 @@ import time
 import traceback
 from pathlib import Path
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 
 from flask import Blueprint, abort, current_app, flash, g, jsonify, make_response, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import check_password_hash
@@ -507,6 +507,22 @@ def technician_photo_url(value, expires_in_seconds=86400):
 @main.app_template_filter("to_app_tz")
 def to_app_tz_filter(value, date_fmt="%d-%m-%Y %H:%M hs", date_only_fmt="%d-%m-%Y"):
     return to_app_tz_string(value, date_fmt=date_fmt, date_only_fmt=date_only_fmt)
+
+
+@main.app_template_filter("si_fecha")
+def si_fecha_filter(value):
+    """Fecha 'YYYY-MM-DD' para el modulo Sistema Integral (si_*).
+
+    En SQLite las columnas de fecha son TEXT ('YYYY-MM-DD HH:MM:SS') y en
+    Postgres TIMESTAMPTZ, que psycopg devuelve como datetime (no se puede
+    cortar con slicing). Se normaliza sin conversion de zona horaria:
+    fecha_tec es una fecha operativa, desplazarla cambiaria el dia.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%Y-%m-%d")
+    return str(value).strip()[:10]
 
 
 @main.route("/technicians/<int:technician_id>/profile-photo")
