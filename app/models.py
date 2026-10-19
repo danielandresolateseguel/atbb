@@ -2312,7 +2312,10 @@ def _si_upsert_catalog(catalog_name, rows, columns, pk_column):
     db = get_db()
     count = 0
     for row in rows:
-        values = [row.get(col) for col in columns]
+        # Postgres no castea bool -> integer en columnas INTEGER (SQLite si los
+        # guarda como 0/1). Los flags de catalogo (habilitado, Ins_Eqp, ...) llegan
+        # como true/false desde la extension: los convertimos a int.
+        values = [int(v) if isinstance(v, bool) else v for v in (row.get(col) for col in columns)]
         placeholders = ", ".join(["%s" if is_postgres() else "?"] * len(columns))
         col_list = ", ".join(columns)
 
@@ -2327,6 +2330,29 @@ def _si_upsert_catalog(catalog_name, rows, columns, pk_column):
         db.execute(sql, values)
         count += 1
     return count
+
+
+def _si_upsert_catalog_isolated(catalog_name, rows, columns, pk_column):
+    """Upsert de un catalogo aislado en un savepoint.
+
+    Sin savepoint, un fallo en cualquier catalogo deja la transaccion de Postgres
+    abortada y los catalogos siguientes fallan en cascada con "current transaction
+    is aborted", aunque sus datos esten bien.
+    """
+    if not rows:
+        return 0, None
+    db = get_db()
+    db.execute("SAVEPOINT si_catalog")
+    try:
+        count = _si_upsert_catalog(catalog_name, rows, columns, pk_column)
+    except Exception as exc:
+        try:
+            db.execute("ROLLBACK TO SAVEPOINT si_catalog")
+        except Exception:
+            pass
+        return 0, str(exc)
+    db.execute("RELEASE SAVEPOINT si_catalog")
+    return count, None
 
 
 def upsert_si_ot_batch(payload):
@@ -2362,77 +2388,29 @@ def upsert_si_ot_batch(payload):
             errors.append({"n_ot": ot.get("n_ot"), "error": str(exc)})
 
     catalog_counts = {}
-    try:
-        catalog_counts["materiales"] = _si_upsert_catalog(
-            "si_materiales", catalogos.get("materiales") or [],
-            ["id_material", "descri", "id_tipo", "B_Min", "B_Max", "M_Max", "M_Min", "habilitado"],
-            "id_material",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "materiales", "error": str(exc)})
-
-    try:
-        catalog_counts["tecnicos"] = _si_upsert_catalog(
-            "si_tecnicos", catalogos.get("tecnicos") or [],
-            ["n_tec", "dni", "coord", "sup", "Centro", "nombre", "apellido"],
-            "n_tec",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "tecnicos", "error": str(exc)})
-
-    try:
-        catalog_counts["empresas"] = _si_upsert_catalog(
-            "si_empresas", catalogos.get("empresas") or [],
-            ["Id_Empresa", "Codigo", "cuit", "RazonSocial"],
-            "Id_Empresa",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "empresas", "error": str(exc)})
-
-    try:
-        catalog_counts["sindicatos"] = _si_upsert_catalog(
-            "si_sindicatos", catalogos.get("sindicatos") or [],
-            ["Id_Sindicato", "descripcion"],
-            "Id_Sindicato",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "sindicatos", "error": str(exc)})
-
-    try:
-        catalog_counts["centros"] = _si_upsert_catalog(
-            "si_centros", catalogos.get("centros") or [],
-            ["Id_Centro", "Codigo", "Id_Provincia", "Descripcion"],
-            "Id_Centro",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "centros", "error": str(exc)})
-
-    try:
-        catalog_counts["proveedores"] = _si_upsert_catalog(
-            "si_proveedores", catalogos.get("proveedores") or [],
-            ["id", "descri", "Codigo"],
-            "id",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "proveedores", "error": str(exc)})
-
-    try:
-        catalog_counts["actividades"] = _si_upsert_catalog(
-            "si_actividades", catalogos.get("actividades") or [],
-            ["Id", "id_actividad", "id_cable", "descri", "puntaje", "id_tipo", "Ins_Eqp", "Rec_Eqp", "Habilitado", "Sindicato_id"],
-            "Id",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "actividades", "error": str(exc)})
-
-    try:
-        catalog_counts["tipo_ot_estados"] = _si_upsert_catalog(
-            "si_tipo_ot_estados", catalogos.get("tipo_ot_estados") or [],
-            ["Id", "descri", "descripcion"],
-            "Id",
-        )
-    except Exception as exc:
-        errors.append({"catalogo": "tipo_ot_estados", "error": str(exc)})
+    for key, table, columns, pk in (
+        ("materiales", "si_materiales",
+         ["id_material", "descri", "id_tipo", "B_Min", "B_Max", "M_Max", "M_Min", "habilitado"], "id_material"),
+        ("tecnicos", "si_tecnicos",
+         ["n_tec", "dni", "coord", "sup", "Centro", "nombre", "apellido"], "n_tec"),
+        ("empresas", "si_empresas",
+         ["Id_Empresa", "Codigo", "cuit", "RazonSocial"], "Id_Empresa"),
+        ("sindicatos", "si_sindicatos",
+         ["Id_Sindicato", "descripcion"], "Id_Sindicato"),
+        ("centros", "si_centros",
+         ["Id_Centro", "Codigo", "Id_Provincia", "Descripcion"], "Id_Centro"),
+        ("proveedores", "si_proveedores",
+         ["id", "descri", "Codigo"], "id"),
+        ("actividades", "si_actividades",
+         ["Id", "id_actividad", "id_cable", "descri", "puntaje", "id_tipo",
+          "Ins_Eqp", "Rec_Eqp", "Habilitado", "Sindicato_id"], "Id"),
+        ("tipo_ot_estados", "si_tipo_ot_estados",
+         ["Id", "descri", "descripcion"], "Id"),
+    ):
+        count, err = _si_upsert_catalog_isolated(table, catalogos.get(key) or [], columns, pk)
+        catalog_counts[key] = count
+        if err:
+            errors.append({"catalogo": key, "error": err})
 
     get_db().commit()
 
