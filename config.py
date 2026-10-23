@@ -88,3 +88,7 @@ class Config:
     SI_PULL_BATCH_SIZE = env_int("SI_PULL_BATCH_SIZE", 500)
     SI_PULL_PAUSE_MS = env_int("SI_PULL_PAUSE_MS", 1500)
     SI_PULL_LOCK_TIMEOUT_SECONDS = env_int("SI_PULL_LOCK_TIMEOUT_SECONDS", 900)
+    # Disparo on-demand: al abrir la vista de OT se lanza el pull en segundo plano
+    # si pasó el intervalo mínimo y no hay una corrida en curso.
+    SI_PULL_ON_DEMAND = env_bool("SI_PULL_ON_DEMAND", True)
+    SI_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES = env_int("SI_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES", 10)

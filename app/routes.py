@@ -266,7 +266,14 @@ from app.models import (
     fetch_si_ot_list,
     fetch_si_ot_detail,
 )
-from app.si_pull import SIPullBusyError, SIPullConfigError, get_si_pull_state, si_pull_dry_run, si_pull_run
+from app.si_pull import (
+    SIPullBusyError,
+    SIPullConfigError,
+    get_si_pull_state,
+    maybe_si_pull_async,
+    si_pull_dry_run,
+    si_pull_run,
+)
 
 
 main = Blueprint("main", __name__)
@@ -12202,6 +12209,10 @@ def si_ot_list():
     """Página que lista las OT sincronizadas desde el Sistema Integral."""
     if not is_admin():
         abort(403)
+    # Disparo on-demand: si pasó el intervalo mínimo y no hay corrida en curso,
+    # se lanza el pull en segundo plano sin bloquear la carga de la página.
+    pull_trigger = maybe_si_pull_async()
+
     q = (request.args.get("q") or "").strip() or None
     n_ot = (request.args.get("n_ot") or "").strip() or None
     movil = (request.args.get("movil") or "").strip().lstrip("#") or None
@@ -12228,10 +12239,32 @@ def si_ot_list():
         per_page=data["per_page"],
         total_pages=data["total_pages"],
         stats=stats,
+        pull_state=get_si_pull_state(),
+        pull_trigger=pull_trigger,
         q=q or "", n_ot=n_ot or "", movil=movil or "", centro=centro or "",
         estado_id=estado_id or "", fecha_desde=fecha_desde or "",
         fecha_hasta=fecha_hasta or "",
     )
+
+
+@main.route("/si/ot/sync-now", methods=["POST"])
+def si_ot_sync_now():
+    """Fuerza una sincronización del Sistema Integral desde la UI (solo admin)."""
+    if not is_admin():
+        abort(403)
+    if not validate_csrf_token(request.form.get("csrf_token")):
+        abort(400)
+
+    result = maybe_si_pull_async(force=True)
+    if result.get("started"):
+        flash("Sincronización iniciada. La página se actualiza sola en unos segundos.", "success")
+    elif result.get("reason") == "running":
+        flash("Ya hay una sincronización en curso.", "info")
+    elif result.get("reason") == "disabled":
+        flash("La sincronización on-demand está desactivada.", "info")
+    else:
+        flash("No se pudo iniciar la sincronización.", "info")
+    return redirect(url_for("main.si_ot_list"))
 
 
 @main.route("/si/ot/<int:ot_id>", methods=["GET"])

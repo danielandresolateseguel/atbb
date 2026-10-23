@@ -560,3 +560,55 @@ def si_pull_run(raw_minutes=None, include_catalogs=False):
         raise
     finally:
         _RUN_LOCK.release()
+
+
+def _last_attempt_utc():
+    """Momento (UTC) del último intento de pull, exitoso o no."""
+    state = _fetch_sync_state() or {}
+    candidates = []
+    for key in ("last_finished_at", "last_started_at"):
+        parsed = _parse_text_datetime(state.get(key))
+        if parsed:
+            candidates.append(parsed)
+    return max(candidates) if candidates else None
+
+
+def si_pull_on_demand_ready(ignore_throttle=False):
+    """Indica si corresponde disparar un pull on-demand.
+
+    Devuelve (bool, motivo). El throttle evita que cada carga de la vista
+    martille el SQL Server del Sistema Integral.
+    """
+    if not current_app.config.get("SI_PULL_ON_DEMAND"):
+        return False, "disabled"
+    state = get_si_pull_state()
+    if state.get("running"):
+        return False, "running"
+    if ignore_throttle:
+        return True, "forced"
+    min_interval = max(1, int(current_app.config.get("SI_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES") or 10))
+    last_attempt = _last_attempt_utc()
+    if last_attempt and (datetime.utcnow() - last_attempt) < timedelta(minutes=min_interval):
+        return False, "throttled"
+    return True, "ready"
+
+
+def maybe_si_pull_async(force=False):
+    """Lanza el pull en un hilo aparte para no bloquear el request del usuario."""
+    should_run, reason = si_pull_on_demand_ready(ignore_throttle=force)
+    if not should_run:
+        return {"started": False, "reason": reason}
+
+    app = current_app._get_current_object()
+
+    def _worker():
+        with app.app_context():
+            try:
+                si_pull_run()
+            except SIPullBusyError:
+                pass
+            except Exception:
+                app.logger.exception("si_pull on-demand error")
+
+    threading.Thread(target=_worker, name="si-pull-on-demand", daemon=True).start()
+    return {"started": True, "reason": reason}
