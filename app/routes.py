@@ -266,6 +266,7 @@ from app.models import (
     fetch_si_ot_list,
     fetch_si_ot_detail,
 )
+from app.si_pull import SIPullBusyError, SIPullConfigError, get_si_pull_state, si_pull_dry_run, si_pull_run
 
 
 main = Blueprint("main", __name__)
@@ -12103,6 +12104,52 @@ def technician_order_share_badge(order_id):
 # =========================================================================
 # Sistema Integral (Berardi) - Endpoints de sincronización de OT
 # =========================================================================
+
+@main.route("/api/si/pull/dry-run", methods=["GET"])
+def api_si_pull_dry_run():
+    """Prueba la conexión pull al SQL Server del SI sin escribir datos."""
+    try:
+        result = si_pull_dry_run(request.args.get("minutes"))
+        return jsonify({"ok": True, **result})
+    except SIPullConfigError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("api_si_pull_dry_run error")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@main.route("/api/si/pull/state", methods=["GET"])
+def api_si_pull_state():
+    """Devuelve el último estado conocido del pull del Sistema Integral."""
+    try:
+        return jsonify({"ok": True, "state": get_si_pull_state()})
+    except Exception as exc:
+        current_app.logger.exception("api_si_pull_state error")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@main.route("/api/si/pull", methods=["POST"])
+def api_si_pull_run():
+    """Ejecuta manualmente el pull incremental del Sistema Integral."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        include_catalogs = bool(payload.get("include_catalogs"))
+        result = si_pull_run(
+            raw_minutes=payload.get("minutes"),
+            include_catalogs=include_catalogs,
+        )
+        return jsonify({"ok": True, **result}), 200
+    except SIPullBusyError as exc:
+        return jsonify({"ok": False, "error": str(exc), "state": get_si_pull_state()}), 409
+    except SIPullConfigError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("api_si_pull_run error")
+        return jsonify({"ok": False, "error": str(exc), "state": get_si_pull_state()}), 500
 
 @main.route("/api/si/ot/upsert", methods=["POST"])
 def api_si_ot_upsert():

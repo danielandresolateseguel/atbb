@@ -77,3 +77,14 @@ class Config:
     # Token compartido para la sincronización automática de OT desde el Sistema Integral.
     # Si no está configurado, los endpoints /api/si/* requieren login de sesión normal.
     SI_API_TOKEN = os.environ.get("SI_API_TOKEN") or None
+    SI_MSSQL_HOST = (os.environ.get("SI_MSSQL_HOST") or "").strip() or None
+    SI_MSSQL_PORT = env_int("SI_MSSQL_PORT", 1435)
+    SI_MSSQL_DATABASE = (os.environ.get("SI_MSSQL_DATABASE") or "").strip() or None
+    SI_MSSQL_USER = (os.environ.get("SI_MSSQL_USER") or "").strip() or None
+    SI_MSSQL_PASSWORD = os.environ.get("SI_MSSQL_PASSWORD") or None
+    SI_PULL_WINDOW_MINUTES = env_int("SI_PULL_WINDOW_MINUTES", 15)
+    SI_PULL_CONNECT_TIMEOUT_SECONDS = env_int("SI_PULL_CONNECT_TIMEOUT_SECONDS", 30)
+    SI_PULL_QUERY_TIMEOUT_SECONDS = env_int("SI_PULL_QUERY_TIMEOUT_SECONDS", 120)
+    SI_PULL_BATCH_SIZE = env_int("SI_PULL_BATCH_SIZE", 500)
+    SI_PULL_PAUSE_MS = env_int("SI_PULL_PAUSE_MS", 1500)
+    SI_PULL_LOCK_TIMEOUT_SECONDS = env_int("SI_PULL_LOCK_TIMEOUT_SECONDS", 900)
