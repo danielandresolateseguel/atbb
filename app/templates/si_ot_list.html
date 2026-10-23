@@ -35,12 +35,18 @@
             <span style="font-size:12px;font-weight:700;color:#f87171;">· último intento con error</span>
             {% endif %}
         </div>
+        {% if syncing %}
+        <button type="button" disabled title="Sincronización en curso" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:not-allowed;opacity:.65;">
+            Sincronizando…
+        </button>
+        {% else %}
         <form method="POST" action="{{ url_for('main.si_ot_sync_now') }}" style="margin:0;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:pointer;">
                 Sincronizar ahora
             </button>
         </form>
+        {% endif %}
     </div>
     {% if syncing %}
     <script>setTimeout(function () { window.location.href = {{ reload_url|tojson }}; }, 15000);</script>
