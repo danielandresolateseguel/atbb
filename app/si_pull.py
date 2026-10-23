@@ -209,11 +209,20 @@ def get_si_pull_state():
     return normalized
 
 
-def _resolve_filter_since(raw_minutes):
-    now = datetime.utcnow().replace(microsecond=0)
+def _fetch_server_now(cursor):
+    """Hora local del SQL Server, que es la que usa Fecha_Carga."""
+    cursor.execute("SELECT GETDATE() AS server_now")
+    row = cursor.fetchone() or {}
+    value = row.get("server_now")
+    if not isinstance(value, datetime):
+        raise RuntimeError("El SQL Server del Sistema Integral no devolvió una hora válida")
+    return value.replace(microsecond=0, tzinfo=None)
+
+
+def _resolve_filter_since(raw_minutes, server_now):
     window_minutes = _resolve_window_minutes(raw_minutes)
     if raw_minutes is not None:
-        since_dt = now - timedelta(minutes=window_minutes)
+        since_dt = server_now - timedelta(minutes=window_minutes)
         return since_dt, window_minutes, "manual-window"
 
     state = _fetch_sync_state()
@@ -222,7 +231,7 @@ def _resolve_filter_since(raw_minutes):
         since_dt = last_success_at - timedelta(minutes=window_minutes)
         return since_dt, window_minutes, "resume-window"
 
-    since_dt = now - timedelta(minutes=window_minutes)
+    since_dt = server_now - timedelta(minutes=window_minutes)
     return since_dt, window_minutes, "fallback-window"
 
 
@@ -321,8 +330,6 @@ def si_pull_dry_run(raw_minutes=None):
     """Valida conexión a SQL Server y devuelve métricas básicas sin escribir datos."""
     settings = _required_pull_settings()
     window_minutes = _resolve_window_minutes(raw_minutes)
-    since_dt = datetime.now().replace(microsecond=0) - timedelta(minutes=window_minutes)
-    since_sql = since_dt.strftime("%Y%m%d %H:%M:%S")
 
     try:
         import pymssql
@@ -343,8 +350,13 @@ def si_pull_dry_run(raw_minutes=None):
     try:
         cursor = conn.cursor(as_dict=True)
 
-        cursor.execute("SELECT GETDATE() AS server_now")
-        server_info = cursor.fetchone() or {}
+        # La ventana se calcula con la hora del SQL Server: Fecha_Carga está en hora
+        # local del servidor y Render corre en UTC, así que usar el reloj local del
+        # proceso desplazaría el filtro (~3 horas) y no traería ninguna OT.
+        server_now = _fetch_server_now(cursor)
+        since_dt = server_now - timedelta(minutes=window_minutes)
+        since_sql = since_dt.strftime("%Y%m%d %H:%M:%S")
+        server_info = {"server_now": server_now}
 
         cursor.execute(
             """
@@ -420,20 +432,8 @@ def si_pull_run(raw_minutes=None, include_catalogs=False):
     started_at = _utc_now_text()
     try:
         settings = _required_pull_settings()
-        since_dt, window_minutes, strategy = _resolve_filter_since(raw_minutes)
-        since_sql = since_dt.strftime("%Y%m%d %H:%M:%S")
         batch_size = max(1, int(current_app.config.get("SI_PULL_BATCH_SIZE") or 500))
         pause_seconds = max(0, int(current_app.config.get("SI_PULL_PAUSE_MS") or 0)) / 1000.0
-
-        _upsert_sync_state(
-            lock_acquired_at=started_at,
-            last_started_at=started_at,
-            last_finished_at=None,
-            last_status="running",
-            last_error=None,
-            last_filter_since=since_dt.strftime("%Y-%m-%d %H:%M:%S"),
-            updated_at=started_at,
-        )
 
         try:
             import pymssql
@@ -453,6 +453,24 @@ def si_pull_run(raw_minutes=None, include_catalogs=False):
         )
         try:
             cursor = conn.cursor(as_dict=True)
+
+            # La ventana y la marca de agua se manejan con la hora del SQL Server, que es
+            # el reloj de Fecha_Carga. El reloj del proceso (UTC en Render) no sirve acá.
+            server_now = _fetch_server_now(cursor)
+            since_dt, window_minutes, strategy = _resolve_filter_since(raw_minutes, server_now)
+            since_sql = since_dt.strftime("%Y%m%d %H:%M:%S")
+            watermark = server_now.strftime("%Y-%m-%d %H:%M:%S")
+
+            _upsert_sync_state(
+                lock_acquired_at=started_at,
+                last_started_at=started_at,
+                last_finished_at=None,
+                last_status="running",
+                last_error=None,
+                last_filter_since=since_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                updated_at=started_at,
+            )
+
             catalogos = {}
             if include_catalogs:
                 catalogos = _load_catalogs(cursor)
@@ -507,7 +525,8 @@ def si_pull_run(raw_minutes=None, include_catalogs=False):
         _upsert_sync_state(
             lock_acquired_at=None,
             last_finished_at=finished_at,
-            last_success_at=finished_at,
+            # La marca de agua queda en hora del SQL Server, no en hora del proceso.
+            last_success_at=watermark,
             last_status="ok",
             last_error=None,
             last_filter_since=since_dt.strftime("%Y-%m-%d %H:%M:%S"),
