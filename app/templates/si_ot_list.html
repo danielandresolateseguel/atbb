@@ -43,7 +43,7 @@
         </form>
     </div>
     {% if syncing %}
-    <script>setTimeout(function () { window.location.reload(); }, 15000);</script>
+    <script>setTimeout(function () { window.location.href = {{ reload_url|tojson }}; }, 15000);</script>
     {% endif %}
 
     {# Tarjetas de estadísticas #}

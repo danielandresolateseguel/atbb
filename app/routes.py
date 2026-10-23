@@ -12212,6 +12212,11 @@ def si_ot_list():
     # Disparo on-demand: si pasó el intervalo mínimo y no hay corrida en curso,
     # se lanza el pull en segundo plano sin bloquear la carga de la página.
     pull_trigger = maybe_si_pull_async()
+    if (request.args.get("sync") or "").strip() == "1":
+        # Vuelta del boton "Sincronizar ahora": el pull ya se lanzo desde el POST,
+        # pero el lock recien se marca cuando el hilo arranca. Forzamos el estado
+        # para que el usuario vea "sincronizando" y la pagina se recargue sola.
+        pull_trigger = {"started": True, "reason": "manual"}
 
     q = (request.args.get("q") or "").strip() or None
     n_ot = (request.args.get("n_ot") or "").strip() or None
@@ -12241,6 +12246,12 @@ def si_ot_list():
         stats=stats,
         pull_state=get_si_pull_state(),
         pull_trigger=pull_trigger,
+        # Al recargar hay que quitar ?sync=1 para no quedar mostrando "sincronizando"
+        # de forma permanente cuando el pull ya terminó.
+        reload_url=url_for(
+            "main.si_ot_list",
+            **{k: v for k, v in request.args.items() if k != "sync"},
+        ),
         q=q or "", n_ot=n_ot or "", movil=movil or "", centro=centro or "",
         estado_id=estado_id or "", fecha_desde=fecha_desde or "",
         fecha_hasta=fecha_hasta or "",
@@ -12264,7 +12275,7 @@ def si_ot_sync_now():
         flash("La sincronización on-demand está desactivada.", "info")
     else:
         flash("No se pudo iniciar la sincronización.", "info")
-    return redirect(url_for("main.si_ot_list"))
+    return redirect(url_for("main.si_ot_list", sync="1"))
 
 
 @main.route("/si/ot/<int:ot_id>", methods=["GET"])
