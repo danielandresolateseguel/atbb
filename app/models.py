@@ -1263,6 +1263,36 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_si_ot_materiales_id_ot ON si_ot_materiales (id_ot);
 
+        -- OT creadas en el SI que nunca se cargaron en OtRealizadas (no realizadas).
+        CREATE TABLE IF NOT EXISTS si_ot_no_realizadas (
+            n_ot TEXT PRIMARY KEY,
+            wfx_id INTEGER,
+            estado TEXT,
+            tipo_trabajo TEXT,
+            cod_res TEXT,
+            nodo TEXT,
+            id_u INTEGER,
+            nombre TEXT,
+            n_cli TEXT,
+            dni TEXT,
+            tel TEXT,
+            dir_original TEXT,
+            direccion TEXT,
+            motivo TEXT,
+            categoria TEXT,
+            fecha TEXT,
+            ultimo_movimiento TEXT,
+            Centro INTEGER,
+            Empresa INTEGER,
+            Sindicato INTEGER,
+            resuelta INTEGER DEFAULT 0,
+            synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_categoria ON si_ot_no_realizadas (categoria);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_fecha ON si_ot_no_realizadas (fecha);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_centro ON si_ot_no_realizadas (Centro);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_wfx ON si_ot_no_realizadas (wfx_id);
+
         CREATE TABLE IF NOT EXISTS si_materiales (
             id_material INTEGER PRIMARY KEY,
             descri TEXT,
@@ -1980,6 +2010,43 @@ def init_db_postgres():
     except Exception:
         pass
 
+    # OT creadas en el SI que nunca se cargaron en OtRealizadas (no realizadas).
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_ot_no_realizadas (
+            n_ot TEXT PRIMARY KEY,
+            wfx_id INTEGER,
+            estado TEXT,
+            tipo_trabajo TEXT,
+            cod_res TEXT,
+            nodo TEXT,
+            id_u INTEGER,
+            nombre TEXT,
+            n_cli TEXT,
+            dni TEXT,
+            tel TEXT,
+            dir_original TEXT,
+            direccion TEXT,
+            motivo TEXT,
+            categoria TEXT,
+            fecha TEXT,
+            ultimo_movimiento TEXT,
+            "Centro" INTEGER,
+            "Empresa" INTEGER,
+            "Sindicato" INTEGER,
+            resuelta INTEGER DEFAULT 0,
+            synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_categoria ON si_ot_no_realizadas (categoria)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_fecha ON si_ot_no_realizadas (fecha)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_centro ON si_ot_no_realizadas (\"Centro\")")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_no_realizadas_wfx ON si_ot_no_realizadas (wfx_id)")
+    except Exception:
+        pass
+
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS si_materiales (
@@ -2424,12 +2491,244 @@ def upsert_si_ot_batch(payload):
     }
 
 
+_SI_NO_REALIZADAS_COLUMNS = (
+    "n_ot", "wfx_id", "estado", "tipo_trabajo", "cod_res", "nodo", "id_u",
+    "nombre", "n_cli", "dni", "tel", "dir_original", "direccion", "motivo",
+    "categoria", "fecha", "ultimo_movimiento", "Centro", "Empresa", "Sindicato",
+    "resuelta", "synced_at",
+)
+
+
+def _si_upsert_no_realizada(row):
+    """Inserta o actualiza una OT no realizada (PK n_ot)."""
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    n_ot = row.get("n_ot")
+    if not n_ot:
+        return False
+
+    values = [
+        n_ot,
+        row.get("wfx_id"),
+        row.get("estado"),
+        row.get("tipo_trabajo"),
+        row.get("cod_res"),
+        row.get("nodo"),
+        row.get("id_u"),
+        row.get("nombre"),
+        row.get("n_cli"),
+        row.get("dni"),
+        row.get("tel"),
+        row.get("dir_original"),
+        row.get("direccion"),
+        row.get("motivo"),
+        row.get("categoria"),
+        row.get("fecha"),
+        row.get("ultimo_movimiento"),
+        row.get("Centro"),
+        row.get("Empresa"),
+        row.get("Sindicato"),
+        0,
+        now,
+    ]
+
+    if is_postgres():
+        columns = ", ".join(f'"{col}"' for col in _SI_NO_REALIZADAS_COLUMNS)
+        placeholders = ", ".join(["%s"] * len(_SI_NO_REALIZADAS_COLUMNS))
+        set_clause = ", ".join(
+            f'"{col}" = EXCLUDED."{col}"' for col in _SI_NO_REALIZADAS_COLUMNS if col != "n_ot"
+        )
+        sql = (
+            f"INSERT INTO si_ot_no_realizadas ({columns}) VALUES ({placeholders}) "
+            f'ON CONFLICT ("n_ot") DO UPDATE SET {set_clause}'
+        )
+    else:
+        columns = ", ".join(_SI_NO_REALIZADAS_COLUMNS)
+        placeholders = ", ".join(["?"] * len(_SI_NO_REALIZADAS_COLUMNS))
+        sql = f"INSERT OR REPLACE INTO si_ot_no_realizadas ({columns}) VALUES ({placeholders})"
+
+    db.execute(sql, tuple(values))
+    return True
+
+
+def mark_si_ot_no_realizadas_resueltas():
+    """Marca las no realizadas que luego sí aparecieron en si_ot_realizadas."""
+    db = get_db()
+    try:
+        cursor = db.execute(
+            "UPDATE si_ot_no_realizadas SET resuelta = 1 "
+            "WHERE resuelta = 0 AND n_ot IN (SELECT n_ot FROM si_ot_realizadas)"
+        )
+    except Exception:
+        return 0
+    db.commit()
+    return int(getattr(cursor, "rowcount", 0) or 0)
+
+
+def upsert_si_ot_no_realizadas_batch(rows):
+    """UPSERT de un lote de OT no realizadas provenientes del SI."""
+    count = 0
+    errors = []
+    for row in rows or []:
+        try:
+            if _si_upsert_no_realizada(row):
+                count += 1
+        except Exception as exc:
+            errors.append({"n_ot": row.get("n_ot"), "error": str(exc)})
+    get_db().commit()
+    return {"ok": not errors, "no_realizadas": count, "errors": errors}
+
+
+def fetch_si_ot_no_realizadas_stats():
+    """Conteo de OT no realizadas (por defecto solo las que siguen sin realizarse)."""
+    db = get_db()
+    stats = {"total": 0, "resueltas": 0}
+    try:
+        row = db.execute(
+            "SELECT COUNT(*) AS c FROM si_ot_no_realizadas WHERE resuelta = 0"
+        ).fetchone()
+        stats["total"] = row["c"] if isinstance(row, dict) else row[0]
+    except Exception:
+        return stats
+    try:
+        row = db.execute(
+            "SELECT COUNT(*) AS c FROM si_ot_no_realizadas WHERE resuelta = 1"
+        ).fetchone()
+        stats["resueltas"] = row["c"] if isinstance(row, dict) else row[0]
+    except Exception:
+        pass
+    try:
+        rows = db.execute(
+            "SELECT categoria, COUNT(*) AS c FROM si_ot_no_realizadas "
+            "WHERE resuelta = 0 GROUP BY categoria"
+        ).fetchall()
+        for r in rows:
+            data = dict(r) if isinstance(r, dict) else {"categoria": r[0], "c": r[1]}
+            stats[data.get("categoria") or "sin_categoria"] = data.get("c") or 0
+    except Exception:
+        pass
+    return stats
+
+
+def fetch_si_ot_no_realizadas_list(q=None, n_ot=None, categoria=None, motivo=None,
+                                   centro=None, estado=None, fecha_desde=None,
+                                   fecha_hasta=None, incluir_resueltas=False,
+                                   page=1, per_page=50):
+    """Lista paginada de OT no realizadas del Sistema Integral."""
+    db = get_db()
+    placeholder = "%s" if is_postgres() else "?"
+
+    where = []
+    params = []
+
+    if not incluir_resueltas:
+        where.append("o.resuelta = 0")
+
+    if q:
+        where.append(
+            f'(o.direccion LIKE {placeholder} OR o.dir_original LIKE {placeholder} '
+            f'OR o.motivo LIKE {placeholder} OR o.n_ot LIKE {placeholder} '
+            f'OR o.nombre LIKE {placeholder} OR o.n_cli LIKE {placeholder})'
+        )
+        like = f"%{q}%"
+        params.extend([like] * 6)
+
+    if n_ot:
+        where.append(f"o.n_ot LIKE {placeholder}")
+        params.append(f"%{n_ot}%")
+
+    if categoria:
+        where.append(f"o.categoria = {placeholder}")
+        params.append(categoria)
+
+    if motivo:
+        where.append(f"(o.motivo LIKE {placeholder} OR o.dir_original LIKE {placeholder})")
+        params.extend([f"%{motivo}%", f"%{motivo}%"])
+
+    if estado:
+        where.append(f"o.estado = {placeholder}")
+        params.append(estado)
+
+    if centro:
+        centro_raw = str(centro).strip()
+        if centro_raw.isdigit():
+            where.append(
+                f'(CAST(o."Centro" AS TEXT) = {placeholder} OR CAST(c."Codigo" AS TEXT) = {placeholder})'
+            )
+            params.extend([centro_raw, centro_raw])
+        else:
+            like_centro = f"%{centro_raw.lower()}%"
+            where.append(
+                f"(LOWER(TRIM(COALESCE(c.\"Descripcion\", ''))) LIKE {placeholder} "
+                f'OR LOWER(TRIM(CAST(c."Codigo" AS TEXT))) LIKE {placeholder})'
+            )
+            params.extend([like_centro, like_centro])
+
+    if fecha_desde:
+        where.append(f"o.fecha >= {placeholder}")
+        params.append(fecha_desde)
+
+    if fecha_hasta:
+        where.append(f"o.fecha <= {placeholder}")
+        params.append(fecha_hasta + " 23:59:59")
+
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    from_sql = (
+        " FROM si_ot_no_realizadas o "
+        'LEFT JOIN si_centros c ON c."Id_Centro" = o."Centro" '
+        'LEFT JOIN si_empresas e ON e."Id_Empresa" = o."Empresa" '
+        'LEFT JOIN si_sindicatos s ON s."Id_Sindicato" = o."Sindicato"'
+    )
+
+    row = db.execute(f"SELECT COUNT(*) AS c{from_sql}{where_sql}", params).fetchone()
+    total = row["c"] if isinstance(row, dict) else row[0]
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+
+    select_sql = (
+        "SELECT o.n_ot, o.wfx_id, o.estado, o.tipo_trabajo, o.cod_res, o.nodo, "
+        "o.id_u, o.nombre, o.n_cli, o.dni, o.tel, o.dir_original, o.direccion, "
+        "o.motivo, o.categoria, o.fecha, o.ultimo_movimiento, "
+        'o."Centro" AS centro, o."Empresa" AS empresa, o."Sindicato" AS sindicato, '
+        "o.resuelta, o.synced_at, "
+        'c."Descripcion" AS centro_desc, '
+        'e."RazonSocial" AS empresa_desc, '
+        's."descripcion" AS sindicato_desc '
+        f"{from_sql}{where_sql} "
+        "ORDER BY o.fecha DESC, o.n_ot DESC "
+        f"LIMIT {placeholder} OFFSET {placeholder}"
+    )
+    rows = db.execute(select_sql, params + [per_page, offset]).fetchall()
+
+    result = []
+    for r in rows:
+        result.append(dict(r) if isinstance(r, dict) else {
+            "n_ot": r[0], "wfx_id": r[1], "estado": r[2], "tipo_trabajo": r[3],
+            "cod_res": r[4], "nodo": r[5], "id_u": r[6], "nombre": r[7],
+            "n_cli": r[8], "dni": r[9], "tel": r[10], "dir_original": r[11],
+            "direccion": r[12], "motivo": r[13], "categoria": r[14], "fecha": r[15],
+            "ultimo_movimiento": r[16], "centro": r[17], "empresa": r[18],
+            "sindicato": r[19], "resuelta": r[20], "synced_at": r[21],
+            "centro_desc": r[22], "empresa_desc": r[23], "sindicato_desc": r[24],
+        })
+
+    return {
+        "rows": result,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+    }
+
+
 def fetch_si_ot_stats():
     """Estadísticas rápidas de las tablas del SI."""
     db = get_db()
     placeholder = "%s" if is_postgres() else "?"
     stats = {}
-    for table in ["si_ot_realizadas", "si_ot_actividades", "si_ot_materiales"]:
+    for table in ["si_ot_realizadas", "si_ot_actividades", "si_ot_materiales", "si_ot_no_realizadas"]:
         try:
             row = db.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
             stats[table] = row["c"] if isinstance(row, dict) else row[0]

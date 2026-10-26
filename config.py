@@ -88,6 +88,9 @@ class Config:
     SI_PULL_BATCH_SIZE = env_int("SI_PULL_BATCH_SIZE", 500)
     SI_PULL_PAUSE_MS = env_int("SI_PULL_PAUSE_MS", 1500)
     SI_PULL_LOCK_TIMEOUT_SECONDS = env_int("SI_PULL_LOCK_TIMEOUT_SECONDS", 900)
+    # Carga inicial de OT no realizadas: ventana en días desde la fecha de la OT.
+    # Después de la primera corrida el pull pasa a modo incremental por id.
+    SI_PULL_NO_REALIZADAS_LOOKBACK_DAYS = env_int("SI_PULL_NO_REALIZADAS_LOOKBACK_DAYS", 90)
     # Disparo on-demand: al abrir la vista de OT se lanza el pull en segundo plano
     # si pasó el intervalo mínimo y no hay una corrida en curso.
     SI_PULL_ON_DEMAND = env_bool("SI_PULL_ON_DEMAND", True)

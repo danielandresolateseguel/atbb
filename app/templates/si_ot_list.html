@@ -66,6 +66,11 @@
             <div style="font-size:12px;color:#92400e;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Materiales</div>
             <div style="font-size:26px;font-weight:800;color:#78350f;margin-top:6px;">{{ stats.si_ot_materiales or 0 }}</div>
         </div>
+        <a href="{{ url_for('main.si_ot_no_realizadas_list') }}" style="text-decoration:none;background:linear-gradient(135deg,#ffe4e6,#fff1f2);border:1px solid #fecdd3;border-radius:14px;padding:14px 16px;display:block;">
+            <div style="font-size:12px;color:#9f1239;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">OT no realizadas</div>
+            <div style="font-size:26px;font-weight:800;color:#881337;margin-top:6px;">{{ no_realizadas_stats.total or 0 }}</div>
+            <div style="font-size:12px;color:#9f1239;font-weight:700;margin-top:4px;">Ver listado →</div>
+        </a>
     </div>
 
     {# Buscador / filtros #}

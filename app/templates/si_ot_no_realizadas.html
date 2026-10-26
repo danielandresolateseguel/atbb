@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    @media (max-width: 768px) {
+        .si-search-grid { grid-template-columns: 1fr !important; }
+        .si-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        .si-table { font-size: 12px; }
+        .si-table th, .si-table td { padding: 8px 10px !important; }
+    }
+</style>
+<div style="max-width:1200px;margin:24px auto;padding:0 14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;">
+        <div>
+            <div class="section-kicker" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;margin-bottom:6px;font-weight:700;">
+                Sistema Integral · Berardi
+            </div>
+            <h1 style="margin:0;font-size:26px;line-height:1.2;color:#ffffff;font-weight:800;">
+                OT creadas que no se realizaron
+            </h1>
+            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">
+                OT que existen en la bitácora del Sistema Integral pero nunca se cargaron como realizadas.
+            </p>
+        </div>
+        <a class="button button-secondary" style="padding:10px 16px;" href="{{ url_for('main.si_ot_list') }}">← Volver a OT sincronizadas</a>
+    </div>
+
+    {# Estado de sincronización con el Sistema Integral #}
+    {% set syncing = pull_state.running or pull_trigger.started %}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:12px 16px;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:700;">Última sincronización</span>
+            <span style="font-size:16px;font-weight:800;color:#ffffff;">{{ pull_state.last_success_at or '—' }}</span>
+            {% if syncing %}
+            <span style="font-size:12px;font-weight:700;color:#fbbf24;">· sincronizando…</span>
+            {% elif pull_state.last_status == 'error' %}
+            <span style="font-size:12px;font-weight:700;color:#f87171;">· último intento con error</span>
+            {% endif %}
+        </div>
+        {% if syncing %}
+        <button type="button" disabled title="Sincronización en curso" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:not-allowed;opacity:.65;">
+            Sincronizando…
+        </button>
+        {% else %}
+        <form method="POST" action="{{ url_for('main.si_ot_sync_now') }}" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="next" value="no-realizadas">
+            <button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:pointer;">
+                Sincronizar ahora
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    {% if syncing %}
+    <script>setTimeout(function () { window.location.href = {{ reload_url|tojson }}; }, 15000);</script>
+    {% endif %}
+
+    {# Tarjetas de estadísticas #}
+    <div class="si-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
+        <div style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border:1px solid #bfdbfe;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#1e40af;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Sin realizar</div>
+            <div style="font-size:26px;font-weight:800;color:#1e3a8a;margin-top:6px;">{{ stats.total or 0 }}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#fef3c7,#fffbeb);border:1px solid #fde68a;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#92400e;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Con motivo</div>
+            <div style="font-size:26px;font-weight:800;color:#78350f;margin-top:6px;">{{ stats.motivo or 0 }}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#e2e8f0,#f8fafc);border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#334155;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Carga errónea</div>
+            <div style="font-size:26px;font-weight:800;color:#1e293b;margin-top:6px;">{{ stats.carga_erronea or 0 }}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#ede9fe,#f5f3ff);border:1px solid #ddd6fe;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#5b21b6;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Realizado sin carga</div>
+            <div style="font-size:26px;font-weight:800;color:#4c1d95;margin-top:6px;">{{ stats.realizado_sin_carga or 0 }}</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#dcfce7,#f0fdf4);border:1px solid #bbf7d0;border-radius:14px;padding:14px 16px;">
+            <div style="font-size:12px;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Ya realizadas luego</div>
+            <div style="font-size:26px;font-weight:800;color:#14532d;margin-top:6px;">{{ stats.resueltas or 0 }}</div>
+        </div>
+    </div>
+
+    {# Buscador / filtros #}
+    <form method="GET" action="{{ url_for('main.si_ot_no_realizadas_list') }}" class="si-search-grid"
+          style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:16px;align-items:end;">
+        <div>
+            <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Buscar (dirección / motivo / OT / cliente)</label>
+            <input type="search" name="q" value="{{ q }}" placeholder="Ej: calle, ANULADA, n° OT"
+                   style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+        </div>
+        <div>
+            <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">N° OT</label>
+            <input type="text" name="n_ot" value="{{ n_ot }}" placeholder="Ej: 06710675SA7466043"
+                   style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+        </div>
+        <div>
+            <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Motivo</label>
+            <input type="text" name="motivo" value="{{ motivo }}" placeholder="Ej: ANULADA, AUSENTE"
+                   style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+        </div>
+        <div>
+            <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Centro</label>
+            <input type="text" name="centro" value="{{ centro }}" placeholder="Ej: 4"
+                   style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button type="submit" class="button button-secondary" style="padding:11px 16px;">🔎 Buscar</button>
+            <a class="button button-secondary" style="padding:11px 16px;background:#f8fafc;" href="{{ url_for('main.si_ot_no_realizadas_list') }}">Limpiar</a>
+        </div>
+        <div style="grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div>
+                <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Categoría</label>
+                <select name="categoria" style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+                    <option value="">Todas</option>
+                    <option value="pendiente" {% if categoria == 'pendiente' %}selected{% endif %}>Pendiente (dirección normal)</option>
+                    <option value="motivo" {% if categoria == 'motivo' %}selected{% endif %}>Con motivo cargado</option>
+                    <option value="carga_erronea" {% if categoria == 'carga_erronea' %}selected{% endif %}>Carga errónea / prueba</option>
+                    <option value="realizado_sin_carga" {% if categoria == 'realizado_sin_carga' %}selected{% endif %}>Realizado sin carga</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Estado en la bitácora</label>
+                <input type="text" name="estado" value="{{ estado }}" placeholder="Ej: Disponible"
+                       style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+            </div>
+            <div>
+                <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Fecha desde / hasta</label>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <input type="date" name="fecha_desde" value="{{ fecha_desde }}"
+                           style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+                    <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}"
+                           style="width:100%;padding:11px 13px;border-radius:10px;border:1px solid #94a3b8;color:#0f172a;font-weight:500;">
+                </div>
+            </div>
+        </div>
+        <label style="grid-column:1 / -1;display:flex;align-items:center;gap:8px;font-size:13px;color:#0f172a;font-weight:600;">
+            <input type="checkbox" name="incluir_resueltas" value="1" {% if incluir_resueltas %}checked{% endif %}>
+            Incluir también las que luego sí se realizaron
+        </label>
+    </form>
+
+    {# Tabla de OT no realizadas #}
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+        <div style="overflow-x:auto;">
+            <table class="si-table" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f8fafc;">
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">N° OT</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Motivo</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Dirección</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Cliente</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Fecha</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Centro</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Estado</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Categoría</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for o in rows %}
+                    <tr style="border-top:1px solid #f1f5f9;{% if o.resuelta %}background:#f8fafc;{% endif %}">
+                        <td style="padding:12px 14px;vertical-align:top;">
+                            <div style="font-weight:700;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ o.n_ot }}</div>
+                            {% if o.resuelta %}
+                            <span style="display:inline-block;margin-top:4px;background:#dcfce7;color:#166534;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;">Ya realizada</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:700;max-width:220px;">
+                            {% if o.motivo %}{{ o.motivo }}{% else %}<span style="color:#94a3b8;font-weight:500;">—</span>{% endif %}
+                        </td>
+                        <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;max-width:260px;">
+                            {% if o.direccion %}{{ o.direccion }}{% elif o.dir_original %}<span style="color:#94a3b8;">{{ o.dir_original }}</span>{% else %}—{% endif %}
+                        </td>
+                        <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;">
+                            <div>{{ o.nombre or '—' }}</div>
+                            {% if o.n_cli %}<div style="color:#64748b;font-weight:500;font-size:12px;">{{ o.n_cli }}</div>{% endif %}
+                        </td>
+                        <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:700;white-space:nowrap;">
+                            {{ o.fecha|si_fecha or '—' }}
+                        </td>
+                        <td style="padding:12px 14px;vertical-align:top;color:#0f172a;font-size:13px;font-weight:600;">
+                            {% if o.centro_desc %}{{ o.centro_desc }}{% if o.centro %} <span style="color:#64748b;font-weight:500;">({{ o.centro }})</span>{% endif %}{% else %}{{ o.centro or '—' }}{% endif %}
+                        </td>
+                        <td style="padding:12px 14px;vertical-align:top;">
+                            <span style="background:#f1f5f9;color:#0f172a;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;">
+                                {{ o.estado or '—' }}
+                            </span>
+                        </td>
+                        <td style="padding:12px 14px;vertical-align:top;">
+                            {% if o.categoria == 'motivo' %}
+                            <span style="background:#fef3c7;color:#92400e;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;">Con motivo</span>
+                            {% elif o.categoria == 'carga_erronea' %}
+                            <span style="background:#e2e8f0;color:#334155;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;">Carga errónea</span>
+                            {% elif o.categoria == 'realizado_sin_carga' %}
+                            <span style="background:#ede9fe;color:#5b21b6;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;">Realizado sin carga</span>
+                            {% else %}
+                            <span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;">Pendiente</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" style="padding:40px 20px;text-align:center;">
+                            <div style="font-size:48px;margin-bottom:10px;">📋</div>
+                            <div style="font-size:18px;font-weight:700;margin-bottom:6px;">
+                                No hay OT no realizadas{% if q or n_ot or categoria or motivo or centro or estado or fecha_desde or fecha_hasta %} que coincidan con los filtros{% endif %}
+                            </div>
+                            <div style="font-size:13px;color:#475569;margin-top:4px;font-weight:600;">
+                                Las OT aparecen aquí cuando existen en la bitácora del SI y no están cargadas como realizadas.
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# Paginación #}
+    {% if total_pages and total_pages > 1 %}
+    <div style="display:flex;gap:10px;justify-content:center;margin:20px 0;align-items:center;flex-wrap:wrap;">
+        {% if page > 1 %}
+        <a class="button button-secondary" href="{{ url_for('main.si_ot_no_realizadas_list', q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, incluir_resueltas='1' if incluir_resueltas else None, page=page-1) }}">← Pág. {{ page - 1 }}</a>
+        {% endif %}
+        <span style="font-size:14px;color:#1e293b;font-weight:600;">Página <b>{{ page }}</b> de {{ total_pages }} · {{ total }} OT</span>
+        {% if page < total_pages %}
+        <a class="button button-secondary" href="{{ url_for('main.si_ot_no_realizadas_list', q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, incluir_resueltas='1' if incluir_resueltas else None, page=page+1) }}">Pág. {{ page + 1 }} →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

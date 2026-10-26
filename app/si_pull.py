@@ -1,13 +1,21 @@
 import base64
 import json
+import re
 import threading
 import time
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from flask import current_app
 
-from app.models import get_db, is_postgres, upsert_si_ot_batch
+from app.models import (
+    get_db,
+    is_postgres,
+    mark_si_ot_no_realizadas_resueltas,
+    upsert_si_ot_batch,
+    upsert_si_ot_no_realizadas_batch,
+)
 
 
 class SIPullConfigError(RuntimeError):
@@ -326,6 +334,246 @@ def _process_upsert_batch(prepared_batch, catalogos):
     return result
 
 
+# =========================================================================
+# OT no realizadas
+#
+# En el SI el técnico registra el motivo editando el campo "dirección": borra
+# la dirección y escribe el motivo (a veces como "MOTIVO // DIRECCION"). Por eso
+# guardamos siempre el texto original (dir_original) y, además, una versión
+# clasificada (direccion + motivo + categoria) que se puede reclasificar sin
+# volver a consultar el SI.
+# =========================================================================
+
+_CATEGORIA_PENDIENTE = "pendiente"
+_CATEGORIA_MOTIVO = "motivo"
+_CATEGORIA_CARGA_ERRONEA = "carga_erronea"
+_CATEGORIA_REALIZADO_SIN_CARGA = "realizado_sin_carga"
+
+_NO_REALIZADAS_LOOKBACK_DAYS_DEFAULT = 90
+
+_CARGA_ERRONEA_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"\bMAL CARGAD[AO]S?\b",
+        r"\bMAL GENERAD[AO]S?\b",
+        r"\bCARGA ERRONEA\b",
+        r"\bERROR DE CARGA\b",
+        r"\bNO CORRESPONDE\b",
+        r"\bPRUEBA\b",
+        r"\bTEST\b",
+    )
+)
+
+_MOTIVO_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"\bANULAD[AO]S?\b",
+        r"\bANULACION\b",
+        r"\bCANCELAD[AO]S?\b",
+        r"\bCANCELACION\b",
+        r"\bAUSENTE\b",
+        r"\bAUSENCIA\b",
+        r"\bDOMICILIO CERRADO\b",
+        r"\bCASA CERRADA\b",
+        r"\bREAGEND\w*\b",
+        r"\bREPROGRAMAD[AO]S?\b",
+        r"\bREPROGRAMAR\b",
+        r"\bPOSTERGAD[AO]S?\b",
+        r"\bSUSPENDID[AO]S?\b",
+        r"\bSUSPENSION\b",
+        r"\bCLIMA\b",
+        r"\bLLUVIA\b",
+        r"\bMAL TIEMPO\b",
+        r"\bSIN ACCESO\b",
+        r"\bSIN RED\b",
+        r"\bSIN SENAL\b",
+        r"\bSIN FIBRA\b",
+        r"\bSIN POSTE\b",
+        r"\bSIN ELECTRICIDAD\b",
+        r"\bSIN MATERIALES\b",
+        r"\bFALTA MATERIAL(?:ES)?\b",
+        r"\bSIN CABLE\b",
+        r"\bNO SE REALIZ\w*\b",
+        r"\bNO REALIZAD[AO]S?\b",
+        r"\bNO SE PUDO\b",
+        r"\bNO SE PUEDE\b",
+        r"\bCANERIA OBSTRUIDA\b",
+        r"\bOBSTRUID[AO]\b",
+        r"\bINCONVENIENTE CDO\b",
+        r"\bCDO SATURAD[OA]\b",
+        r"\bCDO LLENO\b",
+        r"\bPOSTE QUEBRAD[OA]\b",
+        r"\bPOSTE INCLINAD[OA]\b",
+        r"\bRECHAZAD[AO]S?\b",
+        r"\bRECHAZO\b",
+        r"\bNO ACEPTA\b",
+        r"\bDUPLICAD[AO]S?\b",
+        r"\bFUERA DE ZONA\b",
+        r"\bDIRECCION ERRONEA\b",
+        r"\bDOMICILIO ERRONEO\b",
+        r"\bNO INSTALAD[AO]\b",
+    )
+)
+
+
+def _normalize_text(value):
+    """Mayúsculas sin acentos y con espacios colapsados, para comparar motivos."""
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFKD", str(value))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", text).upper().strip()
+
+
+def _match_pattern(text, patterns):
+    for pattern in patterns:
+        found = pattern.search(text)
+        if found:
+            return found.group(0)
+    return None
+
+
+def _classify_no_realizada(dir_original, estado):
+    """Separa dirección y motivo a partir del texto libre del campo "dir"."""
+    raw = (dir_original or "").strip()
+    normalized = _normalize_text(raw)
+    estado_norm = _normalize_text(estado)
+
+    info = {
+        "dir_original": raw or None,
+        "direccion": raw or None,
+        "motivo": None,
+        "categoria": _CATEGORIA_PENDIENTE,
+    }
+
+    if normalized:
+        matched = _match_pattern(normalized, _CARGA_ERRONEA_PATTERNS)
+        if matched:
+            info["motivo"] = matched
+            info["direccion"] = None
+            info["categoria"] = _CATEGORIA_CARGA_ERRONEA
+            return info
+
+        if "//" in raw:
+            motivo_seg = None
+            direccion_seg = None
+            for segment in [seg.strip() for seg in raw.split("//") if seg.strip()]:
+                if motivo_seg is None and _match_pattern(_normalize_text(segment), _MOTIVO_PATTERNS):
+                    motivo_seg = segment
+                elif direccion_seg is None:
+                    direccion_seg = segment
+            if motivo_seg:
+                info["motivo"] = motivo_seg
+                info["direccion"] = direccion_seg
+                info["categoria"] = _CATEGORIA_MOTIVO
+                return info
+
+        matched = _match_pattern(normalized, _MOTIVO_PATTERNS)
+        if matched:
+            info["motivo"] = raw
+            info["direccion"] = None
+            info["categoria"] = _CATEGORIA_MOTIVO
+            return info
+
+    if estado_norm == "REALIZADO":
+        info["categoria"] = _CATEGORIA_REALIZADO_SIN_CARGA
+        return info
+
+    if not normalized:
+        info["direccion"] = None
+    return info
+
+
+def _resolve_no_realizadas_lookback_days():
+    try:
+        return max(1, int(current_app.config.get("SI_PULL_NO_REALIZADAS_LOOKBACK_DAYS") or _NO_REALIZADAS_LOOKBACK_DAYS_DEFAULT))
+    except (TypeError, ValueError):
+        return _NO_REALIZADAS_LOOKBACK_DAYS_DEFAULT
+
+
+def _resolve_no_realizadas_watermark():
+    """Último id de OT_WFX_2 ya procesado (0 fuerza la carga inicial por fecha)."""
+    try:
+        row = get_db().execute(
+            "SELECT MAX(wfx_id) AS max_id FROM si_ot_no_realizadas"
+        ).fetchone()
+    except Exception:
+        return 0
+    if not row:
+        return 0
+    value = row["max_id"] if isinstance(row, dict) else row[0]
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _fetch_no_realizadas_rows(cursor, watermark, lookback_days):
+    """Última fila de OT_WFX_2 por n_ot que no tiene registro en OtRealizadas.
+
+    Sin marca de agua se hace la carga inicial por fecha (últimos N días). Con
+    marca de agua se traen solo las OT con movimientos nuevos (id > watermark),
+    que es una lectura por rango sobre la PK clustered de OT_WFX_2.
+    """
+    if watermark:
+        window_sql = "id > %s"
+        window_params = (int(watermark),)
+    else:
+        window_sql = "fecha >= DATEADD(day, %s, CAST(GETDATE() AS date))"
+        window_params = (-int(lookback_days),)
+
+    cursor.execute(
+        f"""
+        SELECT w.n_ot, w.id AS wfx_id, w.estado, w.tipo_trabajo, w.cod_res, w.nodo,
+               w.id_u, w.nombre, w.n_cli, w.dni, w.tel, w.dir, w.fecha, w.act,
+               w.Centro, w.Empresa, w.Sindicato
+        FROM OT_WFX_2 w
+        INNER JOIN (
+            SELECT n_ot, MAX(id) AS max_id
+            FROM OT_WFX_2
+            WHERE {window_sql}
+            GROUP BY n_ot
+        ) x ON x.n_ot = w.n_ot AND x.max_id = w.id
+        LEFT JOIN OtRealizadas o ON o.n_ot = w.n_ot
+        WHERE o.n_ot IS NULL
+        """,
+        window_params,
+    )
+    return cursor.fetchall() or []
+
+
+def _prepare_no_realizada(row):
+    data = {key: _serialize_value(value) for key, value in dict(row).items()}
+    data["wfx_id"] = int(data["wfx_id"]) if data.get("wfx_id") is not None else None
+    data["ultimo_movimiento"] = data.get("act")
+    return {**data, **_classify_no_realizada(data.get("dir"), data.get("estado"))}
+
+
+def _pull_no_realizadas(cursor):
+    """Sincroniza las OT creadas en el SI que no figuran en OtRealizadas."""
+    watermark = _resolve_no_realizadas_watermark()
+    lookback_days = _resolve_no_realizadas_lookback_days()
+    rows = _fetch_no_realizadas_rows(cursor, watermark, lookback_days)
+
+    saved = 0
+    if rows:
+        result = upsert_si_ot_no_realizadas_batch([_prepare_no_realizada(row) for row in rows])
+        errors = result.get("errors") or []
+        if errors:
+            raise RuntimeError(f"Lote rechazado por upsert_si_ot_no_realizadas_batch: {errors}")
+        saved = int(result.get("no_realizadas") or 0)
+
+    resueltas = mark_si_ot_no_realizadas_resueltas()
+    return {
+        "strategy": "incremental-id" if watermark else "initial-window",
+        "watermark": watermark,
+        "lookback_days": lookback_days,
+        "candidates": len(rows),
+        "saved": saved,
+        "resueltas": resueltas,
+    }
+
+
 def si_pull_dry_run(raw_minutes=None):
     """Valida conexión a SQL Server y devuelve métricas básicas sin escribir datos."""
     settings = _required_pull_settings()
@@ -400,6 +648,15 @@ def si_pull_dry_run(raw_minutes=None):
             (since_sql,),
         )
         mat_stats = cursor.fetchone() or {}
+
+        # OT que existen en la bitácora pero nunca se cargaron como realizadas.
+        nr_watermark = _resolve_no_realizadas_watermark()
+        nr_lookback = _resolve_no_realizadas_lookback_days()
+        nr_rows = _fetch_no_realizadas_rows(cursor, nr_watermark, nr_lookback)
+        nr_categorias = {}
+        for row in nr_rows:
+            categoria = _classify_no_realizada(row.get("dir"), row.get("estado"))["categoria"]
+            nr_categorias[categoria] = nr_categorias.get(categoria, 0) + 1
     finally:
         conn.close()
 
@@ -419,6 +676,13 @@ def si_pull_dry_run(raw_minutes=None):
             "ot_actividades": int(act_stats.get("total_actividades") or 0),
             "ot_materiales": int(mat_stats.get("total_materiales") or 0),
             "ultima_fecha_carga": _serialize_value(ot_stats.get("ultima_fecha_carga")),
+        },
+        "no_realizadas": {
+            "watermark": nr_watermark,
+            "lookback_days": nr_lookback,
+            "strategy": "incremental-id" if nr_watermark else "initial-window",
+            "total": len(nr_rows),
+            "categorias": nr_categorias,
         },
         "sample_ots": _serialize_rows(ot_rows),
     }
@@ -509,6 +773,9 @@ def si_pull_run(raw_minutes=None, include_catalogs=False):
                 sent_catalogs = sent_catalogs or bool(batch_catalogos)
                 if pause_seconds > 0 and offset + batch_size < len(ot_rows):
                     time.sleep(pause_seconds)
+
+            # OT creadas en el SI que nunca llegaron a OtRealizadas.
+            no_realizadas = _pull_no_realizadas(cursor)
         finally:
             conn.close()
 
@@ -521,6 +788,7 @@ def si_pull_run(raw_minutes=None, include_catalogs=False):
             "materiales": total_materiales,
             "batches": batch_count,
             "include_catalogs": bool(include_catalogs),
+            "no_realizadas": no_realizadas,
         }
         _upsert_sync_state(
             lock_acquired_at=None,
@@ -545,7 +813,9 @@ def si_pull_run(raw_minutes=None, include_catalogs=False):
                 "ot_actividades": total_actividades,
                 "ot_materiales": total_materiales,
                 "batches": batch_count,
+                "no_realizadas": no_realizadas.get("saved") or 0,
             },
+            "no_realizadas": no_realizadas,
             "state": get_si_pull_state(),
         }
     except Exception as exc:

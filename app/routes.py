@@ -265,6 +265,8 @@ from app.models import (
     fetch_si_ot_stats,
     fetch_si_ot_list,
     fetch_si_ot_detail,
+    fetch_si_ot_no_realizadas_stats,
+    fetch_si_ot_no_realizadas_list,
 )
 from app.si_pull import (
     SIPullBusyError,
@@ -12244,6 +12246,7 @@ def si_ot_list():
         per_page=data["per_page"],
         total_pages=data["total_pages"],
         stats=stats,
+        no_realizadas_stats=fetch_si_ot_no_realizadas_stats(),
         pull_state=get_si_pull_state(),
         pull_trigger=pull_trigger,
         # Al recargar hay que quitar ?sync=1 para no quedar mostrando "sincronizando"
@@ -12275,7 +12278,59 @@ def si_ot_sync_now():
         flash("La sincronización on-demand está desactivada.", "info")
     else:
         flash("No se pudo iniciar la sincronización.", "info")
+    if (request.form.get("next") or "").strip() == "no-realizadas":
+        return redirect(url_for("main.si_ot_no_realizadas_list", sync="1"))
     return redirect(url_for("main.si_ot_list", sync="1"))
+
+
+@main.route("/si/ot/no-realizadas", methods=["GET"])
+def si_ot_no_realizadas_list():
+    """Página con las OT creadas en el SI que nunca se cargaron como realizadas."""
+    if not is_admin():
+        abort(403)
+    pull_trigger = maybe_si_pull_async()
+    if (request.args.get("sync") or "").strip() == "1":
+        # Vuelta del boton "Sincronizar ahora": mismo criterio que en /si/ot.
+        pull_trigger = {"started": True, "reason": "manual"}
+
+    q = (request.args.get("q") or "").strip() or None
+    n_ot = (request.args.get("n_ot") or "").strip() or None
+    categoria = (request.args.get("categoria") or "").strip() or None
+    motivo = (request.args.get("motivo") or "").strip() or None
+    centro = (request.args.get("centro") or "").strip() or None
+    estado = (request.args.get("estado") or "").strip() or None
+    fecha_desde = (request.args.get("fecha_desde") or "").strip() or None
+    fecha_hasta = (request.args.get("fecha_hasta") or "").strip() or None
+    incluir_resueltas = (request.args.get("incluir_resueltas") or "").strip() == "1"
+    try:
+        page = int(request.args.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+
+    data = fetch_si_ot_no_realizadas_list(
+        q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro,
+        estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+        incluir_resueltas=incluir_resueltas, page=page, per_page=50,
+    )
+
+    return render_template(
+        "si_ot_no_realizadas.html",
+        rows=data["rows"],
+        total=data["total"],
+        page=data["page"],
+        per_page=data["per_page"],
+        total_pages=data["total_pages"],
+        stats=fetch_si_ot_no_realizadas_stats(),
+        pull_state=get_si_pull_state(),
+        pull_trigger=pull_trigger,
+        reload_url=url_for(
+            "main.si_ot_no_realizadas_list",
+            **{k: v for k, v in request.args.items() if k != "sync"},
+        ),
+        q=q or "", n_ot=n_ot or "", categoria=categoria or "", motivo=motivo or "",
+        centro=centro or "", estado=estado or "", fecha_desde=fecha_desde or "",
+        fecha_hasta=fecha_hasta or "", incluir_resueltas=incluir_resueltas,
+    )
 
 
 @main.route("/si/ot/<int:ot_id>", methods=["GET"])
