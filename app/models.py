@@ -13016,6 +13016,202 @@ def import_equipment_inventory(rows, *, import_batch_id=None):
     }
 
 
+_SI_STOCK_DELETE_CHUNK = 500
+
+
+def _chunked(values, size):
+    for start in range(0, len(values), size):
+        yield values[start: start + size]
+
+
+def apply_si_stock_snapshot(almacenes, material_rows, equipment_rows, material_catalog):
+    """Aplica un snapshot de stock traído del Sistema Integral.
+
+    Reemplaza el import manual de ALMACENES.xlsx + StockMateriales + StockDeEquipos:
+
+      - `almacenes`      -> mobile_units + storage_locations (móviles y depósitos base)
+      - `material_rows`  -> material_stock (cantidad = Stock.Libre, agregada por móvil)
+      - `equipment_rows` -> equipment_inventory (seriales vigentes)
+
+    El mismo `almacen.codigo` se repite una vez por centro, por eso el móvil se
+    identifica por código y el almacén físico por (centro, código).
+    """
+    connection = get_db()
+    skipped = []
+
+    # --- 1) Almacenes -> mobile_units + storage_locations -----------------
+    mobile_info = {}
+    for row in almacenes or []:
+        codigo = normalize_mobile_code(row.get("codigo"))
+        if not codigo:
+            continue
+        info = mobile_info.setdefault(
+            codigo,
+            {"user_name": None, "description": None, "type": None, "enabled": 0},
+        )
+        if info["user_name"] is None and not bool(row.get("base")):
+            nombre = (row.get("tec_nombre") or "").strip()
+            apellido = (row.get("tec_apellido") or "").strip()
+            info["user_name"] = " ".join(part for part in (apellido, nombre) if part) or None
+        if info["description"] is None:
+            info["description"] = empty_as_none(row.get("Descri")) or codigo
+        if info["type"] is None:
+            info["type"] = "Depósito base" if bool(row.get("base")) else "Técnico"
+        if row.get("habilitado"):
+            info["enabled"] = 1
+
+    mobile_by_code = {}
+    for codigo, info in mobile_info.items():
+        mobile_by_code[codigo] = ensure_mobile_unit(
+            connection,
+            codigo,
+            user_name=info["user_name"],
+            warehouse_description=info["description"],
+            warehouse_type=info["type"],
+            is_enabled=info["enabled"],
+            notes="Sincronizado desde el Sistema Integral",
+        )
+
+    almacen_index = {}
+    for row in almacenes or []:
+        almacen_id = row.get("id")
+        codigo = normalize_mobile_code(row.get("codigo"))
+        if almacen_id is None or not codigo:
+            continue
+        mobile_unit_id = mobile_by_code.get(codigo)
+        if not mobile_unit_id:
+            continue
+        center_name = empty_as_none(row.get("centro_nombre")) or "Sin centro"
+        warehouse_name = empty_as_none(row.get("Descri")) or codigo
+        storage_location_id = ensure_storage_location(
+            connection, mobile_unit_id, center_name, codigo, warehouse_name
+        )
+        almacen_index[int(almacen_id)] = {
+            "mobile_unit_id": mobile_unit_id,
+            "storage_location_id": storage_location_id,
+            "warehouse_code": codigo,
+            "warehouse_name": warehouse_name,
+            "center_name": center_name,
+        }
+
+    # --- 2) Materiales (nombre único, igual criterio que el import manual) --
+    existing_materials = {
+        row["material_name"]: row["id"]
+        for row in connection.execute("SELECT id, material_name FROM materials").fetchall()
+    }
+
+    def resolve_material(si_material_id):
+        code = str(si_material_id)
+        name = (material_catalog.get(si_material_id) or "").strip() or f"Material {code}"
+        material_id = existing_materials.get(name)
+        if material_id is None:
+            material_id, _ = ensure_material(connection, code, name)
+            existing_materials[name] = material_id
+        return material_id, code, name
+
+    # --- 3) Stock de materiales -> material_stock -------------------------
+    aggregated_stock = {}
+    for row in material_rows or []:
+        almacen = almacen_index.get(int(row.get("Almacen") or 0))
+        if not almacen:
+            skipped.append("Fila de stock con almacén inexistente")
+            continue
+        try:
+            quantity = float(row.get("Libre") or 0)
+        except (TypeError, ValueError):
+            continue
+        if quantity <= 0:
+            continue
+        material_id, _, _ = resolve_material(int(row.get("Material")))
+        key = (material_id, almacen["mobile_unit_id"])
+        aggregated_stock[key] = aggregated_stock.get(key, 0.0) + quantity
+
+    mobile_unit_ids = sorted({value for value in mobile_by_code.values() if value})
+    for chunk in _chunked(mobile_unit_ids, _SI_STOCK_DELETE_CHUNK):
+        placeholders = ", ".join(["?"] * len(chunk))
+        connection.execute(
+            f"DELETE FROM material_stock WHERE mobile_unit_id IN ({placeholders})",
+            tuple(chunk),
+        )
+
+    stock_payload = [
+        (material_id, mobile_unit_id, quantity)
+        for (material_id, mobile_unit_id), quantity in aggregated_stock.items()
+    ]
+    for chunk in _chunked(stock_payload, _SI_STOCK_DELETE_CHUNK):
+        connection.executemany(
+            """
+            INSERT INTO material_stock (material_id, mobile_unit_id, quantity)
+            VALUES (?, ?, ?)
+            ON CONFLICT(material_id, mobile_unit_id) DO UPDATE SET quantity = excluded.quantity
+            """,
+            chunk,
+        )
+
+    # --- 4) Equipos serializados -> equipment_inventory -------------------
+    serial_payload = []
+    seen_serials = set()
+    for row in equipment_rows or []:
+        almacen = almacen_index.get(int(row.get("Almacen") or 0))
+        if not almacen:
+            skipped.append("Equipo con almacén inexistente")
+            continue
+        serial_number = (row.get("serial") or "").strip()
+        if not serial_number or serial_number in seen_serials:
+            continue
+        seen_serials.add(serial_number)
+        _, material_code, material_name = resolve_material(int(row.get("material")))
+        serial_payload.append(
+            (
+                almacen["storage_location_id"],
+                almacen["mobile_unit_id"],
+                almacen["center_name"],
+                almacen["warehouse_code"],
+                almacen["warehouse_name"],
+                material_code,
+                material_name,
+                serial_number,
+            )
+        )
+
+    warehouse_codes = sorted({value["warehouse_code"] for value in almacen_index.values()})
+    for chunk in _chunked(warehouse_codes, _SI_STOCK_DELETE_CHUNK):
+        placeholders = ", ".join(["?"] * len(chunk))
+        connection.execute(
+            f"DELETE FROM equipment_inventory WHERE warehouse_code IN ({placeholders})",
+            tuple(chunk),
+        )
+
+    for chunk in _chunked(serial_payload, _SI_STOCK_DELETE_CHUNK):
+        connection.executemany(
+            """
+            INSERT INTO equipment_inventory (
+                storage_location_id, mobile_unit_id, center_name, warehouse_code,
+                warehouse_name, material_code, material_name, serial_number
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(serial_number) DO UPDATE SET
+                storage_location_id = excluded.storage_location_id,
+                mobile_unit_id = excluded.mobile_unit_id,
+                center_name = excluded.center_name,
+                warehouse_code = excluded.warehouse_code,
+                warehouse_name = excluded.warehouse_name,
+                material_code = excluded.material_code,
+                material_name = excluded.material_name
+            """,
+            chunk,
+        )
+
+    connection.commit()
+    return {
+        "mobile_units": len(mobile_by_code),
+        "storage_locations": len(almacen_index),
+        "material_stock_rows": len(stock_payload),
+        "equipment_rows": len(serial_payload),
+        "skipped_rows": skipped[:5],
+        "skipped_count": len(skipped),
+    }
+
+
 def create_import_batch(
     import_type,
     import_label,

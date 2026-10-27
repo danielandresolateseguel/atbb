@@ -272,9 +272,12 @@ from app.si_pull import (
     SIPullBusyError,
     SIPullConfigError,
     get_si_pull_state,
+    get_si_stock_pull_state,
     maybe_si_pull_async,
+    maybe_si_stock_pull_async,
     si_pull_dry_run,
     si_pull_run,
+    si_stock_pull_run,
 )
 
 
@@ -8595,6 +8598,11 @@ def imports():
             )
 
     import_batches = fetch_import_batches(50) if is_admin() else []
+    # Disparo on-demand del pull de stock al abrir la pantalla (respetando el
+    # intervalo minimo configurado; tambien disponible el boton manual).
+    stock_pull_trigger = maybe_si_stock_pull_async()
+    if (request.args.get("sync_stock") or "").strip() == "1":
+        stock_pull_trigger = {"started": True, "reason": "manual"}
     return render_template(
         "imports.html",
         import_types=import_types,
@@ -8607,7 +8615,46 @@ def imports():
         equipment_summary=fetch_equipment_summary(),
         import_summary=import_summary,
         import_batches=import_batches,
+        stock_pull_state=get_si_stock_pull_state(),
+        stock_pull_trigger=stock_pull_trigger,
     )
+
+
+@main.route("/imports/sync-stock-now", methods=["POST"])
+def imports_sync_stock_now():
+    """Fuerza el pull de stock del SI desde la pantalla de importaciones (admin)."""
+    if not is_admin():
+        abort(403)
+    if not validate_csrf_token(request.form.get("csrf_token")):
+        abort(400)
+
+    result = maybe_si_stock_pull_async(force=True)
+    if result.get("started"):
+        flash("Sincronización de stock iniciada desde el Sistema Integral.", "success")
+    elif result.get("reason") == "running":
+        flash("Ya hay una sincronización de stock en curso.", "info")
+    elif result.get("reason") == "disabled":
+        # La sincronizacion on-demand esta desactivada: se ejecuta directo.
+        try:
+            summary = si_stock_pull_run()
+            applied = summary.get("applied") or {}
+            flash(
+                "Stock sincronizado: "
+                f"{applied.get('mobile_units', 0)} móviles, "
+                f"{applied.get('material_stock_rows', 0)} filas de stock, "
+                f"{applied.get('equipment_rows', 0)} equipos serializados.",
+                "success",
+            )
+        except SIPullBusyError:
+            flash("Ya hay una sincronización de stock en curso.", "info")
+        except SIPullConfigError as exc:
+            flash(str(exc), "error")
+        except Exception as exc:
+            current_app.logger.exception("imports_sync_stock_now error")
+            flash(f"Error sincronizando stock: {type(exc).__name__}: {str(exc)[:180]}", "error")
+    else:
+        flash("No se pudo iniciar la sincronización de stock.", "info")
+    return redirect(url_for("main.imports", sync_stock="1"))
 
 
 @main.route("/imports/<int:batch_id>/rollback", methods=["POST"])
@@ -12159,6 +12206,35 @@ def api_si_pull_run():
     except Exception as exc:
         current_app.logger.exception("api_si_pull_run error")
         return jsonify({"ok": False, "error": str(exc), "state": get_si_pull_state()}), 500
+
+@main.route("/api/si/stock/state", methods=["GET"])
+def api_si_stock_state():
+    """Devuelve el último estado conocido del pull de stock del SI."""
+    try:
+        return jsonify({"ok": True, "state": get_si_stock_pull_state()})
+    except Exception as exc:
+        current_app.logger.exception("api_si_stock_state error")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@main.route("/api/si/stock/pull", methods=["POST"])
+def api_si_stock_pull():
+    """Ejecuta el pull de stock (almacenes, materiales y equipos) del SI."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        include_equipment = payload.get("include_equipment")
+        result = si_stock_pull_run(
+            include_equipment=True if include_equipment is None else bool(include_equipment)
+        )
+        return jsonify({"ok": True, **result}), 200
+    except SIPullBusyError as exc:
+        return jsonify({"ok": False, "error": str(exc), "state": get_si_stock_pull_state()}), 409
+    except SIPullConfigError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("api_si_stock_pull error")
+        return jsonify({"ok": False, "error": str(exc), "state": get_si_stock_pull_state()}), 500
+
 
 @main.route("/api/si/ot/upsert", methods=["POST"])
 def api_si_ot_upsert():

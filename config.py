@@ -95,3 +95,17 @@ class Config:
     # si pasó el intervalo mínimo y no hay una corrida en curso.
     SI_PULL_ON_DEMAND = env_bool("SI_PULL_ON_DEMAND", True)
     SI_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES = env_int("SI_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES", 10)
+    # Pull de stock (almacenes + stock de materiales + equipos serializados).
+    # Reemplaza el import manual de ALMACENES.xlsx / StockMateriales / StockDeEquipos.
+    SI_STOCK_PULL_ENABLED = env_bool("SI_STOCK_PULL_ENABLED", True)
+    # Los seriales dados de baja (Stock_Base_Eqp.Scrap) no son stock vigente.
+    SI_STOCK_PULL_INCLUDE_SCRAP = env_bool("SI_STOCK_PULL_INCLUDE_SCRAP", False)
+    # El SI usa valores "centinela" en Stock.Libre (10000-N, 100000-N, 1e6-N)
+    # para marcar materiales placeholder (1111 EQUIPO DEL CLIENTE, EPP, indumentaria).
+    # El maximo real observado en el reporte manual es 6500, por eso se corta en 9000.
+    SI_STOCK_PULL_MAX_QUANTITY = env_int("SI_STOCK_PULL_MAX_QUANTITY", 9000)
+    # Disparo on-demand al abrir la pantalla de importaciones (respetando el
+    # intervalo minimo para no consultar el SI en cada visita).
+    SI_STOCK_PULL_ON_DEMAND = env_bool("SI_STOCK_PULL_ON_DEMAND", True)
+    SI_STOCK_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES = env_int("SI_STOCK_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES", 360)
+    SI_STOCK_PULL_LOCK_TIMEOUT_SECONDS = env_int("SI_STOCK_PULL_LOCK_TIMEOUT_SECONDS", 1800)

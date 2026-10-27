@@ -10,6 +10,7 @@ from decimal import Decimal
 from flask import current_app
 
 from app.models import (
+    apply_si_stock_snapshot,
     get_db,
     is_postgres,
     mark_si_ot_no_realizadas_resueltas,
@@ -149,25 +150,27 @@ def _ensure_sync_state_table():
     db.commit()
 
 
-def _fetch_sync_state():
+def _fetch_sync_state(sync_key=None):
     _ensure_sync_state_table()
     db = get_db()
     ph = _placeholder()
+    key = sync_key or _SYNC_KEY
     row = db.execute(
         f"SELECT * FROM si_sync_state WHERE sync_key = {ph}",
-        (_SYNC_KEY,),
+        (key,),
     ).fetchone()
     if not row:
         return None
     return dict(row) if isinstance(row, dict) else dict(zip(row.keys(), row))
 
 
-def _upsert_sync_state(**fields):
+def _upsert_sync_state(sync_key=None, **fields):
     _ensure_sync_state_table()
     db = get_db()
-    current = _fetch_sync_state() or {"sync_key": _SYNC_KEY}
+    key = sync_key or _SYNC_KEY
+    current = _fetch_sync_state(key) or {"sync_key": key}
     current.update(fields)
-    current["sync_key"] = _SYNC_KEY
+    current["sync_key"] = key
     columns = [
         "sync_key",
         "lock_acquired_at",
@@ -184,13 +187,13 @@ def _upsert_sync_state(**fields):
     ph = _placeholder()
     exists = db.execute(
         f"SELECT sync_key FROM si_sync_state WHERE sync_key = {ph}",
-        (_SYNC_KEY,),
+        (key,),
     ).fetchone()
     if exists:
         assignments = ", ".join(f"{col} = {ph}" for col in columns[1:])
         db.execute(
             f"UPDATE si_sync_state SET {assignments} WHERE sync_key = {ph}",
-            tuple(values[1:] + [_SYNC_KEY]),
+            tuple(values[1:] + [key]),
         )
     else:
         db.execute(
@@ -201,15 +204,16 @@ def _upsert_sync_state(**fields):
     return current
 
 
-def get_si_pull_state():
-    state = _fetch_sync_state()
+def get_si_pull_state(sync_key=None, lock_timeout_config="SI_PULL_LOCK_TIMEOUT_SECONDS"):
+    key = sync_key or _SYNC_KEY
+    state = _fetch_sync_state(key)
     if not state:
         return {
-            "sync_key": _SYNC_KEY,
+            "sync_key": key,
             "last_status": "idle",
             "running": False,
         }
-    lock_timeout = int(current_app.config.get("SI_PULL_LOCK_TIMEOUT_SECONDS") or 900)
+    lock_timeout = int(current_app.config.get(lock_timeout_config) or 900)
     locked_at = _parse_text_datetime(state.get("lock_acquired_at"))
     running = bool(locked_at and (datetime.utcnow() - locked_at) < timedelta(seconds=lock_timeout))
     normalized = dict(state)
@@ -881,4 +885,221 @@ def maybe_si_pull_async(force=False):
                 app.logger.exception("si_pull on-demand error")
 
     threading.Thread(target=_worker, name="si-pull-on-demand", daemon=True).start()
+    return {"started": True, "reason": reason}
+
+
+# =========================================================================
+# Pull de stock (almacenes + stock de materiales + equipos serializados)
+#
+# Reemplaza el import manual de ALMACENES.xlsx + StockMateriales + StockDeEquipos.
+# El universo son todos los almacenes del SI: móviles de técnicos (base=0) y
+# depósitos base (base=1). Un mismo código de móvil aparece repetido, una vez
+# por centro, siempre para el mismo técnico: por eso el móvil se identifica por
+# código y el stock se agrega por (material, móvil).
+# =========================================================================
+
+STOCK_SYNC_KEY = "si_stock_pull"
+
+_STOCK_RUN_LOCK = threading.Lock()
+
+
+def get_si_stock_pull_state():
+    """Estado del último pull de stock (misma tabla si_sync_state, otra clave)."""
+    return get_si_pull_state(STOCK_SYNC_KEY, lock_timeout_config="SI_STOCK_PULL_LOCK_TIMEOUT_SECONDS")
+
+
+def _load_stock_material_catalog(cursor):
+    """Catálogo id_material -> descripción, para nombrar materiales igual que el SI."""
+    cursor.execute("SELECT id_material, descri FROM Materiales")
+    catalog = {}
+    for row in cursor.fetchall() or []:
+        data = dict(row)
+        try:
+            catalog[int(data["id_material"])] = (data.get("descri") or "").strip()
+        except (TypeError, ValueError):
+            continue
+    return catalog
+
+
+def _fetch_stock_almacenes(cursor):
+    """Almacenes del SI con nombre de centro y datos del técnico asignado."""
+    cursor.execute(
+        """
+        SELECT a.id, a.codigo, a.Descri, a.base, a.habilitado, a.Usr, a.Centro,
+               c.Descripcion AS centro_nombre,
+               d.nombre AS tec_nombre, d.apellido AS tec_apellido
+        FROM almacen a
+        LEFT JOIN Centros c ON c.Id_Centro = a.Centro
+        LEFT JOIN Tecnicos t ON t.dni = a.Usr
+        LEFT JOIN DatosPersonales d ON d.dni = t.dni
+        """
+    )
+    return _serialize_rows(cursor.fetchall() or [])
+
+
+def _fetch_stock_material_rows(cursor, max_quantity):
+    """Stock actual por almacén (cantidad = Stock.Libre)."""
+    cursor.execute(
+        """
+        SELECT s.Almacen, s.Material, s.Libre
+        FROM Stock s
+        WHERE s.Libre > 0 AND s.Libre < %s
+        """,
+        (int(max_quantity),),
+    )
+    return cursor.fetchall() or []
+
+
+def _fetch_stock_equipment_rows(cursor, include_scrap):
+    """Seriales vigentes por almacén (solo los que tienen un almacén válido)."""
+    scrap_filter = "" if include_scrap else "AND e.Scrap = 0"
+    cursor.execute(
+        f"""
+        SELECT e.Almacen, e.material, e.serial
+        FROM Stock_Base_Eqp e
+        INNER JOIN almacen a ON a.id = e.Almacen
+        WHERE e.serial IS NOT NULL AND LTRIM(RTRIM(e.serial)) <> '' {scrap_filter}
+        """
+    )
+    return cursor.fetchall() or []
+
+
+def si_stock_pull_run(include_equipment=True):
+    """Trae el stock actual del SI y lo aplica sobre las tablas de Auditoría."""
+    if not current_app.config.get("SI_STOCK_PULL_ENABLED", True):
+        raise RuntimeError("El pull de stock del Sistema Integral está deshabilitado")
+
+    if not _STOCK_RUN_LOCK.acquire(blocking=False):
+        raise SIPullBusyError("Ya hay un pull de stock del Sistema Integral corriendo en esta instancia")
+
+    started_at = _utc_now_text()
+    try:
+        settings = _required_pull_settings()
+        max_quantity = int(current_app.config.get("SI_STOCK_PULL_MAX_QUANTITY") or 500000)
+        include_scrap = bool(current_app.config.get("SI_STOCK_PULL_INCLUDE_SCRAP"))
+
+        try:
+            import pymssql
+        except ImportError as exc:
+            raise RuntimeError("pymssql no está instalado en el entorno actual") from exc
+
+        conn = pymssql.connect(
+            server=settings["host"],
+            port=int(settings["port"]),
+            user=settings["user"],
+            password=settings["password"],
+            database=settings["database"],
+            login_timeout=int(settings["connect_timeout"]),
+            timeout=int(settings["query_timeout"]),
+            charset="UTF-8",
+            as_dict=True,
+        )
+        try:
+            cursor = conn.cursor(as_dict=True)
+            # Marca de agua con la hora del SQL Server (no la del proceso, que en
+            # Render es UTC) para que el banner muestre la misma hora que el pull de OT.
+            server_time = _fetch_server_now(cursor)
+            _upsert_sync_state(
+                sync_key=STOCK_SYNC_KEY,
+                lock_acquired_at=started_at,
+                last_started_at=started_at,
+                last_finished_at=None,
+                last_status="running",
+                last_error=None,
+                updated_at=started_at,
+            )
+
+            material_catalog = _load_stock_material_catalog(cursor)
+            almacenes = _fetch_stock_almacenes(cursor)
+            material_rows = _fetch_stock_material_rows(cursor, max_quantity)
+            equipment_rows = (
+                _fetch_stock_equipment_rows(cursor, include_scrap) if include_equipment else []
+            )
+        finally:
+            conn.close()
+
+        applied = apply_si_stock_snapshot(
+            almacenes, material_rows, equipment_rows, material_catalog
+        )
+
+        finished_at = _utc_now_text()
+        summary = {
+            "almacenes": len(almacenes),
+            "material_rows": len(material_rows),
+            "equipment_rows": len(equipment_rows),
+            "include_equipment": bool(include_equipment),
+            "include_scrap": include_scrap,
+            "max_quantity": max_quantity,
+            "applied": applied,
+        }
+        _upsert_sync_state(
+            sync_key=STOCK_SYNC_KEY,
+            lock_acquired_at=None,
+            last_finished_at=finished_at,
+            last_success_at=server_time.strftime("%Y-%m-%d %H:%M:%S"),
+            last_status="ok",
+            last_error=None,
+            last_summary=json.dumps(summary, ensure_ascii=False),
+            updated_at=finished_at,
+        )
+        return {"mode": "run", "state": get_si_stock_pull_state(), **summary}
+    except Exception as exc:
+        finished_at = _utc_now_text()
+        _upsert_sync_state(
+            sync_key=STOCK_SYNC_KEY,
+            lock_acquired_at=None,
+            last_finished_at=finished_at,
+            last_status="error",
+            last_error=str(exc),
+            updated_at=finished_at,
+        )
+        raise
+    finally:
+        _STOCK_RUN_LOCK.release()
+
+
+def _stock_last_attempt_utc():
+    state = _fetch_sync_state(STOCK_SYNC_KEY) or {}
+    candidates = []
+    for key in ("last_finished_at", "last_started_at"):
+        parsed = _parse_text_datetime(state.get(key))
+        if parsed:
+            candidates.append(parsed)
+    return max(candidates) if candidates else None
+
+
+def si_stock_pull_on_demand_ready(ignore_throttle=False):
+    """Indica si corresponde disparar un pull de stock on-demand."""
+    if not current_app.config.get("SI_STOCK_PULL_ON_DEMAND"):
+        return False, "disabled"
+    state = get_si_stock_pull_state()
+    if state.get("running"):
+        return False, "running"
+    if ignore_throttle:
+        return True, "forced"
+    min_interval = max(1, int(current_app.config.get("SI_STOCK_PULL_ON_DEMAND_MIN_INTERVAL_MINUTES") or 360))
+    last_attempt = _stock_last_attempt_utc()
+    if last_attempt and (datetime.utcnow() - last_attempt) < timedelta(minutes=min_interval):
+        return False, "throttled"
+    return True, "ready"
+
+
+def maybe_si_stock_pull_async(force=False):
+    """Lanza el pull de stock en un hilo aparte para no bloquear el request."""
+    should_run, reason = si_stock_pull_on_demand_ready(ignore_throttle=force)
+    if not should_run:
+        return {"started": False, "reason": reason}
+
+    app = current_app._get_current_object()
+
+    def _worker():
+        with app.app_context():
+            try:
+                si_stock_pull_run()
+            except SIPullBusyError:
+                pass
+            except Exception:
+                app.logger.exception("si_stock_pull on-demand error")
+
+    threading.Thread(target=_worker, name="si-stock-pull-on-demand", daemon=True).start()
     return {"started": True, "reason": reason}

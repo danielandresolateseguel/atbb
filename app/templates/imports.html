@@ -44,6 +44,38 @@
     </article>
 </section>
 
+{# Sincronizacion de stock directo desde el Sistema Integral #}
+{% set stock_syncing = stock_pull_state.running or stock_pull_trigger.started %}
+<section style="background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:700;">Stock desde el Sistema Integral</span>
+        <span style="font-size:15px;font-weight:800;color:#ffffff;">{{ stock_pull_state.last_success_at or 'nunca sincronizado' }}</span>
+        {% if stock_syncing %}
+        <span style="font-size:12px;font-weight:700;color:#fbbf24;">· sincronizando…</span>
+        {% elif stock_pull_state.last_status == 'error' %}
+        <span style="font-size:12px;font-weight:700;color:#f87171;">· último intento con error</span>
+        {% endif %}
+        <span style="font-size:12px;color:#94a3b8;">Trae almacenes, stock de materiales y equipos serializados.</span>
+    </div>
+    {% if is_admin %}
+        {% if stock_syncing %}
+        <button type="button" disabled title="Sincronización en curso" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:not-allowed;opacity:.65;">
+            Sincronizando…
+        </button>
+        {% else %}
+        <form method="POST" action="{{ url_for('main.imports_sync_stock_now') }}" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:pointer;">
+                🔄 Sincronizar stock del SI
+            </button>
+        </form>
+        {% endif %}
+    {% endif %}
+</section>
+{% if stock_syncing %}
+<script>setTimeout(function () { window.location.href = "{{ url_for('main.imports') }}"; }, 15000);</script>
+{% endif %}
+
 <section class="card import-layout">
     <div class="import-info">
         <div class="section-heading">

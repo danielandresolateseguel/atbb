@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 audit_app.db
+audit_app.backup-*.db
 .vscode/
 app/static/uploads/
 uploads/
