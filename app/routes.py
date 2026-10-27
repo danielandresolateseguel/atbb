@@ -8622,8 +8622,8 @@ def imports():
 
 @main.route("/imports/sync-stock-now", methods=["POST"])
 def imports_sync_stock_now():
-    """Fuerza el pull de stock del SI desde la pantalla de importaciones (admin)."""
-    if not is_admin():
+    """Fuerza el pull de stock del SI desde la pantalla de importaciones (admin y auditor)."""
+    if not can_import():
         abort(403)
     if not validate_csrf_token(request.form.get("csrf_token")):
         abort(400)

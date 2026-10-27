@@ -53,11 +53,11 @@
         {% if stock_syncing %}
         <span style="font-size:12px;font-weight:700;color:#fbbf24;">· sincronizando…</span>
         {% elif stock_pull_state.last_status == 'error' %}
-        <span style="font-size:12px;font-weight:700;color:#f87171;">· último intento con error</span>
+        <span style="font-size:12px;font-weight:700;color:#f87171;" title="{{ stock_pull_state.last_error or 'Sin detalle' }}">· último intento con error: {{ (stock_pull_state.last_error or 'sin detalle')[:200] }}</span>
         {% endif %}
         <span style="font-size:12px;color:#94a3b8;">Trae almacenes, stock de materiales y equipos serializados.</span>
     </div>
-    {% if is_admin %}
+    {% if can_import %}
         {% if stock_syncing %}
         <button type="button" disabled title="Sincronización en curso" style="background:#1e293b;color:#64748b;border:1px solid #334155;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:not-allowed;opacity:.65;">
             Sincronizando…
