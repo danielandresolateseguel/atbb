@@ -4894,18 +4894,89 @@ def fetch_mobile_units():
         SELECT DISTINCT
             mu.id,
             mu.mobile_code,
-            mu.technician_id,
+            COALESCE(
+                mu.technician_id,
+                (
+                    SELECT t2.id
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_id,
             mu.user_name,
             mu.warehouse_description,
             mu.warehouse_type,
             mu.is_enabled,
             mu.notes,
-            t.name AS technician_name,
-            t.center_name AS technician_center_name,
-            t.supervisor_name AS technician_supervisor_name,
-            t.company_name AS technician_company_name,
-            t.union_name AS technician_union_name,
-            t.region AS technician_region,
+            COALESCE(
+                t.name,
+                (
+                    SELECT t2.name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                ),
+                mu.user_name
+            ) AS technician_name,
+            COALESCE(
+                t.center_name,
+                (
+                    SELECT t2.center_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_center_name,
+            COALESCE(
+                t.supervisor_name,
+                (
+                    SELECT t2.supervisor_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_supervisor_name,
+            COALESCE(
+                t.company_name,
+                (
+                    SELECT t2.company_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_company_name,
+            COALESCE(
+                t.union_name,
+                (
+                    SELECT t2.union_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_union_name,
+            COALESCE(
+                t.region,
+                (
+                    SELECT t2.region
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_region,
             (
                 SELECT sl.center_name
                 FROM storage_locations sl
@@ -4919,7 +4990,18 @@ def fetch_mobile_units():
                     sl.id DESC
                 LIMIT 1
             ) AS storage_center_name,
-            t.employee_code,
+            COALESCE(
+                t.employee_code,
+                (
+                    SELECT t2.employee_code
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mu.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                ),
+                mu.mobile_code
+            ) AS employee_code,
             0 AS _is_virtual
         FROM mobile_units mu
         LEFT JOIN technicians t ON t.id = mu.technician_id
@@ -4977,17 +5059,129 @@ def fetch_mobile_unit_detail(mobile_code):
             mobile_units.warehouse_type,
             mobile_units.is_enabled,
             mobile_units.notes,
-            mobile_units.technician_id,
-            technicians.name AS technician_name,
-            technicians.employee_code,
-            technicians.phone,
-            technicians.region,
-            technicians.commune,
-            technicians.team,
-            technicians.company_name,
-            technicians.union_name,
-            technicians.supervisor_name,
-            technicians.center_name
+            COALESCE(
+                mobile_units.technician_id,
+                (
+                    SELECT t2.id
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_id,
+            COALESCE(
+                technicians.name,
+                (
+                    SELECT t2.name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                ),
+                mobile_units.user_name
+            ) AS technician_name,
+            COALESCE(
+                technicians.employee_code,
+                (
+                    SELECT t2.employee_code
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                ),
+                mobile_units.mobile_code
+            ) AS employee_code,
+            COALESCE(
+                technicians.phone,
+                (
+                    SELECT t2.phone
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS phone,
+            COALESCE(
+                technicians.region,
+                (
+                    SELECT t2.region
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS region,
+            COALESCE(
+                technicians.commune,
+                (
+                    SELECT t2.commune
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS commune,
+            COALESCE(
+                technicians.team,
+                (
+                    SELECT t2.team
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS team,
+            COALESCE(
+                technicians.company_name,
+                (
+                    SELECT t2.company_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS company_name,
+            COALESCE(
+                technicians.union_name,
+                (
+                    SELECT t2.union_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS union_name,
+            COALESCE(
+                technicians.supervisor_name,
+                (
+                    SELECT t2.supervisor_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS supervisor_name,
+            COALESCE(
+                technicians.center_name,
+                (
+                    SELECT t2.center_name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS center_name
         FROM mobile_units
         LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
         WHERE mobile_units.mobile_code = ?
@@ -5008,9 +5202,41 @@ def fetch_mobile_unit_by_id(mobile_unit_id):
             mobile_units.warehouse_type,
             mobile_units.is_enabled,
             mobile_units.notes,
-            mobile_units.technician_id,
-            technicians.name AS technician_name,
-            technicians.employee_code
+            COALESCE(
+                mobile_units.technician_id,
+                (
+                    SELECT t2.id
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                )
+            ) AS technician_id,
+            COALESCE(
+                technicians.name,
+                (
+                    SELECT t2.name
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                ),
+                mobile_units.user_name
+            ) AS technician_name,
+            COALESCE(
+                technicians.employee_code,
+                (
+                    SELECT t2.employee_code
+                    FROM technicians t2
+                    WHERE COALESCE(t2.is_active, 1) = 1
+                        AND t2.employee_code = mobile_units.mobile_code
+                    ORDER BY t2.id DESC
+                    LIMIT 1
+                ),
+                mobile_units.mobile_code
+            ) AS employee_code
         FROM mobile_units
         LEFT JOIN technicians ON technicians.id = mobile_units.technician_id
         WHERE mobile_units.id = ?
