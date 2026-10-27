@@ -76,7 +76,7 @@
                         <option value="" {% if not request.form.get('technician_id') %}selected{% endif %}>Seleccionar</option>
                         {% for technician in technicians %}
                             <option value="{{ technician['id'] }}" {% if request.form.get('technician_id')|int == technician['id'] %}selected{% endif %}>
-                                {{ technician["name"] }} ({{ technician["employee_code"] }})
+                                {{ technician["employee_code"] }} - {{ technician["name"]|upper }}
                             </option>
                         {% endfor %}
                     </select>

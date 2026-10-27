@@ -34,7 +34,7 @@
                     {% set _sel = _tid is string and _tid.isdigit() %}
                     {% set _tid_int = _tid|int if _sel else -1 %}
                     <option value="{{ technician['id'] }}" {% if _tid_int == technician['id'] %}selected{% endif %}>
-                        {{ technician["name"] }} ({{ technician["employee_code"] }})
+                        {{ technician["employee_code"] }} - {{ technician["name"]|upper }}
                     </option>
                 {% endfor %}
             </select>

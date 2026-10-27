@@ -104,6 +104,24 @@
             </div>
         </div>
 
+        {% if is_admin %}
+        <div style="margin-top: 14px; padding: 18px; border: 1px solid #FCD34D; background: #FFFBEB; border-radius: 14px;">
+            <div style="font-weight: 700; color: #92400E; font-size: 1.02em; margin-bottom: 4px;">🧩 Completar técnicos desde el Sistema Integral</div>
+            <p style="margin: 4px 0 12px 0; color:#78350F; font-size: 0.92em;">
+                Agrega a la maestra los técnicos que ya existen como móvil en el SI y faltan (por eso no aparecen al
+                crear un <strong>QC</strong> o una <strong>Auditoría Service</strong>), limpia los legajos con sufijo
+                decimal (<code>206.0</code> → <code>206</code>) y vincula cada móvil con su técnico.
+            </p>
+            <form method="POST" action="{{ url_for('main.admin_backfill_technicians') }}" style="margin:0;"
+                  onsubmit="return confirm('¿Aplicar el backfill de técnicos ahora?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="button button-secondary" style="font-weight:700;">
+                    🧩 Completar técnicos faltantes
+                </button>
+            </form>
+        </div>
+        {% endif %}
+
         <div class="template-groups" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 18px;">
             <div class="template-group" style="padding: 16px; border: 1px solid #E5E7EB; border-radius: 12px; background: #F8FAFC;">
                 <div style="font-weight: 700; margin-bottom: 10px; color: #0f172a;">👷 Técnicos + Tarjeta</div>

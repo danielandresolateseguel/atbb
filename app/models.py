@@ -4600,15 +4600,42 @@ def seed_demo_data(connection):
         )
 
 
-def fetch_technicians():
+def _correlative_code_key(value):
+    """Clave de orden correlativa para legajos/codigos de movil.
+
+    Los codigos numericos se ordenan por valor (100, 101, ..., 1000) y no como
+    texto (que daba '100' < '1000' < '101'). Los alfanumericos (ej. 'ADamian')
+    quedan al final, ordenados alfabeticamente, sin romper la correlatividad.
+    """
+    raw_code = str(value or "").strip()
+    if not raw_code:
+        return (2, 0, "")
+    cleaned_code = normalize_mobile_code(raw_code) or raw_code
+    try:
+        return (0, int(cleaned_code), "")
+    except (TypeError, ValueError):
+        return (1, 0, cleaned_code.upper())
+
+
+def fetch_technicians(limit=None):
     rows = get_db().execute(
         """
         SELECT id, name, employee_code, region, phone, commune, team, company_name, union_name, supervisor_name, center_name, is_active
         FROM technicians
-        ORDER BY name ASC
         """
     ).fetchall()
-    return [dict(row) for row in rows]
+    technicians = [dict(row) for row in rows]
+    # Ordenado por legajo (como "Nueva auditoria": 1021 - MENDIETA VICTOR ALFONSO)
+    # para que el auditor lo busque por numero y no alfabeticamente por nombre.
+    technicians.sort(
+        key=lambda t: (
+            _correlative_code_key(t.get("employee_code")),
+            (t.get("name") or "").strip().upper(),
+        )
+    )
+    if limit:
+        technicians = technicians[:limit]
+    return technicians
 
 
 def _try_add_vehicle_id_on(connection_cursor):
@@ -5045,7 +5072,16 @@ def fetch_mobile_units():
         ORDER BY mobile_code ASC
         """
     ).fetchall()
-    return [dict(row) for row in rows]
+    mobile_units = [dict(row) for row in rows]
+    # Reordenamos en Python para que el codigo de movil/legajo salga correlativo
+    # (100, 101, ..., 1000) y no como texto ('100' < '1000' < '101').
+    mobile_units.sort(
+        key=lambda unit: (
+            _correlative_code_key(unit.get("mobile_code")),
+            (unit.get("technician_name") or unit.get("user_name") or "").strip().upper(),
+        )
+    )
+    return mobile_units
 
 
 def fetch_mobile_unit_detail(mobile_code):
@@ -10265,6 +10301,190 @@ def backfill_qc_items_is_critical():
     }
 
 
+def backfill_technicians_from_si():
+    """Completa la maestra `technicians` con los tecnicos que existen como movil
+    en el Sistema Integral (`mobile_units`) pero que faltan en la maestra.
+
+    Ademas:
+      * normaliza los `employee_code` con sufijo decimal ('206.0' -> '206'),
+      * vincula `mobile_units.technician_id` con el tecnico correspondiente.
+
+    Corrige de raiz los selectores que usan la maestra (QC, Auditoria Service,
+    reportes) ya que la pantalla de Auditoria lee `mobile_units` y mostraba
+    tecnicos que la maestra no tenia.
+
+    Idempotente. Devuelve contadores + detalle para mostrar en pantalla.
+    """
+    connection = get_db()
+
+    def _key(value):
+        raw = (value or "").strip()
+        return normalize_mobile_code(raw) or raw
+
+    def _text(value):
+        return " ".join((value or "").split())
+
+    # --- 0) Catalogos del SI (para completar nombre / centro / supervisor) ---
+    si_by_tec = {}
+    si_by_dni = {}
+    centers = {}
+    try:
+        for row in connection.execute(
+            """
+            SELECT n_tec, dni, sup, "Centro" AS center_id, nombre, apellido
+            FROM si_tecnicos
+            """
+        ).fetchall():
+            data = dict(row)
+            if data.get("n_tec") is None:
+                continue
+            si_by_tec[str(data["n_tec"])] = data
+            if data.get("dni") is not None:
+                si_by_dni[data["dni"]] = data
+        for row in connection.execute(
+            'SELECT "Id_Centro", "Descripcion" FROM si_centros'
+        ).fetchall():
+            data = dict(row)
+            centers[data.get("Id_Centro")] = _text(data.get("Descripcion"))
+    except Exception:
+        _db_rollback_safe()
+        si_by_tec, si_by_dni, centers = {}, {}, {}
+
+    created = []
+    normalized = []
+    duplicates = []
+    relinked = 0
+
+    def _master_index():
+        index = {}
+        for row in connection.execute(
+            "SELECT id, name, employee_code FROM technicians ORDER BY id ASC"
+        ).fetchall():
+            data = dict(row)
+            key = _key(data["employee_code"])
+            if key and key not in index:
+                index[key] = data
+        return index
+
+    try:
+        # --- 1) Normalizar employee_code ('206.0' -> '206') -----------------
+        groups = {}
+        for row in connection.execute(
+            "SELECT id, name, employee_code FROM technicians ORDER BY id ASC"
+        ).fetchall():
+            data = dict(row)
+            groups.setdefault(_key(data["employee_code"]), []).append(data)
+
+        for key, group in groups.items():
+            if not key:
+                continue
+            # el "keeper" es el que ya tiene el legajo limpio; si no, el mas antiguo
+            group.sort(key=lambda r: (0 if (r["employee_code"] or "").strip() == key else 1, r["id"]))
+            keeper = group[0]
+            for dup in group[1:]:
+                duplicates.append(
+                    f"{dup['name']} ({dup['employee_code']}) duplica el legajo {key}"
+                )
+            if (keeper["employee_code"] or "").strip() != key:
+                connection.execute(
+                    "UPDATE technicians SET employee_code = ? WHERE id = ?",
+                    (key, keeper["id"]),
+                )
+                normalized.append(f"{keeper['name']}: {keeper['employee_code']} -> {key}")
+
+        # --- 2) Crear los tecnicos que faltan -------------------------------
+        mobile_rows = [
+            dict(row)
+            for row in connection.execute(
+                """
+                SELECT id, mobile_code, technician_id, user_name, warehouse_type, warehouse_description
+                FROM mobile_units
+                WHERE COALESCE(is_enabled, 1) = 1
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        ]
+
+        master = _master_index()
+        for row in mobile_rows:
+            key = _key(row.get("mobile_code"))
+            if not key or key in master:
+                continue
+            user_name = _text(row.get("user_name"))
+            if not user_name:
+                continue
+            warehouse_type = _text(row.get("warehouse_type")).lower()
+            if warehouse_type and warehouse_type not in {"técnico", "tecnico", "movil", "móvil"}:
+                continue
+
+            si_row = si_by_tec.get(key) or {}
+            name = _text(f"{si_row.get('apellido') or ''} {si_row.get('nombre') or ''}") or user_name
+
+            center = _text(centers.get(si_row.get("center_id")))
+            if not center:
+                location = connection.execute(
+                    """
+                    SELECT center_name
+                    FROM storage_locations
+                    WHERE mobile_unit_id = ? AND COALESCE(is_enabled, 1) = 1
+                    ORDER BY CASE WHEN LOWER(COALESCE(warehouse_type, '')) = 'movil' THEN 0 ELSE 1 END,
+                             id DESC
+                    LIMIT 1
+                    """,
+                    (row["id"],),
+                ).fetchone()
+                if location:
+                    center = _text(dict(location).get("center_name"))
+            if not center:
+                center = _text(row.get("warehouse_description")) or "Sin especificar"
+
+            supervisor_name = None
+            if si_row.get("sup") is not None:
+                supervisor = si_by_dni.get(si_row["sup"])
+                if supervisor:
+                    supervisor_name = (
+                        _text(f"{supervisor.get('apellido') or ''} {supervisor.get('nombre') or ''}") or None
+                    )
+
+            connection.execute(
+                """
+                INSERT INTO technicians (name, employee_code, region, center_name, supervisor_name, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
+                """,
+                (name, key, center, center, supervisor_name),
+            )
+            created.append(f"{name} ({key})")
+
+        # --- 3) Vincular los moviles con su tecnico -------------------------
+        if created:
+            master = _master_index()
+        for row in mobile_rows:
+            tech = master.get(_key(row.get("mobile_code")))
+            if not tech or tech.get("id") is None:
+                continue
+            if row.get("technician_id") == tech["id"]:
+                continue
+            connection.execute(
+                "UPDATE mobile_units SET technician_id = ? WHERE id = ?",
+                (tech["id"], row["id"]),
+            )
+            relinked += 1
+
+        connection.commit()
+    except Exception:
+        _db_rollback_safe()
+        raise
+
+    return {
+        "created": created,
+        "created_count": len(created),
+        "normalized": normalized,
+        "normalized_count": len(normalized),
+        "duplicates": duplicates,
+        "relinked_count": relinked,
+    }
+
+
 def append_qc_visibility_filters(where_clauses, params, include_pruebas=False, table_alias="qc_sessions"):
     if not _normalize_bool(include_pruebas):
         where_clauses.append(f"COALESCE({table_alias}.record_scope, ?) = ?")
@@ -11664,6 +11884,10 @@ def import_technicians(rows):
 
     for index, row in enumerate(rows, start=2):
         employee_code = (row.get("employee_code") or "").strip()
+        if employee_code:
+            # Evita legajos como '206.0' (Excel los lee numericos) que no matchean
+            # con el codigo de movil del SI ni con los selectores de QC/Auditoria.
+            employee_code = normalize_mobile_code(employee_code) or employee_code
         name = (row.get("name") or "").strip()
         region = (row.get("region") or "").strip()
 
@@ -12030,6 +12254,9 @@ def import_technician_information(rows):
             base_employee_code = (employee_code or "").strip()
             if not base_employee_code and mobile_code:
                 base_employee_code = mobile_code
+            if base_employee_code:
+                # Normaliza '206.0' -> '206' para que coincida con el codigo de movil.
+                base_employee_code = normalize_mobile_code(base_employee_code) or base_employee_code
             if not base_employee_code:
                 skipped_rows.append(f"Fila {index}: falta employee_code o movil para generar codigo.")
                 continue

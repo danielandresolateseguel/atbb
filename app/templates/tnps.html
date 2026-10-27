@@ -223,7 +223,7 @@
                 <select name="technician_id">
                     <option value="">Sin asignar</option>
                     {% for technician in technicians %}
-                        <option value="{{ technician['id'] }}">{{ technician["name"] }} ({{ technician["employee_code"] }})</option>
+                        <option value="{{ technician['id'] }}">{{ technician["employee_code"] }} - {{ technician["name"]|upper }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -440,7 +440,7 @@
                 <option value="">Todos</option>
                 {% for technician in technicians %}
                     <option value="{{ technician['id'] }}" {% if filters['technician_id'] == (technician['id']|string) %}selected{% endif %}>
-                        {{ technician["name"] }} ({{ technician["employee_code"] }})
+                        {{ technician["employee_code"] }} - {{ technician["name"]|upper }}
                     </option>
                 {% endfor %}
             </select>

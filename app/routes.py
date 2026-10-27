@@ -198,6 +198,7 @@ from app.models import (
     update_qc_record_scope,
     update_service_record_scope,
     backfill_qc_items_is_critical,
+    backfill_technicians_from_si,
     update_mobile_unit_technician,
     update_vehicle_extinguisher_expiry,
     update_vehicle_insurance_expiry,
@@ -2234,7 +2235,6 @@ def users_new():
             flash(str(exc), "error")
 
     technicians_options = fetch_technicians(limit=1000) or []
-    technicians_options = sorted(technicians_options, key=lambda t: ((t.get("employee_code") or "").zfill(8), (t.get("name") or "").lower()))
     return render_template("user_form.html", mode="new", user=None, technicians_options=technicians_options)
 
 
@@ -2290,7 +2290,6 @@ def users_edit(user_id):
             flash(str(exc), "error")
 
     technicians_options = fetch_technicians(limit=1000) or []
-    technicians_options = sorted(technicians_options, key=lambda t: ((t.get("employee_code") or "").zfill(8), (t.get("name") or "").lower()))
     return render_template("user_form.html", mode="edit", user=user, technicians_options=technicians_options)
 
 
@@ -2350,6 +2349,46 @@ def admin_backfill_qc_critical_items():
     if not fallback:
         fallback = url_for("main.qc_reports") if can_view_reports() else url_for("main.dashboard")
     return redirect(fallback)
+
+
+@main.route("/admin/backfill/technicians", methods=["POST"])
+def admin_backfill_technicians():
+    """Completa la maestra de tecnicos con los moviles del SI que faltan.
+
+    Los selectores de QC, Auditoria Service y reportes leen `technicians`,
+    mientras que Auditoria lee `mobile_units`; esto deja alineadas ambas
+    fuentes normalizando los legajos con sufijo decimal ('206.0' -> '206').
+    """
+    user = current_user()
+    if not user or user.get("role") != "admin":
+        abort(403)
+    if not validate_csrf_token(request.form.get("csrf_token")):
+        flash("Token de seguridad expirado o inválido. Volvé a intentar.", "error")
+        return redirect(request.referrer or url_for("main.imports"))
+    try:
+        result = backfill_technicians_from_si() or {}
+        created = result.get("created") or []
+        normalized = result.get("normalized") or []
+        duplicates = result.get("duplicates") or []
+        message = (
+            "Backfill técnicos OK: "
+            f"{len(created)} creados, "
+            f"{len(normalized)} legajos normalizados, "
+            f"{result.get('relinked_count', 0)} móviles vinculados."
+        )
+        if created:
+            message += " Nuevos: " + " | ".join(created[:8]) + (" …" if len(created) > 8 else "")
+        flash(message, "success")
+        if duplicates:
+            flash(
+                "Legajos duplicados (no se tocaron): " + " | ".join(duplicates[:5]),
+                "error",
+            )
+    except Exception as exc:
+        current_app.logger.exception("admin_backfill_technicians FAILED")
+        flash(f"Error al aplicar el backfill de técnicos: {exc}", "error")
+
+    return redirect(request.referrer or url_for("main.imports"))
 
 
 CSV_IMPORT_TYPES = {
