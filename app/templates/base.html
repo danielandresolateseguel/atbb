@@ -62,6 +62,156 @@
     </script>
 </head>
 <body{% if page_class %} class="{{ page_class }}"{% endif %}>
+    {% macro nav_icon(name) -%}
+        {% if name == "technician_dashboard" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 21a8 8 0 0 0-16 0"></path>
+                <circle cx="12" cy="8" r="4"></circle>
+            </svg>
+        {% elif name == "technician_orders" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="6" y="4" width="12" height="16" rx="2"></rect>
+                <path d="M9 9h6M9 13h6M9 17h4"></path>
+            </svg>
+        {% elif name == "technician_badge" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="4" y="5" width="16" height="14" rx="2"></rect>
+                <circle cx="9" cy="11" r="2"></circle>
+                <path d="M15 10h2M15 14h2M7.5 15a2.5 2.5 0 0 1 3 0"></path>
+            </svg>
+        {% elif name == "dashboard" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="8" height="8" rx="2"></rect>
+                <rect x="13" y="3" width="8" height="5" rx="2"></rect>
+                <rect x="13" y="10" width="8" height="11" rx="2"></rect>
+                <rect x="3" y="13" width="8" height="8" rx="2"></rect>
+            </svg>
+        {% elif name == "new_audit" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 4h6"></path>
+                <rect x="5" y="3" width="14" height="18" rx="2"></rect>
+                <path d="m9 12 2 2 4-4"></path>
+            </svg>
+        {% elif name == "task_bundle" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 5v14"></path>
+                <path d="M5 12h14"></path>
+                <rect x="4" y="4" width="16" height="16" rx="4"></rect>
+            </svg>
+        {% elif name == "vehicle_audit" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 16l1.5-5h11L19 16"></path>
+                <path d="M6 11l1.3-3h9.4l1.3 3"></path>
+                <rect x="4" y="16" width="16" height="3" rx="1"></rect>
+                <circle cx="7.5" cy="17.5" r=".5" fill="currentColor" stroke="none"></circle>
+                <circle cx="16.5" cy="17.5" r=".5" fill="currentColor" stroke="none"></circle>
+            </svg>
+        {% elif name == "history" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+                <path d="M3 4v5h5"></path>
+                <path d="M12 7v5l3 2"></path>
+            </svg>
+        {% elif name == "findings" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 4 3 20h18L12 4Z"></path>
+                <path d="M12 10v4"></path>
+                <circle cx="12" cy="17" r=".7" fill="currentColor" stroke="none"></circle>
+            </svg>
+        {% elif name == "requests" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 7h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z"></path>
+                <path d="M4 7l4 5h8l4-5"></path>
+                <path d="M9 4h6"></path>
+            </svg>
+        {% elif name == "tnps" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 15h10a4 4 0 0 0 0-8H7a4 4 0 1 0 0 8Z"></path>
+                <path d="M9 11h.01M15 11h.01"></path>
+                <path d="M9 18l3-3 3 3"></path>
+            </svg>
+        {% elif name == "qc" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6l7-3Z"></path>
+                <path d="m9 12 2 2 4-4"></path>
+            </svg>
+        {% elif name == "service" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m14.5 6.5 3 3"></path>
+                <path d="m13 8 3 3"></path>
+                <path d="M5 19l6.5-6.5"></path>
+                <path d="M4 20l2-2"></path>
+                <path d="M14 4a4 4 0 0 1 6 5.3l-3.3 3.3-5-5L15 4.3A4 4 0 0 1 14 4Z"></path>
+            </svg>
+        {% elif name == "qc_reports" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 19h16"></path>
+                <path d="M7 16V9"></path>
+                <path d="M12 16V5"></path>
+                <path d="M17 16v-4"></path>
+            </svg>
+        {% elif name == "technicians" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="9" cy="8" r="3"></circle>
+                <path d="M4 19a5 5 0 0 1 10 0"></path>
+                <circle cx="17" cy="9" r="2.5"></circle>
+                <path d="M14.5 19a4.5 4.5 0 0 1 5.5-3.3"></path>
+            </svg>
+        {% elif name == "orders" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="5" y="4" width="14" height="16" rx="2"></rect>
+                <path d="m9 12 2 2 4-4"></path>
+                <path d="M9 8h6"></path>
+            </svg>
+        {% elif name == "reports" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path>
+                <path d="M14 3v5h5"></path>
+                <path d="M9 17h6M9 13h6"></path>
+            </svg>
+        {% elif name == "equipment" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m14 7 3-3 3 3-3 3-3-3Z"></path>
+                <path d="M4 20l7-7"></path>
+                <path d="m7 13 4 4"></path>
+                <path d="M13 7 7 13"></path>
+            </svg>
+        {% elif name == "stock" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3 4 7l8 4 8-4-8-4Z"></path>
+                <path d="M4 12l8 4 8-4"></path>
+                <path d="M4 17l8 4 8-4"></path>
+            </svg>
+        {% elif name == "warehouse" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 10 12 4l9 6"></path>
+                <path d="M5 10v10h14V10"></path>
+                <path d="M9 20v-5h6v5"></path>
+            </svg>
+        {% elif name == "import" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 16V5"></path>
+                <path d="m8 9 4-4 4 4"></path>
+                <path d="M5 19h14"></path>
+            </svg>
+        {% elif name == "system" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <ellipse cx="12" cy="6" rx="7" ry="3"></ellipse>
+                <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path>
+                <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"></path>
+            </svg>
+        {% elif name == "login" %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 5h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-4"></path>
+                <path d="M10 17l5-5-5-5"></path>
+                <path d="M15 12H4"></path>
+            </svg>
+        {% else %}
+            <svg class="nav-link-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="7"></circle>
+            </svg>
+        {% endif %}
+    {%- endmacro %}
     {% if page_class != "page-auth" and not (is_public_view and public_view_context and public_view_context == "technician_badge") %}
         <header class="topbar">
             <div class="topbar-row">
@@ -72,53 +222,222 @@
                 <nav class="nav" id="main_nav">
                     {% if current_user %}
                         {% if is_technician %}
-                            <a href="{{ url_for('main.technician_dashboard') }}">Mi Perfil</a>
-                            <a href="{{ url_for('main.technician_orders') }}">Mis Órdenes</a>
-                            <a href="{{ url_for('main.technician_badge', technician_id=current_technician_id) }}" target="_blank">Mi Credencial</a>
+                            <a class="nav-link-card" href="{{ url_for('main.technician_dashboard') }}">
+                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("technician_dashboard") }}</span>
+                                <span class="nav-link-text">
+                                    <span class="nav-link-title">Mi Perfil</span>
+                                    <span class="nav-link-meta">Resumen, datos y actividad</span>
+                                </span>
+                            </a>
+                            <a class="nav-link-card" href="{{ url_for('main.technician_orders') }}">
+                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("technician_orders") }}</span>
+                                <span class="nav-link-text">
+                                    <span class="nav-link-title">Mis Órdenes</span>
+                                    <span class="nav-link-meta">Seguimiento y pendientes</span>
+                                </span>
+                            </a>
+                            <a class="nav-link-card" href="{{ url_for('main.technician_badge', technician_id=current_technician_id) }}" target="_blank">
+                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("technician_badge") }}</span>
+                                <span class="nav-link-text">
+                                    <span class="nav-link-title">Mi Credencial</span>
+                                    <span class="nav-link-meta">Acceso rápido para mostrar</span>
+                                </span>
+                            </a>
                         {% else %}
-                            <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
-                            {% if can_create_audit %}
-                                <a href="{{ url_for('main.new_audit') }}">Nueva auditoría</a>
-                                <a href="{{ url_for('main.new_vehicle_audit') }}">Auditar vehículo</a>
+                            {% if can_create_audit or can_create_qc %}
+                                <section class="nav-quick-actions" aria-label="Accesos directos de nueva tarea">
+                                    <button
+                                        class="nav-quick-toggle"
+                                        id="nav_quick_toggle"
+                                        type="button"
+                                        aria-expanded="false"
+                                        aria-controls="nav_quick_links"
+                                    >
+                                        <span class="nav-link-icon nav-link-icon-accent" aria-hidden="true">{{ nav_icon("task_bundle") }}</span>
+                                        <span class="nav-link-text">
+                                            <span class="nav-link-title">Nueva Tarea</span>
+                                            <span class="nav-link-meta">Accesos directos para iniciar auditorías</span>
+                                        </span>
+                                    </button>
+                                    <div class="nav-quick-links" id="nav_quick_links" aria-hidden="true">
+                                        {% if can_create_audit %}
+                                            <a class="nav-link-card nav-link-card-compact" href="{{ url_for('main.new_audit') }}">
+                                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("new_audit") }}</span>
+                                                <span class="nav-link-text">
+                                                    <span class="nav-link-title">Auditar Técnico</span>
+                                                    <span class="nav-link-meta">Nueva auditoría técnica</span>
+                                                </span>
+                                            </a>
+                                            <a class="nav-link-card nav-link-card-compact" href="{{ url_for('main.new_vehicle_audit') }}">
+                                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("vehicle_audit") }}</span>
+                                                <span class="nav-link-text">
+                                                    <span class="nav-link-title">Auditar Vehículo</span>
+                                                    <span class="nav-link-meta">Nueva auditoría vehicular</span>
+                                                </span>
+                                            </a>
+                                            {% if can_view_service %}
+                                                <a class="nav-link-card nav-link-card-compact" href="{{ url_for('main.service_new') }}">
+                                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("service") }}</span>
+                                                    <span class="nav-link-text">
+                                                        <span class="nav-link-title">Auditar Service</span>
+                                                        <span class="nav-link-meta">Alta directa de service</span>
+                                                    </span>
+                                                </a>
+                                            {% endif %}
+                                        {% endif %}
+                                        {% if can_create_qc %}
+                                            <a class="nav-link-card nav-link-card-compact" href="{{ url_for('main.qc_new') }}">
+                                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("qc") }}</span>
+                                                <span class="nav-link-text">
+                                                    <span class="nav-link-title">Auditar Instalación</span>
+                                                    <span class="nav-link-meta">Crear QC de instalación</span>
+                                                </span>
+                                            </a>
+                                        {% endif %}
+                                    </div>
+                                </section>
                             {% endif %}
-                            <a href="{{ url_for('main.audit_list') }}">Historial</a>
+                            <a class="nav-link-card" href="{{ url_for('main.dashboard') }}">
+                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("dashboard") }}</span>
+                                <span class="nav-link-text">
+                                    <span class="nav-link-title">Dashboard</span>
+                                    <span class="nav-link-meta">Vista general y accesos</span>
+                                </span>
+                            </a>
+                            <a class="nav-link-card" href="{{ url_for('main.audit_list') }}">
+                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("history") }}</span>
+                                <span class="nav-link-text">
+                                    <span class="nav-link-title">Historial</span>
+                                    <span class="nav-link-meta">Búsqueda y seguimiento</span>
+                                </span>
+                            </a>
                             {% if can_view_findings %}
-                                <a href="{{ url_for('main.findings_list') }}">{% if is_supervisor %}Mi bandeja{% else %}Hallazgos{% endif %}</a>
+                                <a class="nav-link-card" href="{{ url_for('main.findings_list') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("findings") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">{% if is_supervisor %}Mi bandeja{% else %}Hallazgos{% endif %}</span>
+                                        <span class="nav-link-meta">Seguimiento de desvíos</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if can_view_supply_requests %}
-                                <a href="{{ url_for('main.supply_requests') }}">Solicitudes</a>
+                                <a class="nav-link-card" href="{{ url_for('main.supply_requests') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("requests") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Solicitudes</span>
+                                        <span class="nav-link-meta">Pedidos y autorizaciones</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if not is_supervisor %}
-                                <a href="{{ url_for('main.tnps') }}">tNPS</a>
+                                <a class="nav-link-card" href="{{ url_for('main.tnps') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("tnps") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">tNPS</span>
+                                        <span class="nav-link-meta">Feedback y satisfacción</span>
+                                    </span>
+                                </a>
                             {% endif %}
-                            <a href="{{ url_for('main.qc_sessions') }}">QC Instalaciones</a>
+                            <a class="nav-link-card" href="{{ url_for('main.qc_sessions') }}">
+                                <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("qc") }}</span>
+                                <span class="nav-link-text">
+                                    <span class="nav-link-title">QC Instalaciones</span>
+                                    <span class="nav-link-meta">Control de calidad en campo</span>
+                                </span>
+                            </a>
                             {% if can_view_service %}
-                                <a href="{{ url_for('main.service_sessions') }}">Auditoría Service</a>
+                                <a class="nav-link-card" href="{{ url_for('main.service_sessions') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("service") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Auditoría Service</span>
+                                        <span class="nav-link-meta">Intervenciones y service</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if can_view_reports %}
-                                <a href="{{ url_for('main.qc_reports') }}">Reportes QC</a>
+                                <a class="nav-link-card" href="{{ url_for('main.qc_reports') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("qc_reports") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Reportes QC</span>
+                                        <span class="nav-link-meta">Indicadores y desvíos</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if can_view_technician_profiles %}
-                                <a href="{{ url_for('main.technician_list') }}">Perfiles Técnicos</a>
-                                <a href="{{ url_for('main.technician_orders') }}">Órdenes Técnicos</a>
+                                <a class="nav-link-card" href="{{ url_for('main.technician_list') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("technicians") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Perfiles Técnicos</span>
+                                        <span class="nav-link-meta">Ficha y detalle por legajo</span>
+                                    </span>
+                                </a>
+                                <a class="nav-link-card" href="{{ url_for('main.technician_orders') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("orders") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Órdenes Técnicos</span>
+                                        <span class="nav-link-meta">Estado operativo por técnico</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if can_view_reports %}
-                                <a href="{{ url_for('main.reports') }}">Reportes</a>
+                                <a class="nav-link-card" href="{{ url_for('main.reports') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("reports") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Reportes</span>
+                                        <span class="nav-link-meta">Paneles y exportables</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if not is_supervisor %}
-                                <a href="{{ url_for('main.equipment') }}">Equipos</a>
-                                <a href="{{ url_for('main.materials_stock') }}">Stock</a>
-                                <a href="{{ url_for('main.storage_locations') }}">Almacenes</a>
+                                <a class="nav-link-card" href="{{ url_for('main.equipment') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("equipment") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Equipos</span>
+                                        <span class="nav-link-meta">Inventario y asignaciones</span>
+                                    </span>
+                                </a>
+                                <a class="nav-link-card" href="{{ url_for('main.materials_stock') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("stock") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Stock</span>
+                                        <span class="nav-link-meta">Materiales y movimientos</span>
+                                    </span>
+                                </a>
+                                <a class="nav-link-card" href="{{ url_for('main.storage_locations') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("warehouse") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Almacenes</span>
+                                        <span class="nav-link-meta">Ubicaciones y depósitos</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if can_import %}
-                                <a href="{{ url_for('main.imports') }}">Importar datos</a>
+                                <a class="nav-link-card" href="{{ url_for('main.imports') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("import") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Importar datos</span>
+                                        <span class="nav-link-meta">Cargas y sincronizaciones</span>
+                                    </span>
+                                </a>
                             {% endif %}
                             {% if is_admin %}
-                                <a href="{{ url_for('main.si_ot_list') }}">Sistema Integral (OT)</a>
+                                <a class="nav-link-card" href="{{ url_for('main.si_ot_list') }}">
+                                    <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("system") }}</span>
+                                    <span class="nav-link-text">
+                                        <span class="nav-link-title">Sistema Integral (OT)</span>
+                                        <span class="nav-link-meta">Órdenes sincronizadas</span>
+                                    </span>
+                                </a>
                             {% endif %}
                         {% endif %}
                     {% else %}
-                        <a href="{{ url_for('main.login') }}">Ingresar</a>
+                        <a class="nav-link-card" href="{{ url_for('main.login') }}">
+                            <span class="nav-link-icon" aria-hidden="true">{{ nav_icon("login") }}</span>
+                            <span class="nav-link-text">
+                                <span class="nav-link-title">Ingresar</span>
+                                <span class="nav-link-meta">Acceder a la plataforma</span>
+                            </span>
+                        </a>
                     {% endif %}
                 </nav>
                 <div class="topbar-actions">
@@ -148,6 +467,7 @@
                 </div>
             </div>
         </header>
+        <button class="nav-backdrop" id="nav_backdrop" type="button" aria-label="Cerrar menú" hidden></button>
     {% endif %}
 
     <main class="page{% if page_class %} {{ page_class }}{% endif %}">
@@ -182,20 +502,92 @@
             const topbar = document.querySelector(".topbar");
             const button = document.querySelector(".nav-toggle");
             const nav = document.getElementById("main_nav");
-            if (!topbar || !button || !nav) {
+            const backdrop = document.getElementById("nav_backdrop");
+            const body = document.body;
+            const quickToggle = document.getElementById("nav_quick_toggle");
+            const quickLinks = document.getElementById("nav_quick_links");
+            if (!topbar || !button || !nav || !backdrop || !body) {
                 return;
+            }
+
+            function closeQuickLinks(immediate) {
+                if (!quickToggle || !quickLinks) {
+                    return;
+                }
+                quickToggle.setAttribute("aria-expanded", "false");
+                quickLinks.setAttribute("aria-hidden", "true");
+                if (immediate) {
+                    quickLinks.classList.remove("is-open");
+                    quickLinks.style.maxHeight = "0px";
+                    return;
+                }
+                quickLinks.style.maxHeight = quickLinks.scrollHeight + "px";
+                requestAnimationFrame(function () {
+                    quickLinks.classList.remove("is-open");
+                    quickLinks.style.maxHeight = "0px";
+                });
+            }
+
+            function openQuickLinks() {
+                if (!quickToggle || !quickLinks) {
+                    return;
+                }
+                quickToggle.setAttribute("aria-expanded", "true");
+                quickLinks.setAttribute("aria-hidden", "false");
+                quickLinks.classList.add("is-open");
+                quickLinks.style.maxHeight = quickLinks.scrollHeight + "px";
             }
 
             function setExpanded(expanded) {
                 button.setAttribute("aria-expanded", expanded ? "true" : "false");
                 button.setAttribute("aria-label", expanded ? "Cerrar menú" : "Abrir menú");
                 topbar.classList.toggle("nav-open", expanded);
+                body.classList.toggle("mobile-nav-open", expanded);
+                backdrop.hidden = !expanded;
+                if (!expanded) {
+                    closeQuickLinks(true);
+                }
             }
 
             setExpanded(false);
             button.addEventListener("click", function () {
                 const expanded = button.getAttribute("aria-expanded") === "true";
                 setExpanded(!expanded);
+            });
+
+            if (quickToggle && quickLinks) {
+                quickToggle.addEventListener("click", function () {
+                    const expanded = quickToggle.getAttribute("aria-expanded") === "true";
+                    if (expanded) {
+                        closeQuickLinks(false);
+                        return;
+                    }
+                    openQuickLinks();
+                });
+            }
+
+            backdrop.addEventListener("click", function () {
+                setExpanded(false);
+            });
+
+            nav.addEventListener("click", function (event) {
+                const link = event.target.closest("a");
+                if (!link) {
+                    return;
+                }
+                setExpanded(false);
+            });
+
+            document.addEventListener("keydown", function (event) {
+                if (event.key === "Escape") {
+                    setExpanded(false);
+                }
+            });
+
+            window.addEventListener("resize", function () {
+                if (window.innerWidth > 720) {
+                    setExpanded(false);
+                }
             });
         }());
 
