@@ -259,6 +259,8 @@ from app.models import (
     auto_link_client_confirmation_to_order,
     is_postgres,
     get_db,
+    _correlative_code_key,
+    _db_rollback_safe,
     fetch_news_feed,
     count_news_feed,
     to_app_tz_string,
@@ -6000,18 +6002,25 @@ def technician_list():
                 _picker_clauses.append(f"UPPER(COALESCE(supervisor_name, '')) IN ({_ph})")
                 _picker_params.extend(_allowed)
         _picker_where = ("WHERE " + " AND ".join(_picker_clauses)) if _picker_clauses else ""
+        # Sin CAST(... AS INTEGER): en Postgres un legajo no numerico (ej. 'ADamian')
+        # aborta la transaccion y rompe el listado. El orden correlativo por legajo
+        # se resuelve en Python con _correlative_code_key.
         _picker_sql = f"""
             SELECT id, name, employee_code, is_active
             FROM technicians
             {_picker_where}
             ORDER BY CASE COALESCE(is_active, 1) WHEN 1 THEN 0 ELSE 1 END ASC,
-                     CAST(employee_code AS INTEGER) ASC NULLS LAST,
                      employee_code ASC
             LIMIT 5000
         """
-        if not is_postgres():
-            _picker_sql = _picker_sql.replace("NULLS LAST", "")
-        _picker_rows = get_db().execute(_picker_sql, _picker_params).fetchall()
+        _picker_rows = [dict(r) for r in get_db().execute(_picker_sql, _picker_params).fetchall()]
+        _picker_rows.sort(
+            key=lambda r: (
+                0 if r.get("is_active") else 1,
+                _correlative_code_key(r.get("employee_code")),
+                (r.get("employee_code") or "").upper(),
+            )
+        )
         quick_pick_technicians = [
             {
                 "id": r["id"],
@@ -6022,6 +6031,7 @@ def technician_list():
             for r in _picker_rows
         ]
     except Exception:
+        _db_rollback_safe()
         quick_pick_technicians = []
 
     return render_template(

@@ -18254,7 +18254,17 @@ def fetch_master_technicians(q=None, region=None, supervisor=None, center=None, 
     if sort_by in allowed_sort:
         order_parts.append(f"{safe_sort} {sort_d}")
     order_parts.append("CASE COALESCE(is_active, 1) WHEN 1 THEN 0 ELSE 1 END ASC")
-    order_parts.append("CAST(employee_code AS INTEGER) ASC NULLS LAST, employee_code ASC")
+    # Orden correlativo por legajo. Envolver el CAST en un CASE evita que Postgres
+    # aborte la transaccion con legajos no numericos (ej. 'ADamian', 'TEC-001').
+    if is_postgres():
+        order_parts.append(
+            "CASE WHEN employee_code ~ '^[0-9]+$' THEN CAST(employee_code AS INTEGER) END ASC NULLS LAST, employee_code ASC"
+        )
+    else:
+        order_parts.append(
+            "CASE WHEN employee_code <> '' AND employee_code NOT GLOB '*[^0-9]*' "
+            "THEN CAST(employee_code AS INTEGER) END ASC, employee_code ASC"
+        )
     sql = f"""
         SELECT
             t.*,
@@ -18265,8 +18275,6 @@ def fetch_master_technicians(q=None, region=None, supervisor=None, center=None, 
         ORDER BY {", ".join(order_parts)}
         LIMIT ? OFFSET ?
     """
-    if not is_postgres():
-        sql = sql.replace("NULLS LAST", "")
     params.extend([int(limit or 100), int(offset or 0)])
     rows = get_db().execute(sql, params).fetchall()
     return [dict(r) for r in rows]
