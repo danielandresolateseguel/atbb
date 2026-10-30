@@ -12428,6 +12428,9 @@ def si_ot_no_realizadas_list():
     fecha_desde = (request.args.get("fecha_desde") or "").strip() or None
     fecha_hasta = (request.args.get("fecha_hasta") or "").strip() or None
     incluir_resueltas = (request.args.get("incluir_resueltas") or "").strip() == "1"
+    solo_resueltas = (request.args.get("solo_resueltas") or "").strip() == "1"
+    if solo_resueltas:
+        incluir_resueltas = True
     try:
         page = int(request.args.get("page", 1))
     except (TypeError, ValueError):
@@ -12436,7 +12439,8 @@ def si_ot_no_realizadas_list():
     data = fetch_si_ot_no_realizadas_list(
         q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro,
         estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
-        incluir_resueltas=incluir_resueltas, page=page, per_page=50,
+        incluir_resueltas=incluir_resueltas, solo_resueltas=solo_resueltas,
+        page=page, per_page=50,
     )
 
     return render_template(
@@ -12456,6 +12460,7 @@ def si_ot_no_realizadas_list():
         q=q or "", n_ot=n_ot or "", categoria=categoria or "", motivo=motivo or "",
         centro=centro or "", estado=estado or "", fecha_desde=fecha_desde or "",
         fecha_hasta=fecha_hasta or "", incluir_resueltas=incluir_resueltas,
+        solo_resueltas=solo_resueltas,
     )
 
 

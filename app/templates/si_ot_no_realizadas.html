@@ -55,32 +55,50 @@
     {% endif %}
 
     {# Tarjetas de estadísticas #}
+    {% set quick_filter_base = {
+        'q': q or None,
+        'n_ot': n_ot or None,
+        'motivo': motivo or None,
+        'centro': centro or None,
+        'estado': estado or None,
+        'fecha_desde': fecha_desde or None,
+        'fecha_hasta': fecha_hasta or None,
+    } %}
     <div class="si-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
-        <div style="background:linear-gradient(135deg,#dbeafe,#eff6ff);border:1px solid #bfdbfe;border-radius:14px;padding:14px 16px;">
+        <a href="{{ url_for('main.si_ot_no_realizadas_list', **quick_filter_base) }}"
+           style="text-decoration:none;background:linear-gradient(135deg,#dbeafe,#eff6ff);border:1px solid #bfdbfe;border-radius:14px;padding:14px 16px;display:block;{% if not categoria and not solo_resueltas and not incluir_resueltas %}box-shadow:0 0 0 2px #3b82f6 inset;{% endif %}">
             <div style="font-size:12px;color:#1e40af;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Sin realizar</div>
             <div style="font-size:26px;font-weight:800;color:#1e3a8a;margin-top:6px;">{{ stats.total or 0 }}</div>
-        </div>
-        <div style="background:linear-gradient(135deg,#fef3c7,#fffbeb);border:1px solid #fde68a;border-radius:14px;padding:14px 16px;">
+        </a>
+        <a href="{{ url_for('main.si_ot_no_realizadas_list', categoria='motivo', **quick_filter_base) }}"
+           style="text-decoration:none;background:linear-gradient(135deg,#fef3c7,#fffbeb);border:1px solid #fde68a;border-radius:14px;padding:14px 16px;display:block;{% if categoria == 'motivo' and not solo_resueltas %}box-shadow:0 0 0 2px #d97706 inset;{% endif %}">
             <div style="font-size:12px;color:#92400e;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Con motivo</div>
             <div style="font-size:26px;font-weight:800;color:#78350f;margin-top:6px;">{{ stats.motivo or 0 }}</div>
-        </div>
-        <div style="background:linear-gradient(135deg,#e2e8f0,#f8fafc);border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;">
+        </a>
+        <a href="{{ url_for('main.si_ot_no_realizadas_list', categoria='carga_erronea', **quick_filter_base) }}"
+           style="text-decoration:none;background:linear-gradient(135deg,#e2e8f0,#f8fafc);border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;display:block;{% if categoria == 'carga_erronea' and not solo_resueltas %}box-shadow:0 0 0 2px #64748b inset;{% endif %}">
             <div style="font-size:12px;color:#334155;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Carga errónea</div>
             <div style="font-size:26px;font-weight:800;color:#1e293b;margin-top:6px;">{{ stats.carga_erronea or 0 }}</div>
-        </div>
-        <div style="background:linear-gradient(135deg,#ede9fe,#f5f3ff);border:1px solid #ddd6fe;border-radius:14px;padding:14px 16px;">
+        </a>
+        <a href="{{ url_for('main.si_ot_no_realizadas_list', categoria='realizado_sin_carga', **quick_filter_base) }}"
+           style="text-decoration:none;background:linear-gradient(135deg,#ede9fe,#f5f3ff);border:1px solid #ddd6fe;border-radius:14px;padding:14px 16px;display:block;{% if categoria == 'realizado_sin_carga' and not solo_resueltas %}box-shadow:0 0 0 2px #8b5cf6 inset;{% endif %}">
             <div style="font-size:12px;color:#5b21b6;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Realizado sin carga</div>
             <div style="font-size:26px;font-weight:800;color:#4c1d95;margin-top:6px;">{{ stats.realizado_sin_carga or 0 }}</div>
-        </div>
-        <div style="background:linear-gradient(135deg,#dcfce7,#f0fdf4);border:1px solid #bbf7d0;border-radius:14px;padding:14px 16px;">
+        </a>
+        <a href="{{ url_for('main.si_ot_no_realizadas_list', incluir_resueltas='1', solo_resueltas='1', **quick_filter_base) }}"
+           style="text-decoration:none;background:linear-gradient(135deg,#dcfce7,#f0fdf4);border:1px solid #bbf7d0;border-radius:14px;padding:14px 16px;display:block;{% if solo_resueltas %}box-shadow:0 0 0 2px #16a34a inset;{% endif %}">
             <div style="font-size:12px;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Ya realizadas luego</div>
             <div style="font-size:26px;font-weight:800;color:#14532d;margin-top:6px;">{{ stats.resueltas or 0 }}</div>
-        </div>
+        </a>
     </div>
 
     {# Buscador / filtros #}
     <form method="GET" action="{{ url_for('main.si_ot_no_realizadas_list') }}" class="si-search-grid"
           style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;margin-bottom:16px;align-items:end;">
+        {% if solo_resueltas %}
+        <input type="hidden" name="solo_resueltas" value="1">
+        <input type="hidden" name="incluir_resueltas" value="1">
+        {% endif %}
         <div>
             <label style="font-size:13px;color:#0f172a;font-weight:700;display:block;margin-bottom:6px;">Buscar (dirección / motivo / OT / cliente)</label>
             <input type="search" name="q" value="{{ q }}" placeholder="Ej: calle, ANULADA, n° OT"
@@ -132,7 +150,7 @@
             </div>
         </div>
         <label style="grid-column:1 / -1;display:flex;align-items:center;gap:8px;font-size:13px;color:#0f172a;font-weight:600;">
-            <input type="checkbox" name="incluir_resueltas" value="1" {% if incluir_resueltas %}checked{% endif %}>
+            <input type="checkbox" name="incluir_resueltas" value="1" {% if incluir_resueltas %}checked{% endif %} {% if solo_resueltas %}disabled{% endif %}>
             Incluir también las que luego sí se realizaron
         </label>
     </form>
@@ -225,11 +243,11 @@
     {% if total_pages and total_pages > 1 %}
     <div style="display:flex;gap:10px;justify-content:center;margin:20px 0;align-items:center;flex-wrap:wrap;">
         {% if page > 1 %}
-        <a class="button button-secondary" href="{{ url_for('main.si_ot_no_realizadas_list', q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, incluir_resueltas='1' if incluir_resueltas else None, page=page-1) }}">← Pág. {{ page - 1 }}</a>
+        <a class="button button-secondary" href="{{ url_for('main.si_ot_no_realizadas_list', q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, incluir_resueltas='1' if incluir_resueltas else None, solo_resueltas='1' if solo_resueltas else None, page=page-1) }}">← Pág. {{ page - 1 }}</a>
         {% endif %}
         <span style="font-size:14px;color:#1e293b;font-weight:600;">Página <b>{{ page }}</b> de {{ total_pages }} · {{ total }} OT</span>
         {% if page < total_pages %}
-        <a class="button button-secondary" href="{{ url_for('main.si_ot_no_realizadas_list', q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, incluir_resueltas='1' if incluir_resueltas else None, page=page+1) }}">Pág. {{ page + 1 }} →</a>
+        <a class="button button-secondary" href="{{ url_for('main.si_ot_no_realizadas_list', q=q, n_ot=n_ot, categoria=categoria, motivo=motivo, centro=centro, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, incluir_resueltas='1' if incluir_resueltas else None, solo_resueltas='1' if solo_resueltas else None, page=page+1) }}">Pág. {{ page + 1 }} →</a>
         {% endif %}
     </div>
     {% endif %}

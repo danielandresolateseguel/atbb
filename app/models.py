@@ -2752,6 +2752,7 @@ def fetch_si_ot_no_realizadas_stats():
 def fetch_si_ot_no_realizadas_list(q=None, n_ot=None, categoria=None, motivo=None,
                                    centro=None, estado=None, fecha_desde=None,
                                    fecha_hasta=None, incluir_resueltas=False,
+                                   solo_resueltas=False,
                                    page=1, per_page=50):
     """Lista paginada de OT no realizadas del Sistema Integral."""
     db = get_db()
@@ -2760,7 +2761,9 @@ def fetch_si_ot_no_realizadas_list(q=None, n_ot=None, categoria=None, motivo=Non
     where = []
     params = []
 
-    if not incluir_resueltas:
+    if solo_resueltas:
+        where.append("o.resuelta = 1")
+    elif not incluir_resueltas:
         where.append("o.resuelta = 0")
 
     if q:
@@ -3094,7 +3097,8 @@ def fetch_si_ot_detail(ot_id):
         (ot_id,),
     ).fetchall()
     equipos = db.execute(
-        f"SELECT oe.id, oe.id_ot, oe.serial, oe.operacion, oe.material, m.descri AS material_desc "
+        f"SELECT oe.id, oe.id_ot, oe.serial, oe.operacion, oe.material, "
+        f"COALESCE(m.descri, CASE WHEN oe.operacion = 'Recuperado' THEN 'EQUIPO DEL CLIENTE' END) AS material_desc "
         f"FROM si_ot_equipos oe "
         f"LEFT JOIN si_materiales m ON m.id_material = oe.material "
         f"WHERE oe.id_ot = {placeholder} ORDER BY oe.id",
