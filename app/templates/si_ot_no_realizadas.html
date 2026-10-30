@@ -151,6 +151,7 @@
                         <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Centro</th>
                         <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Estado</th>
                         <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Categoría</th>
+                        <th style="text-align:left;padding:11px 14px;font-size:11px;color:#1e293b;letter-spacing:.04em;text-transform:uppercase;font-weight:700;">Acción</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -194,10 +195,17 @@
                             <span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;">Pendiente</span>
                             {% endif %}
                         </td>
+                        <td style="padding:12px 14px;vertical-align:top;">
+                            <a href="{{ url_for('main.si_ot_no_realizadas_detail', n_ot=o.n_ot) }}"
+                               style="display:inline-flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #e2e8f0;color:#0f172a;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;">
+                                Ver
+                                <span aria-hidden="true">→</span>
+                            </a>
+                        </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" style="padding:40px 20px;text-align:center;">
+                        <td colspan="9" style="padding:40px 20px;text-align:center;">
                             <div style="font-size:48px;margin-bottom:10px;">📋</div>
                             <div style="font-size:18px;font-weight:700;margin-bottom:6px;">
                                 No hay OT no realizadas{% if q or n_ot or categoria or motivo or centro or estado or fecha_desde or fecha_hasta %} que coincidan con los filtros{% endif %}

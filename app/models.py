@@ -2862,6 +2862,45 @@ def fetch_si_ot_no_realizadas_list(q=None, n_ot=None, categoria=None, motivo=Non
     }
 
 
+def fetch_si_ot_no_realizada_detail(n_ot):
+    """Devuelve el detalle de una OT no realizada y, si existe, su realizada asociada."""
+    db = get_db()
+    placeholder = "%s" if is_postgres() else "?"
+
+    row = db.execute(
+        f"SELECT o.n_ot, o.wfx_id, o.estado, o.tipo_trabajo, o.cod_res, o.nodo, "
+        f"o.id_u, o.nombre, o.n_cli, o.dni, o.tel, o.dir_original, o.direccion, "
+        f"o.motivo, o.categoria, o.fecha, o.ultimo_movimiento, "
+        f'o."Centro" AS centro, o."Empresa" AS empresa, o."Sindicato" AS sindicato, '
+        f"o.resuelta, o.synced_at, "
+        f'c."Descripcion" AS centro_desc, '
+        f'e."RazonSocial" AS empresa_desc, '
+        f's."descripcion" AS sindicato_desc, '
+        f"r.id AS realizada_id, r.estado_real AS realizada_estado, "
+        f'r."Fecha_Carga" AS realizada_fecha_carga '
+        f"FROM si_ot_no_realizadas o "
+        f'LEFT JOIN si_centros c ON c."Id_Centro" = o."Centro" '
+        f'LEFT JOIN si_empresas e ON e."Id_Empresa" = o."Empresa" '
+        f'LEFT JOIN si_sindicatos s ON s."Id_Sindicato" = o."Sindicato" '
+        f"LEFT JOIN si_ot_realizadas r ON r.n_ot = o.n_ot "
+        f"WHERE o.n_ot = {placeholder}",
+        (n_ot,),
+    ).fetchone()
+    if not row:
+        return None
+
+    return dict(row) if isinstance(row, dict) else {
+        "n_ot": row[0], "wfx_id": row[1], "estado": row[2], "tipo_trabajo": row[3],
+        "cod_res": row[4], "nodo": row[5], "id_u": row[6], "nombre": row[7],
+        "n_cli": row[8], "dni": row[9], "tel": row[10], "dir_original": row[11],
+        "direccion": row[12], "motivo": row[13], "categoria": row[14], "fecha": row[15],
+        "ultimo_movimiento": row[16], "centro": row[17], "empresa": row[18],
+        "sindicato": row[19], "resuelta": row[20], "synced_at": row[21],
+        "centro_desc": row[22], "empresa_desc": row[23], "sindicato_desc": row[24],
+        "realizada_id": row[25], "realizada_estado": row[26], "realizada_fecha_carga": row[27],
+    }
+
+
 def fetch_si_ot_stats():
     """Estadísticas rápidas de las tablas del SI."""
     db = get_db()

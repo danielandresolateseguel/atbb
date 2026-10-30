@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:960px;margin:24px auto;padding:0 14px;">
+    <div style="margin-bottom:16px;">
+        <a href="{{ url_for('main.si_ot_no_realizadas_list') }}" style="color:#93c5fd;font-weight:700;text-decoration:none;">← Volver al listado</a>
+        <div class="section-kicker" style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#cbd5e1;margin:10px 0 4px;font-weight:700;">
+            Sistema Integral · OT no realizada
+        </div>
+        <h1 style="margin:0;font-size:36px;line-height:1.15;color:#ffffff;font-weight:800;">{{ ot.n_ot }}</h1>
+    </div>
+
+    {% if ot.resuelta %}
+    <div style="background:linear-gradient(135deg,#dcfce7,#f0fdf4);border:1px solid #bbf7d0;border-radius:16px;padding:16px 18px;margin-bottom:16px;">
+        <div style="font-size:12px;color:#166534;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Estado actual</div>
+        <div style="font-size:20px;color:#14532d;font-weight:800;margin-top:4px;">Esta OT luego sí se realizó</div>
+        <div style="margin-top:8px;color:#166534;font-weight:600;">
+            {% if ot.realizada_fecha_carga %}Se sincronizó como realizada el {{ ot.realizada_fecha_carga|si_fecha }}.{% endif %}
+            {% if ot.realizada_estado %} Estado realizado: <strong>{{ ot.realizada_estado }}</strong>.{% endif %}
+        </div>
+        {% if ot.realizada_id %}
+        <div style="margin-top:12px;">
+            <a href="{{ url_for('main.si_ot_detail', ot_id=ot.realizada_id) }}" style="display:inline-flex;align-items:center;gap:8px;background:#14532d;color:#fff;border-radius:10px;padding:10px 14px;font-weight:700;text-decoration:none;">
+                Ver OT realizada
+            </a>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
+        <h2 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#0f172a;">Datos de la OT</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px 18px;">
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">N° OT</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.n_ot }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">WFX ID</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.wfx_id or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Estado en bitácora</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.estado or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Categoría</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.categoria or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Nombre</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.nombre or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Cliente</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.n_cli or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">DNI</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.dni or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Teléfono</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.tel or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">ID usuario</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.id_u or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Nodo</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.nodo or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Resolución</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.cod_res or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Tipo de trabajo</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.tipo_trabajo or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Fecha</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.fecha|si_fecha or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Último movimiento</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.ultimo_movimiento or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Centro</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.centro_desc or ot.centro or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Empresa</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.empresa_desc or ot.empresa or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Sindicato</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.sindicato_desc or ot.sindicato or '—' }}</div></div>
+            <div><div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Sincronizado</div><div style="font-size:20px;color:#0f172a;font-weight:800;">{{ ot.synced_at|si_fecha or '—' }}</div></div>
+        </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
+        <h2 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#0f172a;">Dirección y motivo</h2>
+        <div style="display:grid;grid-template-columns:1fr;gap:14px;">
+            <div>
+                <div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Dirección clasificada</div>
+                <div style="font-size:18px;color:#0f172a;font-weight:700;">{{ ot.direccion or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Motivo detectado</div>
+                <div style="font-size:18px;color:#0f172a;font-weight:700;">{{ ot.motivo or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;">Texto original en bitácora</div>
+                <div style="font-size:18px;color:#0f172a;font-weight:700;">{{ ot.dir_original or '—' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

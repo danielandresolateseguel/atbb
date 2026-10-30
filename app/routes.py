@@ -268,6 +268,7 @@ from app.models import (
     fetch_si_ot_stats,
     fetch_si_ot_list,
     fetch_si_ot_detail,
+    fetch_si_ot_no_realizada_detail,
     fetch_si_ot_no_realizadas_stats,
     fetch_si_ot_no_realizadas_list,
 )
@@ -12456,6 +12457,18 @@ def si_ot_no_realizadas_list():
         centro=centro or "", estado=estado or "", fecha_desde=fecha_desde or "",
         fecha_hasta=fecha_hasta or "", incluir_resueltas=incluir_resueltas,
     )
+
+
+@main.route("/si/ot/no-realizadas/<string:n_ot>", methods=["GET"])
+def si_ot_no_realizadas_detail(n_ot):
+    """Detalle de una OT no realizada del Sistema Integral."""
+    if not is_admin():
+        abort(403)
+    ot = fetch_si_ot_no_realizada_detail((n_ot or "").strip())
+    if not ot:
+        flash("OT no realizada no encontrada.", "error")
+        return redirect(url_for("main.si_ot_no_realizadas_list"))
+    return render_template("si_ot_no_realizada_detail.html", ot=ot)
 
 
 @main.route("/si/ot/<int:ot_id>", methods=["GET"])
