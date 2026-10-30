@@ -155,11 +155,8 @@
             <h1 style="margin:0;font-size:26px;line-height:1.2;word-break:break-word;color:#ffffff;font-weight:800;">
                 {% if current_technician_view %}Mis órdenes de trabajo{% elif target_technician %}Órdenes — {{ target_technician.name }} ({{ target_technician.employee_code }}){% else %}Buscador de Órdenes Técnicas{% endif %}
             </h1>
-            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">{% if current_technician_view %}Crea una orden por cada OT que recibas, adjuntá las 2 fotos obligatorias y el E-DOC PDF.{% else %}Por defecto: solo LO DEL DÍA (para comparar con la LaborApp). Lo archivado lo buscás por N° OT.{% endif %}</p>
+            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">{% if current_technician_view %}Tus OT se asignan automáticamente desde el Sistema Integral. Adjuntá las 2 fotos obligatorias y el E-DOC PDF en cada una.{% else %}Por defecto: solo LO DEL DÍA (para comparar con la LaborApp). Lo archivado lo buscás por N° OT.{% endif %}</p>
         </div>
-        {% if current_technician_view %}
-        <a class="button button-primary" href="{{ url_for('main.technician_orders_new') }}" style="padding:13px 18px;font-size:15px;border-radius:14px;">+ Nueva Orden</a>
-        {% endif %}
     </div>
 
     {% if current_technician_view and orders_stats %}
@@ -508,7 +505,7 @@
             <div style="font-size:48px;margin-bottom:10px;">📋</div>
             <div style="font-size:18px;font-weight:700;margin-bottom:6px;">Todavía no hay órdenes{% if q or ot_number %} que coincidan con la búsqueda{% endif %}</div>
             {% if current_technician_view %}
-            <a class="button button-primary" href="{{ url_for('main.technician_orders_new') }}" style="margin-top:12px;">+ Crear mi primera orden</a>
+            <div style="color:#475569;font-size:14px;">Tus OT se asignan automáticamente desde el Sistema Integral. Si no ves ninguna, volvé a tu perfil y tocá "Sincronizar".</div>
             {% endif %}
         </div>
         {% endif %}

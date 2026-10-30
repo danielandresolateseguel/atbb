@@ -255,6 +255,7 @@ from app.models import (
     list_technician_orders,
     fetch_technician_orders_stats,
     fetch_orders_today_summary,
+    sync_si_orders_for_technician_day,
     fetch_orders_grouped_by_technician,
     auto_link_client_confirmation_to_order,
     is_postgres,
@@ -1813,7 +1814,6 @@ def require_login():
             "main.api_badge_delivery_cancel",
             "main.master_technician_regenerate_token",
             "main.technician_orders",
-            "main.technician_orders_new",
             "main.technician_order_detail",
             "main.technician_order_upload_photo",
             "main.technician_order_upload_edoc",
@@ -10240,11 +10240,17 @@ def technician_dashboard():
         orders_today_summary = fetch_orders_today_summary(technician_id=technician_id)
     except Exception:
         orders_today_summary = {"total_orders": 0, "total_completed": 0, "total_incomplete": 0}
+    # Auto-asignación de OT del Sistema Integral asignadas al técnico (tecA = legajo).
+    sync_requested = (request.args.get("sync") or "").strip() == "1"
     try:
-        _ot_res = list_technician_orders(technician_id=technician_id, today_only=True, per_page=50)
-        orders_today = (_ot_res.get("rows") if isinstance(_ot_res, dict) else []) or []
+        orders_today = sync_si_orders_for_technician_day(technician_id) or []
     except Exception:
         orders_today = []
+    if sync_requested:
+        if orders_today:
+            flash(f"Se sincronizaron {len(orders_today)} OT asignadas para hoy.", "success")
+        else:
+            flash("No hay OT asignadas desde el Sistema Integral para hoy.", "info")
 
     _feed = []
     for a in recent_audits:
@@ -11456,6 +11462,11 @@ def technician_orders(technician_id=None):
     technician_day_groups = None
     technician_day_error = None
     if is_tech_view:
+        # Sincroniza las OT del Sistema Integral asignadas al técnico antes de listar.
+        try:
+            sync_si_orders_for_technician_day(technician_id)
+        except Exception:
+            pass
         result = list_technician_orders(
             technician_id=technician_id,
             q=q,
@@ -11625,61 +11636,6 @@ def technician_orders_search():
     if found and (is_technician() or can_view_technician_profiles()):
         return redirect(url_for("main.technician_order_detail", order_id=found["id"]))
     return redirect(url_for("main.technician_orders", ot=ot_number))
-
-
-@main.route("/my-orders/new", methods=["GET", "POST"])
-@main.route("/orders/new", methods=["GET", "POST"])
-def technician_orders_new():
-    if not current_user():
-        abort(403)
-    if not is_technician() and not (can_view_technician_profiles() and is_admin()):
-        abort(403)
-    technician_id = current_technician_id() if is_technician() else None
-    if technician_id is None:
-        supervisor_for = request.args.get("technician_id") or request.form.get("technician_id")
-        try:
-            technician_id = int(supervisor_for)
-            if not can_act_on_technician(technician_id):
-                abort(403)
-        except (TypeError, ValueError):
-            abort(400, "Falta técnico asociado.")
-    error = None
-    if request.method == "POST":
-        ot_number = (request.form.get("ot_number") or "").strip()
-        client_name = (request.form.get("client_name") or "").strip() or None
-        client_address = (request.form.get("client_address") or "").strip() or None
-        raw_client_phone = (request.form.get("client_phone") or "").strip()
-        notes = (request.form.get("notes") or "").strip() or None
-        if not validate_csrf_token(request.form.get("csrf_token")):
-            error = "Token de seguridad inválido. Recargá y volvé a intentar."
-        # Teléfono OBLIGATORIO + validación
-        if not error and not raw_client_phone:
-            error = "El número de teléfono del cliente es obligatorio para enviar el mensaje por WhatsApp."
-        client_phone_e164 = _normalize_phone_argentina(raw_client_phone) if raw_client_phone else None
-        if not error and (not client_phone_e164 or len(client_phone_e164) < 10):
-            error = "El número de teléfono no es válido. Ingresá un celular argentino (ej: 2615000000)."
-        if not error:
-            try:
-                order_id = create_technician_order(
-                    technician_id=technician_id,
-                    ot_number=ot_number,
-                    client_name=client_name,
-                    client_address=client_address,
-                    client_phone=client_phone_e164,
-                    notes=notes,
-                )
-                flash("Orden creada. Ahora adjuntá las fotos y el E-DOC.", "success")
-                return redirect(url_for("main.technician_order_detail", order_id=order_id))
-            except ValueError as e:
-                error = str(e)
-            except Exception:
-                current_app.logger.exception("Error creando orden técnica")
-                error = "Ocurrió un error al crear la orden."
-    return render_template(
-        "technician_order_new.html",
-        technician_id=technician_id,
-        error=error,
-    )
 
 
 @main.route("/orders/<int:order_id>")

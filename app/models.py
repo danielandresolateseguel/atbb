@@ -18002,6 +18002,92 @@ def fetch_orders_today_summary(supervisor_scope_names=None, technician_id=None):
     }
 
 
+def _normalize_legajo(value):
+    """Normaliza un legajo a string entero, sin decimales ('206.0' -> '206')."""
+    raw = str(value or "").strip()
+    if raw.endswith(".0"):
+        raw = raw[:-2]
+    return raw
+
+
+def sync_si_orders_for_technician_day(technician_id, day=None):
+    """Auto-asigna al técnico las OT del Sistema Integral del día.
+
+    Toma el legajo del técnico (technicians.employee_code) y busca en
+    si_ot_realizadas las OT con tecA = legajo para el día indicado. Por cada OT
+    que todavía no tenga fila en technician_orders se crea una (sin pisar datos
+    ya editados por el técnico). Devuelve las technician_orders del técnico de ese día.
+    """
+    try:
+        tid = int(technician_id)
+    except (TypeError, ValueError):
+        return []
+    tech = fetch_technician_by_id(tid)
+    if not tech:
+        return []
+    legajo = _normalize_legajo(tech.get("employee_code"))
+    if not legajo:
+        return []
+
+    if not day:
+        day = datetime.utcnow().strftime("%Y-%m-%d")
+    day = str(day)[:10]
+
+    db = get_db()
+    ph = "%s" if is_postgres() else "?"
+
+    # OT del SI asignadas al técnico (tecA = legajo) para el día.
+    try:
+        si_rows = db.execute(
+            f"""
+            SELECT n_ot, direccion, cliente_nombre, cliente_tel
+            FROM si_ot_realizadas
+            WHERE CAST(tecA AS TEXT) = {ph}
+              AND CAST(fecha_tec AS TEXT) LIKE {ph}
+            """,
+            (legajo, f"{day}%"),
+        ).fetchall()
+    except Exception:
+        _db_rollback_safe()
+        si_rows = []
+
+    if si_rows:
+        for row in si_rows:
+            n_ot = str(row["n_ot"] or "").strip()
+            if not n_ot:
+                continue
+            try:
+                # create_technician_order ya valida y evita duplicados por (técnico, OT).
+                create_technician_order(
+                    technician_id=tid,
+                    ot_number=n_ot,
+                    client_name=(str(row["cliente_nombre"] or "").strip() or None),
+                    client_address=(str(row["direccion"] or "").strip() or None),
+                    client_phone=(str(row["cliente_tel"] or "").strip() or None),
+                )
+            except ValueError:
+                # OT ya existente para el técnico (o número inválido): se omite.
+                continue
+            except Exception:
+                _db_rollback_safe()
+
+    # Devolver las OT del técnico del día.
+    try:
+        rows = db.execute(
+            f"""
+            SELECT {_order_cols_sqlite()}
+            FROM technician_orders
+            WHERE technician_id = {ph} AND CAST(created_at AS TEXT) LIKE {ph}
+            ORDER BY id DESC
+            """,
+            (tid, f"{day}%"),
+        ).fetchall()
+    except Exception:
+        _db_rollback_safe()
+        return []
+    return [_row_to_order(r) for r in (rows or [])]
+
+
 def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, supervisor_scope_names=None, technician_id=None, page=1, per_page=50, date_from=None, date_to=None, status_filter=None):
     """
     Devuelve una LISTA GRUPAL:

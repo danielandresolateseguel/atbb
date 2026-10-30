@@ -83,17 +83,17 @@
         </div>
     </section>
 
-    {# ------ ÓRDENES TÉCNICAS (OTs) HOY ------ #}
+    {# ------ ÓRDENES TÉCNICAS (OTs) HOY · asignadas desde el Sistema Integral ------ #}
     <section class="card" style="margin-bottom:22px;">
         <header class="card-head" style="background:linear-gradient(135deg,#0f172a,#1e293b);border-top-left-radius:14px;border-top-right-radius:14px;border-bottom:2px solid #475569;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
                 <div>
-                    <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#93c5fd;letter-spacing:.05em;text-transform:uppercase;">📋 Órdenes Técnicas · HOY {{ today }}</p>
-                    <h2 style="margin:0;font-size:18px;font-weight:800;color:#ffffff;">Seguimiento de mis OTs cargadas hoy</h2>
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#93c5fd;letter-spacing:.05em;text-transform:uppercase;">📋 OT asignadas · HOY {{ today }}</p>
+                    <h2 style="margin:0;font-size:18px;font-weight:800;color:#ffffff;">OT asignadas desde el Sistema Integral</h2>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <a class="button button-secondary" style="background:#ffffff;color:#0f172a;border-color:#cbd5e1;font-weight:700;" href="{{ url_for('main.technician_orders', technician_id=technician['id']) }}">🔍 Ver todas</a>
-                    <a class="button button-primary" style="background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_orders_new') }}">+ Nueva OT</a>
+                    <a class="button button-primary" style="background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_dashboard', sync=1) }}">🔄 Sincronizar</a>
                 </div>
             </div>
         </header>
@@ -101,7 +101,7 @@
         <div class="ot-kpi-row">
             <div class="ot-kpi ot-kpi-total">
                 <div class="ot-kpi-num">{{ ots.total_orders or 0 }}</div>
-                <div class="ot-kpi-label">Cargadas hoy</div>
+                <div class="ot-kpi-label">Asignadas hoy</div>
             </div>
             <div class="ot-kpi ot-kpi-ok">
                 <div class="ot-kpi-num">{{ ots.total_completed or 0 }}</div>
@@ -160,9 +160,9 @@
         {% endif %}
         {% else %}
         <div class="empty-day-box" style="border-top:2px solid #e2e8f0;">
-            <p style="margin:0;color:#0f172a;font-weight:800;">Sin Órdenes Técnicas cargadas hoy</p>
-            <p style="margin:4px 0 0;color:#475569;font-size:13px;">Crea una nueva OT para empezar a registrar el trabajo de hoy.</p>
-            <a class="button button-primary" style="margin-top:12px;background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_orders_new') }}">+ Cargar primera OT de hoy</a>
+            <p style="margin:0;color:#0f172a;font-weight:800;">No tenés OT asignadas para hoy</p>
+            <p style="margin:4px 0 0;color:#475569;font-size:13px;">Tus OT se asignan automáticamente desde el Sistema Integral. Probá sincronizar para ver las OT disponibles.</p>
+            <a class="button button-primary" style="margin-top:12px;background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_dashboard', sync=1) }}">🔄 Sincronizar</a>
         </div>
         {% endif %}
     </section>
