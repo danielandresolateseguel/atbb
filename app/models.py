@@ -732,6 +732,42 @@ def _migrate_si_ot_realizadas_add_cliente_postgres(cursor):
                 pass
 
 
+def _migrate_si_ot_equipos_sqlite(connection):
+    """Crea la tabla hija de seriales por OT si falta."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS si_ot_equipos (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            serial TEXT NOT NULL,
+            operacion TEXT,
+            material INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_id_ot ON si_ot_equipos (id_ot);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_serial ON si_ot_equipos (serial);
+        """
+    )
+
+
+def _migrate_si_ot_equipos_postgres(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_ot_equipos (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            serial TEXT NOT NULL,
+            operacion TEXT,
+            material INTEGER
+        )
+        """
+    )
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_id_ot ON si_ot_equipos (id_ot)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_serial ON si_ot_equipos (serial)")
+    except Exception:
+        pass
+
+
 def _migrate_si_tecnicos_add_nombre_sqlite(connection):
     """Agrega dni/nombre/apellido a si_tecnicos (se resuelven desde DatosPersonales)."""
     try:
@@ -774,6 +810,7 @@ def init_db():
     _migrate_si_actividades_pk_sqlite(connection)
     _migrate_si_ot_realizadas_add_estado_sqlite(connection)
     _migrate_si_ot_realizadas_add_cliente_sqlite(connection)
+    _migrate_si_ot_equipos_sqlite(connection)
     _migrate_si_tecnicos_add_nombre_sqlite(connection)
     connection.executescript(
         """
@@ -1299,6 +1336,16 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_si_ot_materiales_id_ot ON si_ot_materiales (id_ot);
 
+        CREATE TABLE IF NOT EXISTS si_ot_equipos (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            serial TEXT NOT NULL,
+            operacion TEXT,
+            material INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_id_ot ON si_ot_equipos (id_ot);
+        CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_serial ON si_ot_equipos (serial);
+
         -- OT creadas en el SI que nunca se cargaron en OtRealizadas (no realizadas).
         CREATE TABLE IF NOT EXISTS si_ot_no_realizadas (
             n_ot TEXT PRIMARY KEY,
@@ -1438,6 +1485,7 @@ def init_db_postgres():
     _migrate_si_actividades_pk_postgres(connection, cursor)
     _migrate_si_ot_realizadas_add_estado_postgres(cursor)
     _migrate_si_ot_realizadas_add_cliente_postgres(cursor)
+    _migrate_si_ot_equipos_postgres(cursor)
     _migrate_si_tecnicos_add_nombre_postgres(cursor)
 
     cursor.execute(
@@ -2049,6 +2097,22 @@ def init_db_postgres():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_materiales_id_ot ON si_ot_materiales (id_ot)")
     except Exception:
         pass
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS si_ot_equipos (
+            id INTEGER PRIMARY KEY,
+            id_ot INTEGER NOT NULL,
+            serial TEXT NOT NULL,
+            operacion TEXT,
+            material INTEGER
+        )
+        """
+    )
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_id_ot ON si_ot_equipos (id_ot)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_si_ot_equipos_serial ON si_ot_equipos (serial)")
+    except Exception:
+        pass
 
     # OT creadas en el SI que nunca se cargaron en OtRealizadas (no realizadas).
     cursor.execute(
@@ -2367,15 +2431,16 @@ def _si_upsert_ot(ot):
     return ot_id
 
 
-def _si_replace_children(ot_id, actividades, materiales):
-    """Borra y reinserta actividades y materiales de una OT por id_ot."""
+def _si_replace_children(ot_id, actividades, materiales, equipos=None):
+    """Borra y reinserta actividades, materiales y equipos de una OT por id_ot."""
     if ot_id is None:
-        return 0, 0
+        return 0, 0, 0
     db = get_db()
     placeholder = "%s" if is_postgres() else "?"
 
     db.execute(f"DELETE FROM si_ot_actividades WHERE id_ot = {placeholder}", (ot_id,))
     db.execute(f"DELETE FROM si_ot_materiales WHERE id_ot = {placeholder}", (ot_id,))
+    db.execute(f"DELETE FROM si_ot_equipos WHERE id_ot = {placeholder}", (ot_id,))
 
     act_count = 0
     for a in (actividades or []):
@@ -2415,7 +2480,27 @@ def _si_replace_children(ot_id, actividades, materiales):
         db.execute(sql, (m.get("id"), ot_id, m.get("material"), m.get("cantidad")))
         mat_count += 1
 
-    return act_count, mat_count
+    eq_count = 0
+    for e in (equipos or []):
+        if is_postgres():
+            sql = """
+                INSERT INTO si_ot_equipos (id, id_ot, serial, operacion, material)
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT (id) DO UPDATE SET
+                    id_ot = EXCLUDED.id_ot,
+                    serial = EXCLUDED.serial,
+                    operacion = EXCLUDED.operacion,
+                    material = EXCLUDED.material
+            """
+        else:
+            sql = """
+                INSERT OR REPLACE INTO si_ot_equipos (id, id_ot, serial, operacion, material)
+                VALUES (?,?,?,?,?)
+            """
+        db.execute(sql, (e.get("id"), ot_id, e.get("serial"), e.get("operacion"), e.get("material")))
+        eq_count += 1
+
+    return act_count, mat_count, eq_count
 
 
 def _si_upsert_catalog(catalog_name, rows, columns, pk_column):
@@ -2487,15 +2572,22 @@ def upsert_si_ot_batch(payload):
     ot_count = 0
     act_count = 0
     mat_count = 0
+    eq_count = 0
     errors = []
 
     for ot in ots:
         try:
             ot_id = _si_upsert_ot(ot)
             if ot_id is not None:
-                a, m = _si_replace_children(ot_id, ot.get("actividades"), ot.get("materiales"))
+                a, m, e = _si_replace_children(
+                    ot_id,
+                    ot.get("actividades"),
+                    ot.get("materiales"),
+                    ot.get("equipos"),
+                )
                 act_count += a
                 mat_count += m
+                eq_count += e
             ot_count += 1
         except Exception as exc:
             errors.append({"n_ot": ot.get("n_ot"), "error": str(exc)})
@@ -2532,6 +2624,7 @@ def upsert_si_ot_batch(payload):
         "ots": ot_count,
         "actividades": act_count,
         "materiales": mat_count,
+        "equipos": eq_count,
         "catalogos": catalog_counts,
         "errors": errors,
     }
@@ -2774,7 +2867,7 @@ def fetch_si_ot_stats():
     db = get_db()
     placeholder = "%s" if is_postgres() else "?"
     stats = {}
-    for table in ["si_ot_realizadas", "si_ot_actividades", "si_ot_materiales", "si_ot_no_realizadas"]:
+    for table in ["si_ot_realizadas", "si_ot_actividades", "si_ot_materiales", "si_ot_equipos", "si_ot_no_realizadas"]:
         try:
             row = db.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
             stats[table] = row["c"] if isinstance(row, dict) else row[0]
@@ -2961,9 +3054,17 @@ def fetch_si_ot_detail(ot_id):
         f"WHERE om.id_ot = {placeholder} ORDER BY om.id",
         (ot_id,),
     ).fetchall()
+    equipos = db.execute(
+        f"SELECT oe.id, oe.id_ot, oe.serial, oe.operacion, oe.material, m.descri AS material_desc "
+        f"FROM si_ot_equipos oe "
+        f"LEFT JOIN si_materiales m ON m.id_material = oe.material "
+        f"WHERE oe.id_ot = {placeholder} ORDER BY oe.id",
+        (ot_id,),
+    ).fetchall()
 
     ot["actividades"] = [dict(a) if isinstance(a, dict) else {"id": a[0], "id_ot": a[1], "cantidad": a[2], "actividad_id": a[3], "actividad_codigo": a[4], "actividad_desc": a[5]} for a in actividades]
     ot["materiales"] = [dict(m) if isinstance(m, dict) else {"id": m[0], "id_ot": m[1], "material": m[2], "cantidad": m[3], "material_desc": m[4]} for m in materiales]
+    ot["equipos"] = [dict(e) if isinstance(e, dict) else {"id": e[0], "id_ot": e[1], "serial": e[2], "operacion": e[3], "material": e[4], "material_desc": e[5]} for e in equipos]
 
     return ot
 

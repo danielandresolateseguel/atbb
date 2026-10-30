@@ -173,5 +173,36 @@
         <p style="color:#64748b;font-weight:600;">Sin materiales.</p>
         {% endif %}
     </div>
+
+    {# Equipos / seriales #}
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
+        <h2 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#0f172a;">Equipos ({{ ot.equipos|length if ot.equipos is defined else 0 }})</h2>
+        {% if ot.equipos %}
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f8fafc;">
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">Descripción</th>
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">Serial</th>
+                        <th style="text-align:left;padding:10px 12px;font-size:11px;color:#1e293b;text-transform:uppercase;font-weight:700;">Operación</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in ot.equipos %}
+                    <tr style="border-top:1px solid #f1f5f9;">
+                        <td style="padding:10px 12px;font-weight:600;color:#0f172a;">
+                            {{ e.material_desc or '—' }}{% if e.material %}<span style="color:#64748b;font-weight:500;"> ({{ e.material }})</span>{% endif %}
+                        </td>
+                        <td style="padding:10px 12px;font-weight:700;color:#0f172a;font-family:ui-monospace,monospace;">{{ e.serial or '—' }}</td>
+                        <td style="padding:10px 12px;font-weight:700;color:#0f172a;">{{ e.operacion or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p style="color:#64748b;font-weight:600;">Sin equipos serializados.</p>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}

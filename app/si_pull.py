@@ -302,6 +302,31 @@ def _fetch_wfx_rows(cursor, n_ots):
     }
 
 
+def _fetch_equipment_rows(cursor, n_ots):
+    if not n_ots:
+        return {}
+    placeholders = ", ".join(["%s"] * len(n_ots))
+    cursor.execute(
+        f"""
+        SELECT eu.id, eu.n_ot, eu.serial, 'Utilizado' AS operacion, sbe.material
+        FROM EquiposUT eu
+        LEFT JOIN Stock_Base_Eqp sbe ON sbe.serial = eu.serial
+        WHERE eu.n_ot IN ({placeholders})
+        UNION ALL
+        SELECT -er.id AS id, er.n_ot, er.serial, 'Recuperado' AS operacion, sbe.material
+        FROM EquiposRec er
+        LEFT JOIN Stock_Base_Eqp sbe ON sbe.serial = er.serial
+        WHERE er.n_ot IN ({placeholders})
+        """,
+        tuple(n_ots) + tuple(n_ots),
+    )
+    grouped = {}
+    for row in cursor.fetchall() or []:
+        data = {key: _serialize_value(value) for key, value in dict(row).items()}
+        grouped.setdefault(str(data["n_ot"]), []).append(data)
+    return grouped
+
+
 def _prepare_batch(cursor, ot_batch):
     prepared = _serialize_rows(ot_batch)
     ids = [int(ot["id"]) for ot in prepared if ot.get("id") is not None]
@@ -317,11 +342,13 @@ def _prepare_batch(cursor, ot_batch):
         ids,
     )
     wfx_rows = _fetch_wfx_rows(cursor, n_ots)
+    equipment_rows = _fetch_equipment_rows(cursor, n_ots)
 
     for ot in prepared:
         ot_id = int(ot["id"]) if ot.get("id") is not None else None
         ot["actividades"] = actividades.get(ot_id, []) if ot_id is not None else []
         ot["materiales"] = materiales.get(ot_id, []) if ot_id is not None else []
+        ot["equipos"] = equipment_rows.get(str(ot.get("n_ot") or ""), [])
         wfx = wfx_rows.get(str(ot.get("n_ot") or ""))
         if wfx:
             ot["estado_real"] = wfx.get("estado")
