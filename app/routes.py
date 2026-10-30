@@ -10236,21 +10236,27 @@ def technician_dashboard():
     except Exception:
         _all_deliveries = []
 
-    try:
-        orders_today_summary = fetch_orders_today_summary(technician_id=technician_id)
-    except Exception:
-        orders_today_summary = {"total_orders": 0, "total_completed": 0, "total_incomplete": 0}
-    # Auto-asignación de OT del Sistema Integral asignadas al técnico (tecA = legajo).
+    pull_trigger = {"started": False, "reason": None}
     sync_requested = (request.args.get("sync") or "").strip() == "1"
+    if sync_requested:
+        pull_trigger = maybe_si_pull_async(force=True)
+        if pull_trigger.get("started"):
+            flash("Sincronización iniciada. La pantalla se actualiza sola en unos segundos.", "success")
+        elif pull_trigger.get("reason") == "running":
+            flash("Ya hay una sincronización del Sistema Integral en curso.", "info")
+        elif pull_trigger.get("reason") == "disabled":
+            flash("La sincronización on-demand está desactivada.", "info")
+        else:
+            flash("No se pudo iniciar la sincronización.", "info")
+    pull_state = get_si_pull_state()
     try:
         orders_today = sync_si_orders_for_technician_day(technician_id) or []
     except Exception:
         orders_today = []
-    if sync_requested:
-        if orders_today:
-            flash(f"Se sincronizaron {len(orders_today)} OT asignadas para hoy.", "success")
-        else:
-            flash("No hay OT asignadas desde el Sistema Integral para hoy.", "info")
+    try:
+        orders_today_summary = fetch_orders_today_summary(technician_id=technician_id)
+    except Exception:
+        orders_today_summary = {"total_orders": 0, "total_completed": 0, "total_incomplete": 0}
 
     _feed = []
     for a in recent_audits:
@@ -10398,6 +10404,9 @@ def technician_dashboard():
         badge_stats=badge_stats,
         orders_today_summary=orders_today_summary,
         orders_today=orders_today,
+        pull_state=pull_state,
+        pull_trigger=pull_trigger,
+        reload_url=url_for("main.technician_dashboard"),
         recent_feed=recent_feed,
     )
 

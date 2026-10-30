@@ -84,6 +84,7 @@
     </section>
 
     {# ------ ÓRDENES TÉCNICAS (OTs) HOY · asignadas desde el Sistema Integral ------ #}
+    {% set si_syncing = (pull_state.running if pull_state else false) or (pull_trigger.started if pull_trigger else false) %}
     <section class="card" style="margin-bottom:22px;">
         <header class="card-head" style="background:linear-gradient(135deg,#0f172a,#1e293b);border-top-left-radius:14px;border-top-right-radius:14px;border-bottom:2px solid #475569;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
@@ -93,10 +94,28 @@
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <a class="button button-secondary" style="background:#ffffff;color:#0f172a;border-color:#cbd5e1;font-weight:700;" href="{{ url_for('main.technician_orders', technician_id=technician['id']) }}">🔍 Ver todas</a>
+                    {% if si_syncing %}
+                    <span class="button button-primary" style="background:#475569;border-color:#334155;font-weight:800;opacity:.8;cursor:not-allowed;">🔄 Sincronizando...</span>
+                    {% else %}
                     <a class="button button-primary" style="background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_dashboard', sync=1) }}">🔄 Sincronizar</a>
+                    {% endif %}
                 </div>
             </div>
         </header>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:10px 16px;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:700;">Última sincronización SI</span>
+                <span style="font-size:14px;font-weight:800;color:#0f172a;">{{ pull_state.last_success_at or '—' }}</span>
+                {% if si_syncing %}
+                <span style="font-size:12px;font-weight:700;color:#b45309;">· sincronizando...</span>
+                {% elif pull_state.last_status == 'error' %}
+                <span style="font-size:12px;font-weight:700;color:#b91c1c;">· último intento con error</span>
+                {% endif %}
+            </div>
+        </div>
+        {% if si_syncing %}
+        <script>setTimeout(function () { window.location.href = {{ reload_url|tojson }}; }, 15000);</script>
+        {% endif %}
         {% set ots = orders_today_summary or {'total_orders':0,'total_completed':0,'total_incomplete':0} %}
         <div class="ot-kpi-row">
             <div class="ot-kpi ot-kpi-total">
