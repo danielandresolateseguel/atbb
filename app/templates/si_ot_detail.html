@@ -33,6 +33,18 @@
                 <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">N° cliente</div>
                 <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.n_cliente or '—' }}</div>
             </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Nombre</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.cliente_nombre or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">DNI</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.cliente_dni or '—' }}</div>
+            </div>
+            <div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Teléfono</div>
+                <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.cliente_tel or '—' }}</div>
+            </div>
             <div style="grid-column:1 / -1;">
                 <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Dirección</div>
                 <div style="font-size:15px;font-weight:700;color:#0f172a;margin-top:2px;">{{ ot.direccion or '—' }}</div>

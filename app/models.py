@@ -700,6 +700,38 @@ def _migrate_si_ot_realizadas_add_estado_postgres(cursor):
                 pass
 
 
+def _migrate_si_ot_realizadas_add_cliente_sqlite(connection):
+    """Agrega datos de cliente a si_ot_realizadas (se resuelven desde OT_WFX_2)."""
+    try:
+        cols = {row[1] for row in connection.execute("PRAGMA table_info(si_ot_realizadas)").fetchall()}
+    except Exception:
+        return
+    for col in ("cliente_nombre", "cliente_dni", "cliente_tel"):
+        if cols and col not in cols:
+            try:
+                connection.execute(f"ALTER TABLE si_ot_realizadas ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
+
+
+def _migrate_si_ot_realizadas_add_cliente_postgres(cursor):
+    try:
+        rows = cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'si_ot_realizadas'"
+        ).fetchall()
+    except Exception:
+        return
+    cols = {(r.get("column_name") if isinstance(r, dict) else r[0]) for r in rows}
+    if not cols:
+        return
+    for col in ("cliente_nombre", "cliente_dni", "cliente_tel"):
+        if col not in cols:
+            try:
+                cursor.execute(f'ALTER TABLE si_ot_realizadas ADD COLUMN IF NOT EXISTS "{col}" TEXT')
+            except Exception:
+                pass
+
+
 def _migrate_si_tecnicos_add_nombre_sqlite(connection):
     """Agrega dni/nombre/apellido a si_tecnicos (se resuelven desde DatosPersonales)."""
     try:
@@ -741,6 +773,7 @@ def init_db():
     connection = sqlite3.connect(current_app.config["DATABASE_PATH"])
     _migrate_si_actividades_pk_sqlite(connection)
     _migrate_si_ot_realizadas_add_estado_sqlite(connection)
+    _migrate_si_ot_realizadas_add_cliente_sqlite(connection)
     _migrate_si_tecnicos_add_nombre_sqlite(connection)
     connection.executescript(
         """
@@ -1222,6 +1255,9 @@ def init_db():
             id_u INTEGER,
             direccion TEXT,
             n_cliente INTEGER,
+            cliente_nombre TEXT,
+            cliente_dni TEXT,
+            cliente_tel TEXT,
             sect_op TEXT,
             fecha_tec TEXT,
             tecA INTEGER,
@@ -1401,6 +1437,7 @@ def init_db_postgres():
     cursor = connection.cursor()
     _migrate_si_actividades_pk_postgres(connection, cursor)
     _migrate_si_ot_realizadas_add_estado_postgres(cursor)
+    _migrate_si_ot_realizadas_add_cliente_postgres(cursor)
     _migrate_si_tecnicos_add_nombre_postgres(cursor)
 
     cursor.execute(
@@ -1950,6 +1987,9 @@ def init_db_postgres():
             id_u INTEGER,
             direccion TEXT,
             n_cliente BIGINT,
+            cliente_nombre TEXT,
+            cliente_dni TEXT,
+            cliente_tel TEXT,
             sect_op TEXT,
             fecha_tec TIMESTAMPTZ,
             tecA INTEGER,
@@ -2251,16 +2291,19 @@ def _si_upsert_ot(ot):
     if is_postgres():
         sql = """
             INSERT INTO si_ot_realizadas
-                (id, n_ot, id_u, direccion, n_cliente, sect_op, fecha_tec,
+                (id, n_ot, id_u, direccion, n_cliente, cliente_nombre, cliente_dni, cliente_tel, sect_op, fecha_tec,
                  tecA, tecB, punt_tecA, punt_tecB, observacion, "Firma_TecA",
                  "Fecha_Carga", "Centro", "Empresa", "Sindicato", "Contingencia",
                  estado_id, estado_real, cod_res, tipo_trabajo, nodo, synced_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (n_ot) DO UPDATE SET
                 id = EXCLUDED.id,
                 id_u = EXCLUDED.id_u,
                 direccion = EXCLUDED.direccion,
                 n_cliente = EXCLUDED.n_cliente,
+                cliente_nombre = EXCLUDED.cliente_nombre,
+                cliente_dni = EXCLUDED.cliente_dni,
+                cliente_tel = EXCLUDED.cliente_tel,
                 sect_op = EXCLUDED.sect_op,
                 fecha_tec = EXCLUDED.fecha_tec,
                 tecA = EXCLUDED.tecA,
@@ -2284,11 +2327,11 @@ def _si_upsert_ot(ot):
     else:
         sql = """
             INSERT OR REPLACE INTO si_ot_realizadas
-                (id, n_ot, id_u, direccion, n_cliente, sect_op, fecha_tec,
+                (id, n_ot, id_u, direccion, n_cliente, cliente_nombre, cliente_dni, cliente_tel, sect_op, fecha_tec,
                  tecA, tecB, punt_tecA, punt_tecB, observacion, Firma_TecA,
                  Fecha_Carga, Centro, Empresa, Sindicato, Contingencia,
                  estado_id, estado_real, cod_res, tipo_trabajo, nodo, synced_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """
 
     params = (
@@ -2297,6 +2340,9 @@ def _si_upsert_ot(ot):
         ot.get("id_u"),
         ot.get("direccion"),
         ot.get("n_cliente"),
+        ot.get("cliente_nombre"),
+        ot.get("cliente_dni"),
+        ot.get("cliente_tel"),
         ot.get("sect_op"),
         ot.get("fecha_tec"),
         ot.get("tecA"),
@@ -2812,7 +2858,7 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None, movil=None,
 
     order_col = "Fecha_Carga" if is_postgres() else "Fecha_Carga"
     select_sql = (
-        f"SELECT o.id, o.n_ot, o.id_u, o.direccion, o.n_cliente, o.sect_op, o.fecha_tec, "
+        f"SELECT o.id, o.n_ot, o.id_u, o.direccion, o.n_cliente, o.cliente_nombre, o.cliente_dni, o.cliente_tel, o.sect_op, o.fecha_tec, "
         f"o.tecA AS \"tecA\", o.tecB AS \"tecB\", "
         f"o.punt_tecA AS \"punt_tecA\", o.punt_tecB AS \"punt_tecB\", o.observacion, "
         f"o.\"Fecha_Carga\" AS fecha_carga, o.\"Centro\" AS centro, "
@@ -2834,15 +2880,16 @@ def fetch_si_ot_list(q=None, n_ot=None, centro=None, estado_id=None, movil=None,
     for r in rows:
         d = dict(r) if isinstance(r, dict) else {
             "id": r[0], "n_ot": r[1], "id_u": r[2], "direccion": r[3],
-            "n_cliente": r[4], "sect_op": r[5], "fecha_tec": r[6],
-            "tecA": r[7], "tecB": r[8], "punt_tecA": r[9], "punt_tecB": r[10],
-            "observacion": r[11], "fecha_carga": r[12], "centro": r[13],
-            "empresa": r[14], "sindicato": r[15], "contingencia": r[16],
-            "estado_id": r[17], "synced_at": r[18], "centro_desc": r[19],
-            "empresa_desc": r[20], "sindicato_desc": r[21],
-            "estado_real": r[22], "cod_res": r[23], "tipo_trabajo": r[24],
-            "tecA_nombre": r[25], "tecA_apellido": r[26],
-            "tecB_nombre": r[27], "tecB_apellido": r[28],
+            "n_cliente": r[4], "cliente_nombre": r[5], "cliente_dni": r[6], "cliente_tel": r[7],
+            "sect_op": r[8], "fecha_tec": r[9],
+            "tecA": r[10], "tecB": r[11], "punt_tecA": r[12], "punt_tecB": r[13],
+            "observacion": r[14], "fecha_carga": r[15], "centro": r[16],
+            "empresa": r[17], "sindicato": r[18], "contingencia": r[19],
+            "estado_id": r[20], "synced_at": r[21], "centro_desc": r[22],
+            "empresa_desc": r[23], "sindicato_desc": r[24],
+            "estado_real": r[25], "cod_res": r[26], "tipo_trabajo": r[27],
+            "tecA_nombre": r[28], "tecA_apellido": r[29],
+            "tecB_nombre": r[30], "tecB_apellido": r[31],
         }
         result.append(d)
 
@@ -2861,7 +2908,7 @@ def fetch_si_ot_detail(ot_id):
     placeholder = "%s" if is_postgres() else "?"
 
     row = db.execute(
-        f"SELECT o.id, o.n_ot, o.id_u, o.direccion, o.n_cliente, o.sect_op, o.fecha_tec, "
+        f"SELECT o.id, o.n_ot, o.id_u, o.direccion, o.n_cliente, o.cliente_nombre, o.cliente_dni, o.cliente_tel, o.sect_op, o.fecha_tec, "
         f"o.tecA AS \"tecA\", o.tecB AS \"tecB\", "
         f"o.punt_tecA AS \"punt_tecA\", o.punt_tecB AS \"punt_tecB\", o.observacion, "
         f"o.\"Fecha_Carga\" AS fecha_carga, o.\"Centro\" AS centro, "
@@ -2887,15 +2934,16 @@ def fetch_si_ot_detail(ot_id):
 
     ot = dict(row) if isinstance(row, dict) else {
         "id": row[0], "n_ot": row[1], "id_u": row[2], "direccion": row[3],
-        "n_cliente": row[4], "sect_op": row[5], "fecha_tec": row[6],
-        "tecA": row[7], "tecB": row[8], "punt_tecA": row[9], "punt_tecB": row[10],
-        "observacion": row[11], "fecha_carga": row[12], "centro": row[13],
-        "empresa": row[14], "sindicato": row[15], "contingencia": row[16],
-        "estado_id": row[17], "estado_real": row[18], "cod_res": row[19],
-        "tipo_trabajo": row[20], "nodo": row[21], "synced_at": row[22],
-        "centro_desc": row[23], "empresa_desc": row[24], "sindicato_desc": row[25],
-        "tecA_nombre": row[26], "tecA_apellido": row[27],
-        "tecB_nombre": row[28], "tecB_apellido": row[29],
+        "n_cliente": row[4], "cliente_nombre": row[5], "cliente_dni": row[6], "cliente_tel": row[7],
+        "sect_op": row[8], "fecha_tec": row[9],
+        "tecA": row[10], "tecB": row[11], "punt_tecA": row[12], "punt_tecB": row[13],
+        "observacion": row[14], "fecha_carga": row[15], "centro": row[16],
+        "empresa": row[17], "sindicato": row[18], "contingencia": row[19],
+        "estado_id": row[20], "estado_real": row[21], "cod_res": row[22],
+        "tipo_trabajo": row[23], "nodo": row[24], "synced_at": row[25],
+        "centro_desc": row[26], "empresa_desc": row[27], "sindicato_desc": row[28],
+        "tecA_nombre": row[29], "tecA_apellido": row[30],
+        "tecB_nombre": row[31], "tecB_apellido": row[32],
     }
 
     actividades = db.execute(

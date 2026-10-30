@@ -284,7 +284,8 @@ def _fetch_wfx_rows(cursor, n_ots):
     placeholders = ", ".join(["%s"] * len(n_ots))
     cursor.execute(
         f"""
-        SELECT w.n_ot, w.estado, w.cod_res, w.tipo_trabajo, w.nodo
+        SELECT w.n_ot, w.estado, w.cod_res, w.tipo_trabajo, w.nodo,
+               w.nombre, w.dni, w.tel, w.n_cli
         FROM OT_WFX_2 w
         INNER JOIN (
             SELECT n_ot, MAX(id) AS max_id
@@ -327,6 +328,11 @@ def _prepare_batch(cursor, ot_batch):
             ot["cod_res"] = wfx.get("cod_res")
             ot["tipo_trabajo"] = wfx.get("tipo_trabajo")
             ot["nodo"] = wfx.get("nodo")
+            ot["cliente_nombre"] = wfx.get("nombre")
+            ot["cliente_dni"] = wfx.get("dni") or wfx.get("n_cli") or ot.get("n_cliente")
+            ot["cliente_tel"] = wfx.get("tel")
+            if ot.get("n_cliente") in (None, ""):
+                ot["n_cliente"] = wfx.get("n_cli")
     return prepared
 
 
