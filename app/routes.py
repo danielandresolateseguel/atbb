@@ -12454,5 +12454,29 @@ def si_ot_detail(ot_id):
     if not ot:
         flash("OT no encontrada.", "error")
         return redirect(url_for("main.si_ot_list"))
-    return render_template("si_ot_detail.html", ot=ot)
+    linked_order = fetch_technician_order_by_ot(ot.get("n_ot"))
+    linked_order_summary = None
+    if linked_order:
+        tech = fetch_technician_by_id(linked_order.get("technician_id"))
+        has_p1 = linked_order.get("photo_1_path") not in (None, "", 0)
+        has_p2 = linked_order.get("photo_2_path") not in (None, "", 0)
+        has_p3 = linked_order.get("photo_3_path") not in (None, "", 0)
+        has_edoc = linked_order.get("edoc_pdf_path") not in (None, "", 0)
+        linked_order_summary = {
+            "id": linked_order.get("id"),
+            "ot_number": linked_order.get("ot_number"),
+            "technician_id": linked_order.get("technician_id"),
+            "technician_name": (tech.get("name") if tech else None) or "Técnico",
+            "technician_employee_code": (tech.get("employee_code") if tech else None) or "—",
+            "created_at": linked_order.get("created_at"),
+            "client_name": linked_order.get("client_name"),
+            "client_address": linked_order.get("client_address"),
+            "client_phone": linked_order.get("client_phone"),
+            "has_p1": has_p1,
+            "has_p2": has_p2,
+            "has_p3": has_p3,
+            "has_edoc": has_edoc,
+            "is_complete": has_p1 and has_p2 and has_p3 and has_edoc,
+        }
+    return render_template("si_ot_detail.html", ot=ot, linked_order=linked_order_summary)
 
