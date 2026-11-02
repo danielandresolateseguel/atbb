@@ -229,9 +229,6 @@
                     <span class="ot-chip ot-chip-incomplete" style="display:inline-block;background:#f59e0b;color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;">⏳ Incompleta</span>
                     {% endif %}
                 </div>
-                <button type="button" id="btnToggleEditData" style="padding:8px 14px;border-radius:12px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#e2e8f0;font-weight:700;font-size:13px;cursor:pointer;">
-                    ✏️ Editar datos
-                </button>
             </div>
         </div>
         <div class="ot-header-status-mob" style="display:none;margin-top:14px;">
@@ -241,54 +238,6 @@
             <span class="ot-chip ot-chip-incomplete" style="display:block;text-align:center;background:#f59e0b;color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;">⏳ Incompleta</span>
             {% endif %}
         </div>
-
-        <!-- Panel inline de edición de datos (oculto por defecto) -->
-        <div id="panelEditData" style="display:none;margin-top:20px;background:rgba(255,255,255,.96);border:1px solid #cbd5e1;border-radius:16px;padding:18px 20px;color:#0f172a;">
-            <form method="POST" action="{{ url_for('main.technician_order_update_data', order_id=order.id) }}" style="display:flex;flex-direction:column;gap:12px;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#1e40af;font-weight:800;margin-bottom:4px;">Modificar datos de la OT</div>
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
-                    <div>
-                        <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">Nombre Cliente</label>
-                        <input type="text" name="client_name" value="{{ order.client_name or '' }}" placeholder="Ej: Daniel Olate" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;font-weight:600;">
-                    </div>
-                    <div>
-                        <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">Dirección / Obra</label>
-                        <input type="text" name="client_address" value="{{ order.client_address or '' }}" placeholder="Ej: Jose Hernandez 1485" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;font-weight:600;">
-                    </div>
-                    <div>
-                        <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">
-                            Teléfono Cliente <span style="color:#dc2626;">*</span>
-                        </label>
-                        <input type="tel" name="client_phone" required value="{{ order.client_phone or '' }}" placeholder="Ej: 261 500 0000" style="width:100%;padding:10px 12px;border-radius:10px;border:2px solid #f59e0b;font-weight:700;">
-                    </div>
-                </div>
-                <div>
-                    <label style="font-size:12px;font-weight:700;color:#0f172a;display:block;margin-bottom:4px;">Notas internas</label>
-                    <textarea name="notes" rows="2" placeholder="Opcional: detalle de la orden" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;resize:vertical;">{{ order.notes or '' }}</textarea>
-                </div>
-                <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
-                    <button type="button" id="btnCancelEditData" class="button button-secondary" style="padding:10px 16px;">Cancelar</button>
-                    <button type="submit" class="button button-primary" style="padding:10px 18px;font-weight:800;">💾 Guardar cambios</button>
-                </div>
-            </form>
-        </div>
-
-        <script>
-        (function () {
-            var btn = document.getElementById("btnToggleEditData");
-            var panel = document.getElementById("panelEditData");
-            var cancel = document.getElementById("btnCancelEditData");
-            if (btn && panel) {
-                btn.addEventListener("click", function () {
-                    panel.style.display = (panel.style.display === "none") ? "block" : "none";
-                });
-                if (cancel) cancel.addEventListener("click", function () {
-                    panel.style.display = "none";
-                });
-            }
-        })();
-        </script>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:22px;">
             {% if order.client_name %}
@@ -309,16 +258,9 @@
                 <div style="font-weight:800;margin-top:4px;font-size:15px;">📞 +{{ order.client_phone }}</div>
             </div>
             {% else %}
-            <div style="background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.45);border-radius:14px;padding:14px 16px;">
-                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#fca5a5;">⚠️ Falta teléfono</div>
-                <div style="font-weight:700;margin-top:4px;">Click en ✏️ Editar datos para cargar el celular del cliente.</div>
-            </div>
-            {% endif %}
-            {% if delivery and delivery.client_confirmed_at %}
-            <div style="background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.35);border-radius:14px;padding:14px 16px;">
-                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#34d399;">Credencial — Confirmación cliente</div>
-                <div style="font-weight:700;margin-top:4px;">✅ {{ delivery.client_name or 'Cliente' }}</div>
-                <div style="font-size:12px;color:#a7f3d0;margin-top:2px;">{{ delivery.client_confirmed_at|ar_dt }}</div>
+            <div style="background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.35);border-radius:14px;padding:14px 16px;">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#cbd5e1;">Teléfono · WhatsApp</div>
+                <div style="font-weight:700;margin-top:4px;">Sin teléfono informado en la OT.</div>
             </div>
             {% endif %}
         </div>
@@ -332,6 +274,7 @@
 
     <div class="ot-block-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;align-items:start;">
 
+        {% if false %}
         <section style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px 22px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
                 <div>
@@ -1470,11 +1413,12 @@
             })();
             </script>
         </section>
+        {% endif %}
 
         <section style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px 22px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
                 <div>
-                    <h2 style="margin:0;font-size:18px;">2) Fotografías (2 obligatorias)</h2>
+                    <h2 style="margin:0;font-size:18px;">1) Fotografías (2 obligatorias)</h2>
                     <p style="margin:4px 0 0;color:#475569;font-size:13px;">Adjunta las fotos clave de la orden (PNG/JPG/WEBP, hasta 50MB)</p>
                 </div>
             </div>
@@ -1517,7 +1461,7 @@
         <section style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px 22px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
                 <div>
-                    <h2 style="margin:0;font-size:18px;">3) Documento E-DOC (PDF)</h2>
+                    <h2 style="margin:0;font-size:18px;">2) Documento E-DOC (PDF)</h2>
                     <p style="margin:4px 0 0;color:#475569;font-size:13px;">Adjunta el E-DOC oficial de la orden</p>
                 </div>
             </div>
