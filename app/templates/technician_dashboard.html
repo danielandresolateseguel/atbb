@@ -132,7 +132,7 @@
                             </div>
                         </div>
                     </div>
-                    <a class="button button-ghost" style="font-weight:700;" href="{{ url_for('main.technician_order_detail', order_id=order.id) }}">{{ 'Completar' if not is_complete else 'Ver' }}</a>
+                    <a class="button button-ghost ot-row-cta" style="font-weight:700;" href="{{ url_for('main.technician_order_detail', order_id=order.id) }}">{{ 'Completar' if not is_complete else 'Ver' }}</a>
                 </li>
             {% endfor %}
         </ul>
@@ -384,6 +384,15 @@
     }
     .ot-doc-ok   { background:#ecfdf5; color:#065f46; border-color:#6ee7b7; }
     .ot-doc-miss { background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+    .ot-row {
+        align-items: start;
+    }
+    .ot-row-cta {
+        min-width: 108px;
+        justify-content: center;
+        text-align: center;
+        white-space: nowrap;
+    }
 
     .feed-list {
         list-style: none; padding: 14px 20px 6px;
@@ -441,6 +450,16 @@
         .ot-kpi-num { font-size: 18px; }
         .ot-kpi-label { font-size: 10px; }
         .ot-kpi-sub { font-size: 9px; }
+        .ot-row {
+            grid-template-columns: 1fr;
+            gap: 10px;
+            align-items: stretch;
+        }
+        .ot-row-cta {
+            width: 100%;
+            min-width: 0;
+            justify-self: stretch;
+        }
         .feed-item { grid-template-columns: auto 1fr; }
         .feed-cta { grid-column: 1 / -1; justify-self: end; }
     }
