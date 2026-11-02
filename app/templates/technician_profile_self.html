@@ -170,7 +170,7 @@
   {% set _n_use_all = (n_cnt <= 0 and n_cnt_all > 0) %}{% set _n_show_cnt = n_cnt_all if _n_use_all else n_cnt %}{% set _n_show_sc = n_sc_all if _n_use_all else n_sc %}
   <div class="stat-grid-6">
     <div class="s-card"><div class="n info">{{ _o30 }}{% if _o30 != (ot30.get('total_orders') or 0) %}<span style="font-size:12px;color:#94a3b8;font-weight:700;"> · hoy {{ ot30.get('total_orders') or 0 }}</span>{% endif %}</div><div class="t">📋 OTs cargadas</div><div class="s">Últimos 30 días</div></div>
-    <div class="s-card"><div class="n ok">{{ _c30 }}</div><div class="t">✅ OTs completas</div><div class="s">Foto1+Foto2+EDOC</div></div>
+    <div class="s-card"><div class="n ok">{{ _c30 }}</div><div class="t">✅ OTs completas</div><div class="s">Foto1+Foto2+Foto3+EDOC</div></div>
     <div class="s-card"><div class="n warn">{{ _i30 }}</div><div class="t">⏳ OTs incompletas</div><div class="s">Pendientes</div></div>
     <div class="s-card">
       <div class="n {% if _a_show_sc not in [none,''] %}{{ 'ok' if _a_show_sc >= 9 else ('warn' if _a_show_sc >=7 else 'bad') }}{% endif %}">{{ (_a_show_sc if _a_show_sc not in [none,''] else '-') }}</div>
@@ -327,8 +327,10 @@
               <td>
                 {% set f1 = o.get('photo_1_path') %}
                 {% set f2 = o.get('photo_2_path') %}
-                {% if f1 and f2 %}<span class="chip ch-green">📸 2/2</span>
-                {% elif f1 or f2 %}<span class="chip ch-orange">📸 1/2</span>
+                {% set f3 = o.get('photo_3_path') %}
+                {% set _nf = (1 if f1 else 0) + (1 if f2 else 0) + (1 if f3 else 0) %}
+                {% if _nf == 3 %}<span class="chip ch-green">📸 3/3</span>
+                {% elif _nf > 0 %}<span class="chip ch-orange">📸 {{ _nf }}/3</span>
                 {% else %}<span class="chip ch-gray">—</span>{% endif %}
               </td>
               <td>
@@ -336,7 +338,7 @@
                 {% else %}<span class="chip ch-gray">—</span>{% endif %}
               </td>
               <td>
-                {% if f1 and f2 and o.get('edoc_pdf_path') %}
+                {% if f1 and f2 and f3 and o.get('edoc_pdf_path') %}
                   <span class="chip ch-green">COMPLETA</span>
                 {% else %}
                   <span class="chip ch-orange">PENDIENTE</span>

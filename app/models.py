@@ -872,6 +872,7 @@ def init_db():
             badge_delivery_id INTEGER,
             photo_1_path TEXT,
             photo_2_path TEXT,
+            photo_3_path TEXT,
             edoc_pdf_path TEXT,
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
             FOREIGN KEY (badge_delivery_id) REFERENCES technician_badge_deliveries (id),
@@ -1560,6 +1561,7 @@ def init_db_postgres():
             badge_delivery_id INTEGER REFERENCES technician_badge_deliveries (id),
             photo_1_path TEXT,
             photo_2_path TEXT,
+            photo_3_path TEXT,
             edoc_pdf_path TEXT,
             UNIQUE(technician_id, ot_number)
         );
@@ -3886,6 +3888,7 @@ def ensure_legacy_columns(connection):
             badge_delivery_id INTEGER,
             photo_1_path TEXT,
             photo_2_path TEXT,
+            photo_3_path TEXT,
             edoc_pdf_path TEXT,
             FOREIGN KEY (technician_id) REFERENCES technicians (id),
             FOREIGN KEY (badge_delivery_id) REFERENCES technician_badge_deliveries (id),
@@ -3899,6 +3902,7 @@ def ensure_legacy_columns(connection):
         connection.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_created_at ON technician_orders (created_at)")
     except Exception:
         pass
+    add_column_if_missing(connection, "technician_orders", "photo_3_path", "TEXT")
     add_column_if_missing(connection, "vehicles", "year", "INTEGER")
     add_column_if_missing(connection, "vehicles", "status", "TEXT NOT NULL DEFAULT 'activo'")
     add_column_if_missing(connection, "vehicles", "unit_number", "TEXT")
@@ -4282,6 +4286,7 @@ def ensure_technician_orders_postgres(cursor):
             badge_delivery_id INTEGER REFERENCES technician_badge_deliveries (id),
             photo_1_path TEXT,
             photo_2_path TEXT,
+            photo_3_path TEXT,
             edoc_pdf_path TEXT,
             UNIQUE(technician_id, ot_number)
         )
@@ -4291,6 +4296,10 @@ def ensure_technician_orders_postgres(cursor):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_ot_number ON technician_orders (ot_number)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_technician_id ON technician_orders (technician_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_technician_orders_created_at ON technician_orders (created_at)")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE technician_orders ADD COLUMN IF NOT EXISTS photo_3_path TEXT")
     except Exception:
         pass
     try:
@@ -4422,6 +4431,7 @@ def ensure_all_columns_postgres(cursor):
                 badge_delivery_id INTEGER REFERENCES technician_badge_deliveries (id),
                 photo_1_path TEXT,
                 photo_2_path TEXT,
+                photo_3_path TEXT,
                 edoc_pdf_path TEXT,
                 edoc_generated_at TIMESTAMPTZ,
                 status TEXT NOT NULL DEFAULT 'pending',
@@ -17734,7 +17744,7 @@ def count_badge_stats_for_technician(technician_id):
 # -----------------------------------------------------------------------------
 
 def _order_cols_sqlite():
-    return "id, created_at, updated_at, technician_id, ot_number, client_name, client_address, client_phone, notes, badge_delivery_id, photo_1_path, photo_2_path, edoc_pdf_path"
+    return "id, created_at, updated_at, technician_id, ot_number, client_name, client_address, client_phone, notes, badge_delivery_id, photo_1_path, photo_2_path, photo_3_path, edoc_pdf_path"
 
 
 def _row_to_order(row):
@@ -17793,7 +17803,7 @@ def update_technician_order(order_id, technician_id=None, **fields):
     except (TypeError, ValueError):
         raise ValueError("Orden inválida.")
     allowed = {"client_name", "client_address", "client_phone", "notes", "badge_delivery_id",
-               "photo_1_path", "photo_2_path", "edoc_pdf_path"}
+               "photo_1_path", "photo_2_path", "photo_3_path", "edoc_pdf_path"}
     updates = {k: fields[k] for k in fields if k in allowed}
     if not updates:
         return False
@@ -17933,7 +17943,7 @@ def fetch_technician_orders_stats(technician_id):
         """
         SELECT
           COUNT(*) AS c,
-          SUM(CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL) THEN 1 ELSE 0 END) AS cp,
+          SUM(CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL AND photo_3_path IS NOT NULL) THEN 1 ELSE 0 END) AS cp,
           SUM(CASE WHEN edoc_pdf_path IS NOT NULL THEN 1 ELSE 0 END) AS ce,
           SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS c30
         FROM technician_orders WHERE technician_id = ?
@@ -17949,14 +17959,14 @@ def fetch_technician_orders_stats(technician_id):
 
 
 def _complete_flag_sqlite():
-    return "CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL AND edoc_pdf_path IS NOT NULL) THEN 1 ELSE 0 END"
+    return "CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL AND photo_3_path IS NOT NULL AND edoc_pdf_path IS NOT NULL) THEN 1 ELSE 0 END"
 
 
 def fetch_orders_today_summary(supervisor_scope_names=None, technician_id=None):
     """
     Devuelve un resumen de lo hecho HOY por los técnicos (dentro de scope supervisor):
       total_orders: ordenes creadas HOY
-      total_completed:  ordenes COMPLETAS (2 fotos + E-DOC) HOY
+      total_completed:  ordenes COMPLETAS (3 fotos + E-DOC) HOY
       total_incomplete: ordenes INCOMPLETAS HOY
       active_technicians: cuantos tecnicos distintos cargaron al menos 1 orden HOY
     """
@@ -18216,7 +18226,7 @@ def fetch_orders_grouped_by_technician(today_only=True, q=None, ot_number=None, 
     for r in orders_raw:
         o = _row_to_order(r)
         o["date_group_key"] = r.get("date_group_key") or (str(o.get("created_at") or "")[:10])
-        is_complete = bool(o.get("photo_1_path") and o.get("photo_2_path") and o.get("edoc_pdf_path"))
+        is_complete = bool(o.get("photo_1_path") and o.get("photo_2_path") and o.get("photo_3_path") and o.get("edoc_pdf_path"))
         o["_is_complete"] = is_complete
         if status_norm == "complete" and not is_complete:
             continue

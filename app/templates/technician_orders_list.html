@@ -155,7 +155,7 @@
             <h1 style="margin:0;font-size:26px;line-height:1.2;word-break:break-word;color:#ffffff;font-weight:800;">
                 {% if current_technician_view %}Mis órdenes de trabajo{% elif target_technician %}Órdenes — {{ target_technician.name }} ({{ target_technician.employee_code }}){% else %}Buscador de Órdenes Técnicas{% endif %}
             </h1>
-            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">{% if current_technician_view %}Tus OT se asignan automáticamente desde el Sistema Integral. Adjuntá las 2 fotos obligatorias y el E-DOC PDF en cada una.{% else %}Por defecto: solo LO DEL DÍA (para comparar con la LaborApp). Lo archivado lo buscás por N° OT.{% endif %}</p>
+            <p style="margin:6px 0 0;color:#e2e8f0;line-height:1.4;font-weight:600;">{% if current_technician_view %}Tus OT se asignan automáticamente desde el Sistema Integral. Adjuntá las 3 fotos obligatorias y el E-DOC PDF en cada una.{% else %}Por defecto: solo LO DEL DÍA (para comparar con la LaborApp). Lo archivado lo buscás por N° OT.{% endif %}</p>
         </div>
     </div>
 
@@ -167,7 +167,7 @@
             <div style="font-size:12px;color:#3b82f6;margin-top:2px;">+{{ orders_stats.last_30d or 0 }} últimos 30 días</div>
         </div>
         <div class="ot-stat-card" style="background:linear-gradient(135deg,#dcfce7,#f0fdf4);border:1px solid #bbf7d0;border-radius:14px;padding:14px 16px;">
-            <div style="font-size:12px;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Fotos 2/2</div>
+            <div style="font-size:12px;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Fotos 3/3</div>
             <div class="ot-stat-num" style="font-size:26px;font-weight:800;color:#14532d;margin-top:6px;">{{ orders_stats.with_photos or 0 }}</div>
             <div style="font-size:12px;color:#16a34a;margin-top:2px;">de {{ orders_stats.total or 0 }} órdenes</div>
         </div>
@@ -353,8 +353,9 @@
                 {% if _ic is none %}
                     {% set _p1raw = (_o['photo_1_path'] if (_o is mapping and 'photo_1_path' in _o) else None) %}
                     {% set _p2raw = (_o['photo_2_path'] if (_o is mapping and 'photo_2_path' in _o) else None) %}
+                    {% set _p3raw = (_o['photo_3_path'] if (_o is mapping and 'photo_3_path' in _o) else None) %}
                     {% set _pdraw = (_o['edoc_pdf_path']  if (_o is mapping and 'edoc_pdf_path'  in _o) else None) %}
-                    {% set _hp1 = False %}{% set _hp2 = False %}{% set _hpdf = False %}
+                    {% set _hp1 = False %}{% set _hp2 = False %}{% set _hp3 = False %}{% set _hpdf = False %}
                     {% if _p1raw is not none %}
                         {% set _s = _p1raw|string|trim %}
                         {% if _s != '' and _s != 'None' and _s != 'none' and _s != 'NULL' and _s != 'null' %}
@@ -367,13 +368,19 @@
                             {% set _hp2 = True %}
                         {% endif %}
                     {% endif %}
+                    {% if _p3raw is not none %}
+                        {% set _s = _p3raw|string|trim %}
+                        {% if _s != '' and _s != 'None' and _s != 'none' and _s != 'NULL' and _s != 'null' %}
+                            {% set _hp3 = True %}
+                        {% endif %}
+                    {% endif %}
                     {% if _pdraw is not none %}
                         {% set _s = _pdraw|string|trim %}
                         {% if _s != '' and _s != 'None' and _s != 'none' and _s != 'NULL' and _s != 'null' %}
                             {% set _hpdf = True %}
                         {% endif %}
                     {% endif %}
-                    {% set _ic = (_hp1 and _hp2 and _hpdf) %}
+                    {% set _ic = (_hp1 and _hp2 and _hp3 and _hpdf) %}
                 {% endif %}
 
                 {# ==== merge al safe dict ==== #}
@@ -448,8 +455,9 @@
                                 {% for o in day_rows %}
                                 {% set has_p1 = (o.photo_1_path or '')|trim != '' %}
                                 {% set has_p2 = (o.photo_2_path or '')|trim != '' %}
+                                {% set has_p3 = (o.photo_3_path or '')|trim != '' %}
                                 {% set has_pdf = (o.edoc_pdf_path or '')|trim != '' %}
-                                {% set complete = o._is_complete if (o._is_complete is defined) else (has_p1 and has_p2 and has_pdf) %}
+                                {% set complete = o._is_complete if (o._is_complete is defined) else (has_p1 and has_p2 and has_p3 and has_pdf) %}
                                 <tr style="border-top:1px solid #f1f5f9;">
                                     <td style="padding:12px 14px;vertical-align:top;">
                                         <div style="font-weight:700;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;">{{ o.ot_number }}</div>
@@ -472,6 +480,7 @@
                                         <div style="font-size:12px;color:#0f172a;margin-top:4px;font-weight:700;">
                                             {% if not has_p1 %}📸 Falta foto 1. {% endif %}
                                             {% if not has_p2 %}📸 Falta foto 2. {% endif %}
+                                            {% if not has_p3 %}📸 Falta foto 3. {% endif %}
                                             {% if not has_pdf %}📄 Falta E-DOC.{% endif %}
                                         </div>
                                         {% endif %}
@@ -603,6 +612,7 @@
                                         <div style="font-size:11px;color:#0f172a;margin-top:3px;line-height:1.3;font-weight:800;">
                                             {% if not o.photo_1_path %}📸 1 · {% endif %}
                                             {% if not o.photo_2_path %}📸 2 · {% endif %}
+                                            {% if not o.photo_3_path %}📸 3 · {% endif %}
                                             {% if not o.edoc_pdf_path %}📄 E-DOC{% endif %}
                                         </div>
                                         {% endif %}
@@ -642,6 +652,7 @@
                                 <div style="font-size:11px;color:#0f172a;margin-top:3px;line-height:1.3;font-weight:800;">
                                     {% if not o.photo_1_path %}📸 1 · {% endif %}
                                     {% if not o.photo_2_path %}📸 2 · {% endif %}
+                                    {% if not o.photo_3_path %}📸 3 · {% endif %}
                                     {% if not o.edoc_pdf_path %}📄 E-DOC{% endif %}
                                 </div>
                                 {% endif %}

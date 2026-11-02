@@ -2130,9 +2130,7 @@ def login():
             technician = fetch_technician_by_employee_code(username)
             if technician and technician.get("is_active", 1) != 0:
                 default_password = initial_technician_password()
-                if password == default_password or check_password_hash(
-                    generate_password_hash(default_password), password
-                ):
+                if password == default_password:
                     try:
                         user = get_or_create_technician_user(
                             technician, default_password, must_change=True
@@ -6203,7 +6201,7 @@ def technician_profile(technician_id):
             ot_last30 = fetch_orders_today_summary(technician_id=technician_id) or {}
             _db = get_db()
             _from_30d = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-            _complete_expr = "CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL AND edoc_pdf_path IS NOT NULL) THEN 1 ELSE 0 END"
+            _complete_expr = "CASE WHEN (photo_1_path IS NOT NULL AND photo_2_path IS NOT NULL AND photo_3_path IS NOT NULL AND edoc_pdf_path IS NOT NULL) THEN 1 ELSE 0 END"
             try:
                 _r30 = _db.execute(
                     f"SELECT COUNT(*) AS c_total, SUM({_complete_expr}) AS c_done "
@@ -11248,7 +11246,7 @@ def _can_access_order(order_id_or_obj):
 
 def _persist_order_photo(file_storage, order_id, photo_slot=1):
     """
-    Save an uploaded image for the given order (slot 1 or 2).
+    Save an uploaded image for the given order (slot 1, 2 o 3).
     Reuses validate/optimize from existing audit QC code; saves to uploads/audits/orders/YYYY/mm/.
     Returns uploads-relative string like "uploads/audits/orders/2026/08/order_17_1_abc.webp".
     """
@@ -11513,13 +11511,14 @@ def technician_orders(technician_id=None):
                     o_dict = {}
                 # Garantizar llaves basicas nunca undefined en template
                 for req in ("id","ot_number","client_name","client_phone","client_address",
-                            "photo_1_path","photo_2_path","edoc_pdf_path","created_at"):
+                            "photo_1_path","photo_2_path","photo_3_path","edoc_pdf_path","created_at"):
                     if req not in o_dict:
                         o_dict[req] = None
                 p1 = (str(o_dict.get("photo_1_path") or "").strip())
                 p2 = (str(o_dict.get("photo_2_path") or "").strip())
+                p3 = (str(o_dict.get("photo_3_path") or "").strip())
                 pdf = (str(o_dict.get("edoc_pdf_path") or "").strip())
-                o_dict["_is_complete"] = bool(p1 and p2 and pdf)
+                o_dict["_is_complete"] = bool(p1 and p2 and p3 and pdf)
                 created = str(o_dict.get("created_at") or "")
                 dk = created[:10]
                 if not dk:
@@ -11556,12 +11555,13 @@ def technician_orders(technician_id=None):
                     except Exception:
                         nd = {}
                     for req in ("id","ot_number","client_name","client_phone","client_address",
-                                "photo_1_path","photo_2_path","edoc_pdf_path","created_at"):
+                                "photo_1_path","photo_2_path","photo_3_path","edoc_pdf_path","created_at"):
                         if req not in nd: nd[req] = None
                     p1 = (str(nd.get("photo_1_path") or "").strip())
                     p2 = (str(nd.get("photo_2_path") or "").strip())
+                    p3 = (str(nd.get("photo_3_path") or "").strip())
                     pdf = (str(nd.get("edoc_pdf_path") or "").strip())
-                    nd["_is_complete"] = bool(p1 and p2 and pdf)
+                    nd["_is_complete"] = bool(p1 and p2 and p3 and pdf)
                     created = str(nd.get("created_at") or "")
                     dk = created[:10]
                     if not dk: dk = "Sin fecha"
@@ -11913,7 +11913,7 @@ def technician_order_upload_photo(order_id, slot):
         abort(404)
     if not _can_access_order(order):
         abort(403)
-    if slot not in (1, 2):
+    if slot not in (1, 2, 3):
         abort(400, "Slot de foto inválido.")
     if not validate_csrf_token(request.form.get("csrf_token")):
         flash("Token de seguridad inválido. Recargá.", "error")
@@ -11958,7 +11958,7 @@ def technician_order_upload_edoc(order_id):
 @main.route("/orders/<int:order_id>/files/<asset>")
 def technician_order_download(order_id, asset):
     """
-    asset: photo1 | photo2 | edoc
+    asset: photo1 | photo2 | photo3 | edoc
     Optional ?download=1 to force attachment (E-DOC default download, photos default inline)
     """
     order = fetch_technician_order_by_id(order_id)
@@ -11973,6 +11973,10 @@ def technician_order_download(order_id, asset):
     elif asset == "photo2":
         path = order.get("photo_2_path")
         suggested_name = f"OT_{order.get('ot_number') or order_id}_Foto2"
+        as_dl = request.args.get("download") in {"1", "true", "on"}
+    elif asset == "photo3":
+        path = order.get("photo_3_path")
+        suggested_name = f"OT_{order.get('ot_number') or order_id}_Foto3"
         as_dl = request.args.get("download") in {"1", "true", "on"}
     elif asset == "edoc":
         path = order.get("edoc_pdf_path")

@@ -221,8 +221,9 @@
                 <div class="ot-header-status-desk">
                     {% set has_p1 = (order.photo_1_path or '')|trim != '' %}
                     {% set has_p2 = (order.photo_2_path or '')|trim != '' %}
+                    {% set has_p3 = (order.photo_3_path or '')|trim != '' %}
                     {% set has_pdf = (order.edoc_pdf_path or '')|trim != '' %}
-                    {% set complete = has_p1 and has_p2 and has_pdf %}
+                    {% set complete = has_p1 and has_p2 and has_p3 and has_pdf %}
                     {% if complete %}
                     <span class="ot-chip ot-chip-complete" style="display:inline-block;background:#10b981;color:#fff;padding:8px 14px;border-radius:999px;font-weight:700;">✓ Completa</span>
                     {% else %}
@@ -1418,16 +1419,17 @@
         <section style="background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:20px 22px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
                 <div>
-                    <h2 style="margin:0;font-size:18px;">1) Fotografías (2 obligatorias)</h2>
+                    <h2 style="margin:0;font-size:18px;">1) Fotografías (3 obligatorias)</h2>
                     <p style="margin:4px 0 0;color:#475569;font-size:13px;">Adjunta las fotos clave de la orden (PNG/JPG/WEBP, hasta 50MB)</p>
                 </div>
             </div>
 
-            {% for slot in (1,2) %}
+            {% set photo_labels = {1: 'Foto valores de CDO', 2: 'Foto valores de ONT', 3: 'Foto de Seguridad del conector'} %}
+            {% for slot in (1,2,3) %}
             {% set has = (order['photo_' ~ slot ~ '_path'] or '')|trim != '' %}
             <div style="border:1px solid #e2e8f0;border-radius:14px;padding:14px 16px;margin-bottom:14px;background:{% if has %}#ecfdf5{% else %}#fafafa{% endif %};">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
-                    <div style="font-weight:700;color:#0f172a;">📸 Foto #{{ slot }}</div>
+                    <div style="font-weight:700;color:#0f172a;">📸 {{ photo_labels[slot] }}</div>
                     <div>
                         {% if has %}
                         <span class="chip chip-success" style="background:#dcfce7;color:#166534;">Adjuntada ✓</span>

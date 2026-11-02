@@ -37,15 +37,6 @@
     </header>
 
     <section class="technician-home-actions">
-        <a class="big-cta cta-primary" href="{{ url_for('main.technician_badge', technician_id=technician['id']) }}" target="_blank" rel="noopener">
-            <div class="big-cta-ico" aria-hidden="true">💳</div>
-            <div class="big-cta-copy">
-                <h2>Ver mi credencial</h2>
-                <p>Abre tu tarjeta de presentación en pantalla completa.</p>
-            </div>
-            <span class="big-cta-arrow" aria-hidden="true">→</span>
-        </a>
-
         <a class="big-cta cta-ghost" href="{{ url_for('main.technician_profile', technician_id=technician['id']) }}">
             <div class="big-cta-ico" aria-hidden="true">📊</div>
             <div class="big-cta-copy">
@@ -54,33 +45,6 @@
             </div>
             <span class="big-cta-arrow" aria-hidden="true">→</span>
         </a>
-
-        <a class="big-cta cta-ghost" href="{{ url_for('main.technician_change_password') }}">
-            <div class="big-cta-ico" aria-hidden="true">🔐</div>
-            <div class="big-cta-copy">
-                <h2>Cambiar contraseña</h2>
-                <p>Actualizá tu clave regularmente para proteger tu cuenta.</p>
-            </div>
-            <span class="big-cta-arrow" aria-hidden="true">→</span>
-        </a>
-    </section>
-
-    {% set stats = badge_stats or {'deliveries':0,'client_confirmed':0,'views':0,'confirmed_last_7d':0,'views_last_7d':0} %}
-    <section class="tech-stat-grid" style="margin-bottom:22px;">
-        <a class="stat-card stat-card-views" href="{{ url_for('main.technician_badge', technician_id=technician['id']) }}">
-            <div class="stat-card-num">{{ stats.views or 0 }}</div>
-            <div class="stat-card-label">👁 Vistas credencial</div>
-            {% if stats.views_last_7d %}<div class="stat-card-sub">+{{ stats.views_last_7d }} últimos 7 días</div>{% endif %}
-        </a>
-        <div class="stat-card stat-card-del">
-            <div class="stat-card-num">{{ stats.deliveries or 0 }}</div>
-            <div class="stat-card-label">📤 Credenciales enviadas</div>
-        </div>
-        <div class="stat-card stat-card-conf">
-            <div class="stat-card-num">{{ stats.client_confirmed or 0 }}</div>
-            <div class="stat-card-label">✅ Confirmadas por cliente</div>
-            {% if stats.confirmed_last_7d %}<div class="stat-card-sub">+{{ stats.confirmed_last_7d }} últimos 7 días</div>{% endif %}
-        </div>
     </section>
 
     {# ------ ÓRDENES TÉCNICAS (OTs) HOY · asignadas desde el Sistema Integral ------ #}
@@ -92,12 +56,12 @@
                     <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#93c5fd;letter-spacing:.05em;text-transform:uppercase;">📋 OT asignadas · HOY {{ today }}</p>
                     <h2 style="margin:0;font-size:18px;font-weight:800;color:#ffffff;">OT asignadas desde el Sistema Integral</h2>
                 </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <a class="button button-secondary" style="background:#ffffff;color:#0f172a;border-color:#cbd5e1;font-weight:700;" href="{{ url_for('main.technician_orders', technician_id=technician['id']) }}">🔍 Ver todas</a>
+                <div class="ot-head-actions">
+                    <a class="button button-secondary ot-head-btn" style="background:#ffffff;color:#0f172a;border-color:#cbd5e1;font-weight:700;" href="{{ url_for('main.technician_orders', technician_id=technician['id']) }}">🔍 Ver todas</a>
                     {% if si_syncing %}
-                    <span class="button button-primary" style="background:#475569;border-color:#334155;font-weight:800;opacity:.8;cursor:not-allowed;">🔄 Sincronizando...</span>
+                    <span class="button button-primary ot-head-btn" style="background:#475569;border-color:#334155;font-weight:800;opacity:.8;cursor:not-allowed;">🔄 Sincronizando...</span>
                     {% else %}
-                    <a class="button button-primary" style="background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_dashboard', sync=1) }}">🔄 Sincronizar</a>
+                    <a class="button button-primary ot-head-btn" style="background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_dashboard', sync=1) }}">🔄 Sincronizar</a>
                     {% endif %}
                 </div>
             </div>
@@ -125,7 +89,7 @@
             <div class="ot-kpi ot-kpi-ok">
                 <div class="ot-kpi-num">{{ ots.total_completed or 0 }}</div>
                 <div class="ot-kpi-label">✅ Completas</div>
-                <div class="ot-kpi-sub">2 fotos + E-DOC</div>
+                <div class="ot-kpi-sub">3 fotos + E-DOC</div>
             </div>
             <div class="ot-kpi ot-kpi-warn">
                 <div class="ot-kpi-num">{{ ots.total_incomplete or 0 }}</div>
@@ -141,8 +105,9 @@
             {% for order in orders_today %}
                 {% set has_p1 = order.get('photo_1_path') not in (none, '', 0) %}
                 {% set has_p2 = order.get('photo_2_path') not in (none, '', 0) %}
+                {% set has_p3 = order.get('photo_3_path') not in (none, '', 0) %}
                 {% set has_edoc = order.get('edoc_pdf_path') not in (none, '', 0) %}
-                {% set is_complete = has_p1 and has_p2 and has_edoc %}
+                {% set is_complete = has_p1 and has_p2 and has_p3 and has_edoc %}
                 {% set _show_ot = loop.index0 < ot_limit or ot_total <= ot_limit %}
                 <li class="recent-audit-row ot-row{% if not _show_ot %} ot-hidden-row{% endif %}" {% if not _show_ot %}style="display:none;"{% endif %}>
                     <div>
@@ -162,6 +127,7 @@
                             <div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
                                 <span class="ot-doc-chip {% if has_p1 %}ot-doc-ok{% else %}ot-doc-miss{% endif %}">📸 Foto 1 {% if has_p1 %}✓{% else %}—{% endif %}</span>
                                 <span class="ot-doc-chip {% if has_p2 %}ot-doc-ok{% else %}ot-doc-miss{% endif %}">📸 Foto 2 {% if has_p2 %}✓{% else %}—{% endif %}</span>
+                                <span class="ot-doc-chip {% if has_p3 %}ot-doc-ok{% else %}ot-doc-miss{% endif %}">📸 Foto 3 {% if has_p3 %}✓{% else %}—{% endif %}</span>
                                 <span class="ot-doc-chip {% if has_edoc %}ot-doc-ok{% else %}ot-doc-miss{% endif %}">📄 E-DOC {% if has_edoc %}✓{% else %}—{% endif %}</span>
                             </div>
                         </div>
@@ -181,7 +147,6 @@
         <div class="empty-day-box" style="border-top:2px solid #e2e8f0;">
             <p style="margin:0;color:#0f172a;font-weight:800;">No tenés OT asignadas para hoy</p>
             <p style="margin:4px 0 0;color:#475569;font-size:13px;">Tus OT se asignan automáticamente desde el Sistema Integral. Probá sincronizar para ver las OT disponibles.</p>
-            <a class="button button-primary" style="margin-top:12px;background:#f97316;border-color:#ea580c;font-weight:800;" href="{{ url_for('main.technician_dashboard', sync=1) }}">🔄 Sincronizar</a>
         </div>
         {% endif %}
     </section>
@@ -259,52 +224,39 @@
 </section>
 
 <style>
-    .tech-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-    .tech-stat-grid .stat-card {
-        padding: 16px 16px 18px; border-radius: 16px;
-        box-shadow: 0 8px 20px rgba(15,23,42,0.05); text-decoration: none; color: inherit;
-        border: 1px solid #e2e8f0; background:#fff; display:block; transition: transform .15s ease;
-    }
-    .tech-stat-grid .stat-card:hover { transform: translateY(-1px); }
-    .tech-stat-grid .stat-card-num { font-size: 34px; font-weight: 800; color: #0f172a; line-height: 1; margin-bottom: 6px; }
-    .tech-stat-grid .stat-card-label { font-weight: 700; color:#334155; font-size: 14px; }
-    .tech-stat-grid .stat-card-sub { margin-top:4px; color: #475569; font-size:12px; opacity:.9;}
-    .tech-stat-grid .stat-card-views { background:linear-gradient(145deg,#eff6ff,#dbeafe); border-color:#bfdbfe; }
-    .tech-stat-grid .stat-card-del { background:linear-gradient(145deg,#fff7ed,#ffedd5); border-color:#fed7aa; }
-    .tech-stat-grid .stat-card-conf { background:linear-gradient(145deg,#ecfdf5,#d1fae5); border-color:#6ee7b7; }
-    .technician-home { max-width: 860px; margin: 0 auto; padding: 20px 16px 80px; }
+    .technician-home { max-width: 860px; margin: 0 auto; padding: 14px 16px 80px; }
     .technician-home-hero {
-        display: flex; gap: 18px; align-items: center;
-        padding: 22px 20px; border-radius: 18px;
+        display: flex; gap: 14px; align-items: center;
+        padding: 14px 16px; border-radius: 16px;
         background: linear-gradient(135deg, #EEF2FF 0%, #F0FDFA 60%, #FEF3C7 100%);
-        box-shadow: 0 10px 30px rgba(15,23,42,0.06); margin-bottom: 24px;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.06); margin-bottom: 14px;
     }
     .technician-home-photo {
-        width: 112px; height: 112px; border-radius: 22px; overflow: hidden;
+        width: 78px; height: 78px; border-radius: 18px; overflow: hidden;
         flex-shrink: 0; background: #1e293b; box-shadow: 0 8px 20px rgba(15,23,42,0.18);
         display:flex; align-items:center; justify-content:center; color:#fff;
     }
     .technician-home-photo img { width: 100%; height: 100%; object-fit: cover; }
     .photo-placeholder span {
-        font-weight: 800; font-size: 40px; letter-spacing: 0.05em; color: #e2e8f0;
+        font-weight: 800; font-size: 30px; letter-spacing: 0.05em; color: #e2e8f0;
     }
     .technician-home-headline { min-width: 0; flex: 1; }
     .technician-home-headline .eyebrow {
-        margin: 0 0 6px; color: #4338ca; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 0.08em; font-size: 12px;
+        margin: 0 0 4px; color: #4338ca; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.08em; font-size: 11px;
     }
-    .technician-home-headline h1 { margin: 0 0 10px; font-size: 26px; line-height: 1.15; color: #0f172a; }
-    .technician-home-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+    .technician-home-headline h1 { margin: 0 0 8px; font-size: 18px; line-height: 1.12; color: #0f172a; }
+    .technician-home-meta { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip {
-        display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px;
-        background: #ffffff; color: #334155; font-weight: 600; font-size: 13px;
+        display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 999px;
+        background: #ffffff; color: #334155; font-weight: 600; font-size: 12px;
         box-shadow: 0 2px 6px rgba(15,23,42,0.05);
     }
     .chip-primary { background: #1e293b; color: #f8fafc; }
-    .technician-home-actions { display: grid; gap: 14px; margin-bottom: 28px; }
+    .technician-home-actions { display: grid; gap: 14px; margin-bottom: 18px; }
     .big-cta {
         display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
-        text-align: left; width: 100%; padding: 18px 18px; border: none; border-radius: 18px;
+        text-align: left; width: 100%; padding: 16px 18px; border: none; border-radius: 18px;
         background: #fff; box-shadow: 0 6px 18px rgba(15,23,42,0.06);
         cursor: pointer; color: #0f172a; text-decoration: none; transition: transform .12s ease, box-shadow .12s ease;
     }
@@ -388,6 +340,17 @@
         border-color: #fca5a5; color: #991b1b;
     }
 
+    .ot-head-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .ot-head-btn {
+        min-width: 148px;
+        justify-content: center;
+        text-align: center;
+    }
+
     .ot-kpi-row {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -396,13 +359,13 @@
     }
     .ot-kpi {
         border-radius: 14px;
-        padding: 14px 14px 16px;
+        padding: 10px 12px 12px;
         text-align: center;
         border: 1.5px solid;
     }
-    .ot-kpi-num { font-size: 28px; font-weight: 900; line-height: 1; margin-bottom: 6px; }
-    .ot-kpi-label { font-weight: 800; font-size: 13.5px; }
-    .ot-kpi-sub { margin-top: 3px; font-size: 11.5px; opacity: .85; font-weight: 600; }
+    .ot-kpi-num { font-size: 22px; font-weight: 900; line-height: 1; margin-bottom: 4px; }
+    .ot-kpi-label { font-weight: 800; font-size: 11px; }
+    .ot-kpi-sub { margin-top: 2px; font-size: 10px; opacity: .85; font-weight: 600; }
     .ot-kpi-total { background: linear-gradient(180deg,#eff6ff,#dbeafe); border-color:#bfdbfe; color:#1e3a8a; }
     .ot-kpi-ok    { background: linear-gradient(180deg,#ecfdf5,#d1fae5); border-color:#6ee7b7; color:#065f46; }
     .ot-kpi-warn  { background: linear-gradient(180deg,#fffbeb,#fef3c7); border-color:#fcd34d; color:#92400e; }
@@ -457,14 +420,37 @@
     .feed-cta { padding: 6px 12px; font-size: 12.5px; flex-shrink: 0; }
 
     @media (max-width: 520px) {
-        .ot-kpi-row { grid-template-columns: 1fr; }
+        .ot-head-actions {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+        }
+        .ot-head-btn {
+            min-width: 0;
+            width: 100%;
+        }
+        .ot-kpi-row {
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            padding: 12px 12px 0;
+        }
+        .ot-kpi {
+            padding: 9px 8px 10px;
+            border-radius: 12px;
+        }
+        .ot-kpi-num { font-size: 18px; }
+        .ot-kpi-label { font-size: 10px; }
+        .ot-kpi-sub { font-size: 9px; }
         .feed-item { grid-template-columns: auto 1fr; }
         .feed-cta { grid-column: 1 / -1; justify-self: end; }
     }
 
     @media (max-width: 520px) {
-        .technician-home-hero { flex-direction: column; text-align: center; padding: 20px 16px; }
-        .technician-home-headline h1 { font-size: 22px; }
+        .technician-home { padding-top: 10px; }
+        .technician-home-hero { gap: 10px; padding: 12px 14px; }
+        .technician-home-photo { width: 64px; height: 64px; border-radius: 16px; }
+        .photo-placeholder span { font-size: 24px; }
+        .technician-home-headline h1 { font-size: 15px; }
         .technician-home-meta { justify-content: center; }
         .big-cta { grid-template-columns: auto 1fr; }
         .big-cta-arrow { display: none; }
