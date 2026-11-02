@@ -132,7 +132,7 @@
                             </div>
                         </div>
                     </div>
-                    <a class="button button-ghost ot-row-cta" style="font-weight:700;" href="{{ url_for('main.technician_order_detail', order_id=order.id) }}">{{ 'Completar' if not is_complete else 'Ver' }}</a>
+                    <a class="button ot-row-cta {% if not is_complete %}ot-row-cta-pending{% else %}ot-row-cta-view{% endif %}" href="{{ url_for('main.technician_order_detail', order_id=order.id) }}">{{ 'Completar' if not is_complete else 'Ver' }}</a>
                 </li>
             {% endfor %}
         </ul>
@@ -388,10 +388,27 @@
         align-items: start;
     }
     .ot-row-cta {
+        display: inline-flex;
+        align-items: center;
         min-width: 108px;
+        min-height: 42px;
         justify-content: center;
         text-align: center;
         white-space: nowrap;
+        font-weight: 800;
+        text-decoration: none;
+        border: 1px solid transparent;
+        box-shadow: 0 6px 16px rgba(15,23,42,0.08);
+    }
+    .ot-row-cta-pending {
+        background: linear-gradient(180deg, #f97316, #ea580c);
+        color: #fff;
+        border-color: #ea580c;
+    }
+    .ot-row-cta-view {
+        background: linear-gradient(180deg, #eff6ff, #dbeafe);
+        color: #1d4ed8;
+        border-color: #93c5fd;
     }
 
     .feed-list {
@@ -432,7 +449,7 @@
         .ot-head-actions {
             width: 100%;
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
         }
         .ot-head-btn {
             min-width: 0;
@@ -459,6 +476,7 @@
             width: 100%;
             min-width: 0;
             justify-self: stretch;
+            min-height: 44px;
         }
         .feed-item { grid-template-columns: auto 1fr; }
         .feed-cta { grid-column: 1 / -1; justify-self: end; }
