@@ -13,52 +13,6 @@
         </div>
     </div>
 
-    {% if linked_order %}
-    <div style="background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #bfdbfe;border-radius:16px;padding:20px;margin-bottom:16px;">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;">
-            <div style="min-width:0;">
-                <div style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#1d4ed8;font-weight:800;">Carga técnica asociada</div>
-                <h2 style="margin:6px 0 4px;font-size:18px;font-weight:800;color:#0f172a;">OT técnica vinculada al mismo número</h2>
-                <div style="font-size:14px;color:#334155;font-weight:700;">
-                    {{ linked_order.technician_name }} <span style="color:#64748b;font-weight:600;">· Leg. {{ linked_order.technician_employee_code }}</span>
-                </div>
-                <div style="font-size:13px;color:#475569;font-weight:600;margin-top:4px;">
-                    {% if linked_order.created_at %}Cargada: {{ linked_order.created_at }}{% endif %}
-                    {% if linked_order.client_name %} · Cliente: {{ linked_order.client_name }}{% endif %}
-                </div>
-            </div>
-            <div>
-                {% if linked_order.is_complete %}
-                <span style="display:inline-flex;align-items:center;padding:8px 12px;border-radius:999px;background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:13px;font-weight:800;">COMPLETA</span>
-                {% else %}
-                <span style="display:inline-flex;align-items:center;padding:8px 12px;border-radius:999px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;font-size:13px;font-weight:800;">PENDIENTE</span>
-                {% endif %}
-            </div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
-            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_p1 %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📸 Foto 1 {% if linked_order.has_p1 %}✓{% else %}—{% endif %}</span>
-            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_p2 %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📸 Foto 2 {% if linked_order.has_p2 %}✓{% else %}—{% endif %}</span>
-            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_p3 %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📸 Foto 3 {% if linked_order.has_p3 %}✓{% else %}—{% endif %}</span>
-            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_edoc %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📄 E-DOC {% if linked_order.has_edoc %}✓{% else %}—{% endif %}</span>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-            <a class="button button-secondary" style="background:#1d4ed8;color:#fff;border-color:#1d4ed8;font-weight:800;" href="{{ url_for('main.technician_order_detail', order_id=linked_order.id) }}">Abrir OT técnica</a>
-            {% if linked_order.has_p1 %}
-            <a class="button button-secondary" style="font-weight:700;" target="_blank" rel="noopener" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset='photo1') }}">Foto 1</a>
-            {% endif %}
-            {% if linked_order.has_p2 %}
-            <a class="button button-secondary" style="font-weight:700;" target="_blank" rel="noopener" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset='photo2') }}">Foto 2</a>
-            {% endif %}
-            {% if linked_order.has_p3 %}
-            <a class="button button-secondary" style="font-weight:700;" target="_blank" rel="noopener" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset='photo3') }}">Foto 3</a>
-            {% endif %}
-            {% if linked_order.has_edoc %}
-            <a class="button button-secondary" style="font-weight:700;" target="_blank" rel="noopener" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset='edoc', inline=1) }}">Ver E-DOC</a>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-
     {# Datos principales #}
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
         <h2 style="margin:0 0 14px;font-size:16px;font-weight:800;color:#0f172a;">Datos de la OT</h2>
@@ -157,6 +111,61 @@
             {% endif %}
         </div>
     </div>
+
+    {% if linked_order %}
+    {% set photo_labels = [('photo1', 'Foto valores de CDO', linked_order.has_p1), ('photo2', 'Foto valores de ONT', linked_order.has_p2), ('photo3', 'Foto de Seguridad del conector', linked_order.has_p3)] %}
+    <div style="background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #bfdbfe;border-radius:16px;padding:20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+            <div style="min-width:0;">
+                <div style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#1d4ed8;font-weight:800;">Carga técnica asociada</div>
+                <h2 style="margin:6px 0 4px;font-size:18px;font-weight:800;color:#0f172a;">OT técnica vinculada al mismo número</h2>
+                <div style="font-size:14px;color:#334155;font-weight:700;">
+                    {{ linked_order.technician_name }} <span style="color:#64748b;font-weight:600;">· Leg. {{ linked_order.technician_employee_code }}</span>
+                </div>
+                <div style="font-size:13px;color:#475569;font-weight:600;margin-top:4px;">
+                    {% if linked_order.created_at %}Cargada: {{ linked_order.created_at }}{% endif %}
+                    {% if linked_order.client_name %} · Cliente: {{ linked_order.client_name }}{% endif %}
+                </div>
+            </div>
+            <div>
+                {% if linked_order.is_complete %}
+                <span style="display:inline-flex;align-items:center;padding:8px 12px;border-radius:999px;background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:13px;font-weight:800;">COMPLETA</span>
+                {% else %}
+                <span style="display:inline-flex;align-items:center;padding:8px 12px;border-radius:999px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;font-size:13px;font-weight:800;">PENDIENTE</span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_p1 %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📸 Foto 1 {% if linked_order.has_p1 %}✓{% else %}—{% endif %}</span>
+            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_p2 %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📸 Foto 2 {% if linked_order.has_p2 %}✓{% else %}—{% endif %}</span>
+            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_p3 %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📸 Foto 3 {% if linked_order.has_p3 %}✓{% else %}—{% endif %}</span>
+            <span style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid {% if linked_order.has_edoc %}#86efac;background:#ecfdf5;color:#166534{% else %}#fecaca;background:#fef2f2;color:#991b1b{% endif %};">📄 E-DOC {% if linked_order.has_edoc %}✓{% else %}—{% endif %}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:16px;">
+            {% for asset, label, available in photo_labels %}
+            {% if available %}
+            <div style="background:#ffffff;border:1px solid #dbeafe;border-radius:14px;padding:12px;">
+                <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:10px;">{{ label }}</div>
+                <a target="_blank" rel="noopener" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset=asset) }}" style="display:block;border-radius:12px;overflow:hidden;background:#e2e8f0;border:1px solid #cbd5e1;aspect-ratio:3/4;">
+                    <img src="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset=asset) }}" alt="{{ label }}" style="width:100%;height:100%;object-fit:cover;display:block;">
+                </a>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                    <a class="button button-secondary" style="font-weight:700;" target="_blank" rel="noopener" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset=asset) }}">Ver completa</a>
+                    <a class="button button-secondary" style="font-weight:700;" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset=asset, download=1) }}">Descargar</a>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+            <a class="button button-secondary" style="background:#1d4ed8;color:#fff;border-color:#1d4ed8;font-weight:800;" href="{{ url_for('main.technician_order_detail', order_id=linked_order.id) }}">Abrir OT técnica</a>
+            {% if linked_order.has_edoc %}
+            <a class="button button-secondary" style="font-weight:700;" target="_blank" rel="noopener" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset='edoc', inline=1) }}">Ver E-DOC</a>
+            <a class="button button-secondary" style="font-weight:700;" href="{{ url_for('main.technician_order_download', order_id=linked_order.id, asset='edoc') }}">Descargar E-DOC</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     {# Actividades #}
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px;">
