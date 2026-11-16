@@ -1472,6 +1472,7 @@ def init_db():
     ensure_legacy_columns(connection)
     seed_demo_data(connection)
     ensure_mobile_unit_codes_normalized_sqlite(connection)
+    ensure_vehicle_unit_numbers_normalized_sqlite(connection)
     _migrate_technicians_add_vehicle_id_sqlite(connection)
     connection.commit()
     connection.close()
@@ -2286,6 +2287,7 @@ def init_db_postgres():
     ensure_users_columns_postgres(cursor)
     ensure_all_columns_postgres(cursor)
     ensure_mobile_unit_codes_normalized_postgres(cursor)
+    ensure_vehicle_unit_numbers_normalized_postgres(cursor)
     # Persistir toda la DDL y migraciones anteriores ANTES de los indices opcionales.
     # Si un CREATE UNIQUE INDEX falla (p.ej. datos duplicados en produccion) la
     # transaccion de psycopg queda abortada y el commit final de abajo hace ROLLBACK
@@ -4533,6 +4535,36 @@ def fetch_finding_events(finding_id, limit=100):
         (finding_id, limit),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def ensure_vehicle_unit_numbers_normalized_sqlite(connection):
+    """Normaliza unit_number de vehiculos ('142.0' -> '142')."""
+    rows = connection.execute(
+        "SELECT id, unit_number FROM vehicles WHERE unit_number IS NOT NULL"
+    ).fetchall()
+    for row in rows:
+        raw = row["unit_number"] if hasattr(row, "keys") else row[1]
+        normalized = normalize_unit_number(raw)
+        if normalized == (raw or "").strip():
+            continue
+        vehicle_id = row["id"] if hasattr(row, "keys") else row[0]
+        connection.execute(
+            "UPDATE vehicles SET unit_number = ? WHERE id = ?",
+            (normalized or None, vehicle_id),
+        )
+
+
+def ensure_vehicle_unit_numbers_normalized_postgres(cursor):
+    """Normaliza unit_number de vehiculos ('142.0' -> '142').
+
+    Un unit_number con decimales (ej. '142.0') rompe el CAST a INTEGER del
+    ORDER BY de fetch_vehicles en Postgres y devuelve 500.
+    """
+    cursor.execute(
+        "UPDATE vehicles "
+        "SET unit_number = regexp_replace(unit_number, '[.,]0+$', '') "
+        "WHERE unit_number ~ '^[0-9]+[.,]0+$'"
+    )
 
 
 def ensure_mobile_unit_codes_normalized_sqlite(connection):
@@ -12818,6 +12850,7 @@ def import_checklist_del_dia(rows):
             unit_number = unit_number or parsed_unit
             plate = plate or parsed_plate
 
+        unit_number = normalize_unit_number(unit_number)
         plate = normalize_plate(plate)
         if not plate:
             skipped_rows.append(f"Fila {index}: no se detecto patente.")
@@ -13233,6 +13266,7 @@ def import_vehicles(rows):
             unit_number = unit_number or parsed_unit
             plate = plate or parsed_plate
 
+        unit_number = normalize_unit_number(unit_number)
         plate = normalize_plate(plate)
         if not plate:
             skipped_rows.append(f"Fila {index}: falta patente (plate/patente/dominio).")
@@ -14498,6 +14532,17 @@ def normalize_float_value(value):
         return float(cleaned_value)
     except ValueError:
         return None
+
+
+def normalize_unit_number(value):
+    """Normaliza el numero de unidad a entero en texto ('142.0' -> '142')."""
+    raw = str(value if value is not None else "").strip()
+    if not raw:
+        return ""
+    numeric = normalize_float_value(raw)
+    if numeric is not None and float(numeric).is_integer():
+        return str(int(numeric))
+    return raw
 
 
 def normalize_yes_no_value(value):
@@ -16882,7 +16927,15 @@ def fetch_vehicles(q=None, status=None, assigned=None, limit=None, offset=0, sor
     if sort_by in allowed_sort:
         order_parts.append(f"{sort_column} {sort_d}")
     order_parts.append("CASE status WHEN 'activo' THEN 0 ELSE 1 END ASC")
-    order_parts.append("CAST(unit_number AS INTEGER) ASC NULLS LAST, unit_number ASC")
+    # El CAST debe tolerar valores no enteros (ej. '142.0', 'S/N', 'M-01'): en
+    # Postgres un CAST directo a INTEGER aborta la transaccion y devuelve 500.
+    if is_postgres():
+        order_parts.append(
+            "CASE WHEN unit_number ~ '^[0-9]+([.][0-9]+)?$' "
+            "THEN CAST(unit_number AS DOUBLE PRECISION) END ASC NULLS LAST, unit_number ASC"
+        )
+    else:
+        order_parts.append("CAST(unit_number AS INTEGER) ASC, unit_number ASC")
     order_parts.append("plate ASC")
     technician_alias = ""
     if include_assigned_technician_name:
