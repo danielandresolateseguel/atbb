@@ -7605,6 +7605,7 @@ def findings_list():
         "escalated_treatment": build_quick_filter_url("escalated_treatment"),
         "overdue_validation": build_quick_filter_url("overdue_validation"),
         "overdue_effectiveness": build_quick_filter_url("overdue_effectiveness"),
+        "closed": build_quick_filter_url("closed"),
     }
     quick_filter_cards = [
         {
@@ -7705,6 +7706,15 @@ def findings_list():
             "tone": "danger",
             "href": build_quick_filter_url("overdue_effectiveness"),
             "active": active_quick_filter == "overdue_effectiveness",
+        },
+        {
+            "key": "closed",
+            "label": "Cerrados",
+            "value": finding_stats["high_priority_closed_count"],
+            "helper": "Alta prioridad ya cerrada o con eficacia verificada.",
+            "tone": "ok",
+            "href": build_quick_filter_url("closed"),
+            "active": active_quick_filter == "closed",
         },
     ]
     return_to = safe_next_url(request.full_path if request.query_string else request.path) or url_for("main.findings_list")

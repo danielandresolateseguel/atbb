@@ -8652,6 +8652,14 @@ def _build_findings_where_sql(filters=None, auditor_user_id=None, supervisor_sco
         where_clauses.append("audit_findings.finding_status IN ('nuevo', 'respondido', 'resuelto', 'reabierto')")
     elif quick_filter == "high_priority":
         where_clauses.append("audit_findings.priority = 'alta'")
+        where_clauses.append("audit_findings.finding_status != 'cerrado_definitivo'")
+        where_clauses.append("COALESCE(audit_findings.effectiveness_status, '') != 'eficaz'")
+    elif quick_filter == "closed":
+        where_clauses.append("audit_findings.priority = 'alta'")
+        where_clauses.append(
+            "(audit_findings.finding_status = 'cerrado_definitivo' "
+            "OR COALESCE(audit_findings.effectiveness_status, '') = 'eficaz')"
+        )
     elif quick_filter == "reopened":
         where_clauses.append("audit_findings.finding_status = 'reabierto'")
     elif quick_filter == "pending_validation":
@@ -8779,7 +8787,8 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
             SUM(CASE WHEN audit_findings.finding_status = 'respondido' THEN 1 ELSE 0 END) AS in_progress_count,
             {stale_treatment_sql},
             {escalated_treatment_sql},
-            SUM(CASE WHEN audit_findings.priority = 'alta' THEN 1 ELSE 0 END) AS high_priority_count,
+            SUM(CASE WHEN audit_findings.priority = 'alta' AND audit_findings.finding_status != 'cerrado_definitivo' AND COALESCE(audit_findings.effectiveness_status, '') != 'eficaz' THEN 1 ELSE 0 END) AS high_priority_count,
+            SUM(CASE WHEN audit_findings.priority = 'alta' AND (audit_findings.finding_status = 'cerrado_definitivo' OR COALESCE(audit_findings.effectiveness_status, '') = 'eficaz') THEN 1 ELSE 0 END) AS high_priority_closed_count,
             SUM(CASE WHEN audit_findings.finding_status = 'reabierto' THEN 1 ELSE 0 END) AS reopened_count,
             SUM(CASE WHEN audit_findings.finding_status = 'resuelto' AND COALESCE(audit_findings.validation_status, '') != 'validado' THEN 1 ELSE 0 END) AS pending_validation_count,
             {overdue_validation_sql},
@@ -8822,6 +8831,7 @@ def fetch_finding_stats(filters=None, auditor_user_id=None, supervisor_scope_nam
         "stale_treatment_count": row["stale_treatment_count"] or 0,
         "escalated_treatment_count": row["escalated_treatment_count"] or 0,
         "high_priority_count": row["high_priority_count"] or 0,
+        "high_priority_closed_count": row["high_priority_closed_count"] or 0,
         "reopened_count": row["reopened_count"] or 0,
         "pending_validation_count": row["pending_validation_count"] or 0,
         "overdue_validation_count": row["overdue_validation_count"] or 0,
