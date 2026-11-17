@@ -472,6 +472,10 @@ small {
     border-color: rgba(var(--primary-rgb), 0.16);
 }
 
+.stat-card-ok {
+    border-color: rgba(22, 163, 74, 0.22);
+}
+
 .stat-label {
     color: var(--muted);
     font-size: 0.95rem;
